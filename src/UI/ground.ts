@@ -55,9 +55,9 @@ export default class Ground extends PIXI.Container {
     ];
     
     // Draw sky background
-    this.skySprite.beginFill(0x87CEEB);
-    this.skySprite.drawRect(-width/2, -height, width, height);
-    this.skySprite.endFill();
+    this.skySprite.fill(0x87CEEB);
+    this.skySprite.rect(-width/2, -height, width, height);
+    this.skySprite.fill();
   }
   
   private drawGround(width: number, height: number, skyOffset: number) {
@@ -65,73 +65,16 @@ export default class Ground extends PIXI.Container {
     const fieldColor = 0x228B22; // Forest green
     
     // Draw ground base
-    this.groundSprite.beginFill(fieldColor);
-    this.groundSprite.drawRect(-width/2, -height, width, height);
-    this.groundSprite.endFill();
+    this.groundSprite.fill(fieldColor);
+    this.groundSprite.rect(-width/2, -height, width, height);
+    this.groundSprite.fill();
     
     // Add field gradient for depth
-    this.addDepthGradient(width, height);
-  }
   
-  private drawFieldLines(width: number, height: number, lineColor: number) {
-    this.groundSprite.lineStyle(3, lineColor, 0.8);
     
-    // Center line (horizontal)
-    const centerY = -height / 2;
-    this.groundSprite.moveTo(-width/2, centerY);
-    this.groundSprite.lineTo(width/2, centerY);
-    
-    // Penalty area lines (perspective)
-    const penaltyWidth = width * 0.3;
-    const penaltyDepth = height * 0.2;
-    
-    // Top penalty area (near goal)
-    this.groundSprite.drawRect(-penaltyWidth/2, -height, penaltyWidth, penaltyDepth);
-    
-    // Goal area (smaller box)
-    const goalWidth = width * 0.15;
-    const goalDepth = height * 0.1;
-    this.groundSprite.drawRect(-goalWidth/2, -height, goalWidth, goalDepth);
-    
-    // Side lines with perspective
-    this.groundSprite.moveTo(-width/2, -height);
-    this.groundSprite.lineTo(-width/2, 0);
-    this.groundSprite.moveTo(width/2, -height);
-    this.groundSprite.lineTo(width/2, 0);
-    
-    // Center circle
-    const circleRadius = Math.min(width, height) * 0.08;
-    this.groundSprite.drawCircle(0, centerY, circleRadius);
-    
-    // Add yard lines for perspective depth
-    for (let i = 1; i < 6; i++) {
-      const lineY = -height + (height * i / 6);
-      const lineAlpha = 0.3 + (i * 0.1); // Lines get more visible towards player
-      this.groundSprite.lineStyle(2, lineColor, lineAlpha);
-      this.groundSprite.moveTo(-width/2, lineY);
-      this.groundSprite.lineTo(width/2, lineY);
-    }
+ 
   }
-  
-  private addDepthGradient(width: number, height: number) {
-    // Add subtle gradient overlay for depth perception
-    const gradientSteps = 10;
-    const stepHeight = height / gradientSteps;
-    
-    for (let i = 0; i < gradientSteps; i++) {
-      const alpha = i * 0.02; // Subtle gradient
-      const darkColor = 0x006400; // Dark green
-      this.groundSprite.beginFill(darkColor, alpha);
-      this.groundSprite.drawRect(
-        -width/2, 
-        -height + (i * stepHeight), 
-        width, 
-        stepHeight
-      );
-      this.groundSprite.endFill();
-    }
-  }
-
+ 
   // Get ground level for ball physics
   public getGroundLevel() {
     return 0; // Ground is at y = 0 in this coordinate system

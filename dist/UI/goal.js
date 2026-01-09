@@ -3,22 +3,27 @@ export default class Goal extends PIXI.Container {
     constructor() {
         super();
         this.showZones = true; // Toggle zone visualization
-        // Create goal sprite
+        // Create goal sprite (frame)
         const tex = PIXI.Texture.from('/Assets/arts/goal.png');
         this.goalSprite = new PIXI.Sprite(tex);
         this.goalSprite.anchor.set(0.5, 0); // mid-top
+        // Create net sprite (background layer)
+        const netTex = PIXI.Texture.from('/Assets/arts/net.png');
+        this.netSprite = new PIXI.Sprite(netTex);
+        this.netSprite.anchor.set(0.5, 0); // mid-top
         // Create goal posts
         this.leftPost = new PIXI.Graphics();
         this.rightPost = new PIXI.Graphics();
         this.crossbar = new PIXI.Graphics();
         // Create zone visualization
         this.zoneVisualization = new PIXI.Graphics();
-        // Add children
-        this.addChild(this.goalSprite);
-        this.addChild(this.leftPost);
-        this.addChild(this.rightPost);
-        this.addChild(this.crossbar);
+        // Add children in correct layer order:
+        // 1. Net (back layer - behind ball)
+        this.addChild(this.netSprite);
+        // 2. Zone visualization
         this.addChild(this.zoneVisualization);
+        // Note: Ball will be added by app between net and goal frame
+        // 3. Goal frame and posts will be added later to be in front of ball
         this._onResize = this.updateScale.bind(this);
         window.addEventListener('resize', this._onResize);
         // Initial placement/scale
@@ -30,15 +35,30 @@ export default class Goal extends PIXI.Container {
             this.goalSprite.texture.on('update', () => this.updateScale());
         }
     }
+    // Get front layer container (to be added to app after ball)
+    getFrontLayer() {
+        const frontLayer = new PIXI.Container();
+        frontLayer.addChild(this.goalSprite);
+        frontLayer.addChild(this.leftPost);
+        frontLayer.addChild(this.rightPost);
+        frontLayer.addChild(this.crossbar);
+        return frontLayer;
+    }
     updateScale() {
         if (!this.goalSprite.texture || !this.goalSprite.texture.width)
             return;
         const targetWidth = (window.innerWidth / 2) * 1.4; // Full half-screen width
         const s = targetWidth / this.goalSprite.texture.width;
         this.goalSprite.scale.set(s, s);
+        // Scale and position net to match goal
+        if (this.netSprite.texture && this.netSprite.texture.width) {
+            this.netSprite.scale.set(s, s);
+            this.netSprite.x = window.innerWidth / 2;
+            this.netSprite.y = window.innerHeight * 1 / 6;
+        }
         // Center horizontally, place near top of screen but visible
         this.goalSprite.x = window.innerWidth / 2;
-        this.goalSprite.y = 200;
+        this.goalSprite.y = window.innerHeight * 1 / 6;
         // Update goal posts to match scaled goal
         this.updateGoalPosts(s);
         // Draw zone visualization
@@ -46,9 +66,9 @@ export default class Goal extends PIXI.Container {
     }
     updateGoalPosts(scale) {
         const postColor = 0xFF0000; // red color
-        const postWidth = 10 * scale;
+        const postWidth = 40 * scale;
         const postHeight = 520 * scale;
-        const crossbarHeight = 10 * scale;
+        const crossbarHeight = 40 * scale;
         // Get goal sprite bounds after scaling
         const goalBounds = this.goalSprite.getBounds();
         // Clear and redraw left post (anchor: top-left)
@@ -75,32 +95,6 @@ export default class Goal extends PIXI.Container {
         this.crossbar.pivot.set(goalBounds.width / 2, 0); // anchor mid-top
         this.crossbar.x = goalBounds.left + goalBounds.width / 2;
         this.crossbar.y = goalBounds.top;
-    }
-    // Get collision rectangles for physics
-    getCollisionRects() {
-        return [
-            // Left post
-            {
-                x: this.leftPost.x,
-                y: this.leftPost.y,
-                width: this.leftPost.width,
-                height: this.leftPost.height
-            },
-            // Right post
-            {
-                x: this.rightPost.x,
-                y: this.rightPost.y,
-                width: this.rightPost.width,
-                height: this.rightPost.height
-            },
-            // Crossbar
-            {
-                x: this.crossbar.x,
-                y: this.crossbar.y,
-                width: this.crossbar.width,
-                height: this.crossbar.height
-            }
-        ];
     }
     // Get goal area for scoring (inside the goal)
     getGoalArea() {

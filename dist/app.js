@@ -16,7 +16,7 @@ import { GAME_CONFIG } from './constant/global.js';
     app.stage.addChild(container);
     // Load assets
     try {
-        await Assets.load(['/Assets/arts/goal.png', '/Assets/arts/ball.png']);
+        await Assets.load(['/Assets/arts/goal.png', '/Assets/arts/ball.png', '/Assets/arts/net.png']);
     }
     catch (e) {
         // ignore load errors here; components will listen for texture update
@@ -24,9 +24,11 @@ import { GAME_CONFIG } from './constant/global.js';
     // Create Ground first (background layer)
     const ground = new Ground();
     container.addChild(ground);
-    // Create Goal instance (includes both image and collision posts)
+    // Create Goal instance with layered system
     const goal = new Goal();
-    container.addChild(goal);
+    container.addChild(goal); // This adds the net (back layer)
+    // Goal front layer will be added after ball for proper layering
+    const goalFrontLayer = goal.getFrontLayer();
     // Game state management
     const gameState = {
         ballsRemaining: GAME_CONFIG.MAX_BALLS,
@@ -66,6 +68,8 @@ import { GAME_CONFIG } from './constant/global.js';
             // You can add score tracking, visual effects, or other game logic here
         };
         container.addChild(currentBall);
+        // Add goal front layer (frame and posts) on top of ball
+        container.addChild(goalFrontLayer);
     }
     // Create initial ball
     createNewBall();
