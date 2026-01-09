@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  
+  <script type="importmap">
+  {
+    "imports": {
+      "pixi.js": "/node_modules/pixi.js/dist/pixi.mjs",
+      "pixi": "/node_modules/pixi.js/dist/pixi.mjs"
+    }
+  }
+  </script>
+  <style>
+    html,body{height:100%;margin:0}
+    #app{height:100%;}
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import './src/app.ts';
+  </script>
+</body>
+</html>

@@ -1,5 +1,17 @@
 {
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && npx http-server . -p 3001",
+    "dev": "tsc -w",
+    "vite:dev": "vite",
+    "vite:build": "vite build",
+    "vite:preview": "vite preview"
+  },
   "dependencies": {
     "pixi.js": "^8.15.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21"
   }
 }
