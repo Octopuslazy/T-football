@@ -272,6 +272,15 @@ export default class Goal extends PIXI.Container {
       const gh = goalArea.height;
 
 
+      // Green (outside posts) - draw visible guide rectangles
+      const greenW = Math.max(24, Math.min(60, gw * 0.08));
+      const greenLeft = { x: gx - greenW + 6, y: gy, w: greenW-40, h: gh-40 };
+      const greenRight = { x: gx + gw - 2, y: gy, w: greenW-40, h: gh-40 };
+      this.zoneVisualization.fill(0x00FF00, 0.18);
+      this.zoneVisualization.rect(greenLeft.x, greenLeft.y, greenLeft.w, greenLeft.h);
+      this.zoneVisualization.rect(greenRight.x, greenRight.y, greenRight.w, greenRight.h);
+      this.zoneVisualization.fill();
+
       // Yellow (inside near posts)
       const yellowH = Math.max(8, gh * 0.12);
       const yellowWSide = Math.max(3, gw * 0.1);
