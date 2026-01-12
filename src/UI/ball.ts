@@ -652,29 +652,7 @@ export default class Ball extends PIXI.Container {
     }, 5000);
   }
   
-  // DISABLED: Scale-based collision methods
-  // All collision logic now handled by trajectory prediction to prevent multiple bounces
-  /*
-  private checkBounceCollisions() {
-    // ... method disabled to prevent code overlap
-  }
-
-  private handleRedZoneCollision() {
-    // ... method disabled 
-  }
-
-  private handleGreenZoneCollision() {
-    // ... method disabled
-  }
-
-  private handleYellowZoneCollision() {
-    // ... method disabled
-  }
-
-  private applyTrajectoryFallback() {
-    // ... method disabled
-  }
-  */
+  
 
   private predictTrajectoryCollision(startX: number, startY: number, dirX: number, dirY: number, range: number) {
     if (!this.goal) {
