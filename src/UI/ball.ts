@@ -33,6 +33,8 @@ export default class Ball extends PIXI.Container {
   private _minSpeed = 15;
   private _maxSpeed = 55;
   private _zoneTriggered = false;
+  private _ballUsed = false; // Track if ball has been used (swiped once)
+  private _firstCollisionHandled = false; // Track if first collision has been handled
   private onEnterFrame: () => void;
   private _onResize: () => void;
   private _goalScored = false;
@@ -176,7 +178,8 @@ export default class Ball extends PIXI.Container {
   }
   
   private onDragStart(event: PIXI.FederatedPointerEvent) {
-    if (this._isMoving || this._goalScored || this.gameState.gameOver) return;
+    // Prevent interaction if ball has been used, is moving, goal scored, or game over
+    if (this._ballUsed || this._isMoving || this._goalScored || this.gameState.gameOver) return;
     
     this._isDragging = true;
     this._dragTime = Date.now();
@@ -184,7 +187,7 @@ export default class Ball extends PIXI.Container {
   }
 
   private onDragMove(event: PIXI.FederatedPointerEvent) {
-    if (!this._isDragging || this._isMoving || this._goalScored || this.gameState.gameOver) return;
+    if (!this._isDragging || this._ballUsed || this._isMoving || this._goalScored || this.gameState.gameOver) return;
     
     const currentPos = { x: event.global.x, y: event.global.y };
     const deltaX = currentPos.x - this._startPos.x;
@@ -206,7 +209,7 @@ export default class Ball extends PIXI.Container {
   }
 
   private onDragEnd(event: PIXI.FederatedPointerEvent) {
-    if (!this._isDragging || this._isMoving || this._goalScored || this.gameState.gameOver) return;
+    if (!this._isDragging || this._ballUsed || this._isMoving || this._goalScored || this.gameState.gameOver) return;
     
     this._isDragging = false;
     const endPos = { x: event.global.x, y: event.global.y };
@@ -228,6 +231,11 @@ export default class Ball extends PIXI.Container {
     ));
     
     if (distance < 10 || powerPercent < 5) return; // ignore tiny or weak gestures
+    
+    // Mark ball as used and disable all future interactions
+    this._ballUsed = true;
+    this.interactive = false;
+    this.cursor = 'default';
     const baselinePps = 1000; // tuning baseline (px/s)
 
     // Determine intended range based on power, swipe distance and swipe speed
@@ -244,7 +252,7 @@ export default class Ball extends PIXI.Container {
       y: this.y + dirY * range
     };
 
-    // Clamp target to screen bounds (leave margin)
+    // Clamp target to screen bounds (leave margin) - only for initial target calculation
     const margin = 10;
     target.x = Math.max(margin, Math.min(window.innerWidth - margin, target.x));
     target.y = Math.max(margin, Math.min(window.innerHeight - margin, target.y));
@@ -259,46 +267,31 @@ export default class Ball extends PIXI.Container {
 
     // Handle different collision types
     switch (trajectoryResult.collisionType) {
-      case 'red_crossbar':
-        // Bounce back opposite direction
-        target = {
-          x: this.x - dirX * (range * 0.8),
-          y: this.y - dirY * (range * 0.8)
-        };
-        shouldSnap = false;
-        break;
-        
-      case 'green_zone':
-        // 90° outward bounce
-        const isLeft = trajectoryResult.hitPoint!.x < (this.goal?.getGoalArea()?.x + (this.goal?.getGoalArea()?.width || 0) / 2);
-        const outwardX = isLeft ? -1 : 1;
-        const outwardY = Math.abs(dirX) > Math.abs(dirY) ? 0 : (dirY > 0 ? 1 : -1);
-        target = {
-          x: this.x + outwardX * range * 0.7,
-          y: this.y + outwardY * range * 0.6
-        };
-        shouldSnap = false;
-        break;
-        
-      case 'yellow_zone':
-        // 60° toward goal + random snap
-        if (this.goal && typeof this.goal.getGoalZones === 'function') {
-          const zones = this.goal.getGoalZones();
-          if (zones && zones.length) {
-            const randomZone = zones[Math.floor(Math.random() * zones.length)];
-            target = {
-              x: randomZone.x + randomZone.width / 2,
-              y: randomZone.y + randomZone.height / 2
-            };
-            shouldSnap = true;
-          }
-        }
-        break;
-        
       case 'outbound_left':
+        // Fly left outward
+        target = {
+          x: this.x - range * 2.0,
+          y: this.y + (dirY > 0 ? 0.5 : -0.5) * range
+        };
+        shouldSnap = false;
+        break;
+        
       case 'outbound_right':
+        // Fly right outward  
+        target = {
+          x: this.x + range * 2.0,
+          y: this.y + (dirY > 0 ? 0.5 : -0.5) * range
+        };
+        shouldSnap = false;
+        break;
+        
       case 'above_crossbar':
-        // Fly outward, no snap
+        // Fly upward and outward
+        const aboveOutwardX = this.x < (window.innerWidth / 2) ? -0.8 : 0.8;
+        target = {
+          x: this.x + aboveOutwardX * range * 1.5,
+          y: this.y - range * 1.8 // Strong upward
+        };
         shouldSnap = false;
         break;
         
@@ -313,7 +306,7 @@ export default class Ball extends PIXI.Container {
         
       case 'normal':
       default:
-        // Normal snap to goal zone if exists
+        // Normal snap to goal zone if exists - keep clamp for normal shots
         if (this.goal && typeof this.goal.getGoalZones === 'function') {
           try {
             const zones = this.goal.getGoalZones();
@@ -399,6 +392,7 @@ export default class Ball extends PIXI.Container {
     this._moveDuration = Math.max(120, Math.min(1400, baseDuration * speedFactor));
     this._moveStartTime = performance.now();
     this._isMoving = true;
+    this._firstCollisionHandled = false; // Reset collision tracking for new flight
 
     // Draw and keep flight path for 5s
     this.drawFlightPath(this._curveStart, this._curveControl, this._curveEnd);
@@ -482,10 +476,27 @@ export default class Ball extends PIXI.Container {
         }
       } catch (e) {}
 
-      // --- Bounce Priority Collision System ---
-      try {
-        this.checkBounceCollisions();
-      } catch (e) {}
+      // --- Scale-based Collision System DISABLED ---
+      // DISABLED: Scale-based collision causes multiple bounces
+      // Using only trajectory prediction to avoid code overlap
+      /*
+      if (!this._zoneTriggered && !this._firstCollisionHandled) {
+        try {
+          const goalArea = this.goal?.getGoalArea();
+          if (goalArea && this.ballSprite.texture && this.ballSprite.texture.width) {
+            // Calculate current scale relative to goal
+            const currentScale = this.ballSprite.scale.x;
+            const ballPixelWidth = this.ballSprite.texture.width * currentScale;
+            const goalRatio = ballPixelWidth / goalArea.width;
+            
+            // Only process collisions when ball is at 1/6 to 1/7 scale relative to goal
+            if (goalRatio >= 1/7 && goalRatio <= 1/6) {
+              this.checkBounceCollisions();
+            }
+          }
+        } catch (e) {}
+      }
+      */
 
     } else {
       // Fallback to linear velocity if curve missing
@@ -500,8 +511,9 @@ export default class Ball extends PIXI.Container {
       }
     }
 
-    // Always check goal/bounds during motion
-    this.checkBoundaries();
+    // Always check goal collision during motion 
+    // DISABLED: checkBoundaries() - let ball fly freely off screen
+    // this.checkBoundaries();
     this.checkGoalCollision();
 
     // Finish movement
@@ -635,186 +647,29 @@ export default class Ball extends PIXI.Container {
     }, 5000);
   }
   
+  // DISABLED: Scale-based collision methods
+  // All collision logic now handled by trajectory prediction to prevent multiple bounces
+  /*
   private checkBounceCollisions() {
-    if (!this.goal || this._zoneTriggered) return;
-
-    const goalArea = this.goal.getGoalArea();
-    if (!goalArea) return;
-
-    // Current velocity direction
-    const velX = this._curveEnd ? this._curveEnd.x - this.x : this._velocity.x;
-    const velY = this._curveEnd ? this._curveEnd.y - this.y : this._velocity.y;
-    const velMag = Math.sqrt(velX * velX + velY * velY);
-    if (velMag === 0) return;
-
-    const velNormX = velX / velMag;
-    const velNormY = velY / velMag;
-
-    // Priority 1: Red rectangle (crossbar area) - bounce back opposite direction
-    const crossbarY = goalArea.y;
-    const crossbarHeight = 40; // Match the crossbar height from goal.ts
-    if (this.x >= goalArea.x && this.x <= goalArea.x + goalArea.width &&
-        this.y >= crossbarY && this.y <= crossbarY + crossbarHeight) {
-      this.triggerBounce(-velNormX, -velNormY, 0.8);
-      return;
-    }
-
-    // Priority 2: Green rectangles - 90° outward bounce
-    if (this.goal.getInteractionZoneAt) {
-      const iz = this.goal.getInteractionZoneAt(this.x, this.y);
-      if (iz && iz.type === 'green') {
-        // Determine if left or right green zone
-        const isLeftGreen = this.x < goalArea.x;
-        // 90° outward bounce
-        const outwardX = isLeftGreen ? -1 : 1;
-        const outwardY = Math.abs(velNormX) > Math.abs(velNormY) ? 0 : (velNormY > 0 ? 1 : -1);
-        this.triggerBounce(outwardX * 0.8, outwardY * 0.6, 0.7);
-        return;
-      }
-    }
-
-    // Priority 3: Yellow rectangles - 60° toward goal + random snap
-    if (this.goal.getInteractionZoneAt) {
-      const iz = this.goal.getInteractionZoneAt(this.x, this.y);
-      if (iz && iz.type === 'yellow') {
-        // 60° bounce toward goal center with random snap target
-        const goalCenterX = goalArea.x + goalArea.width / 2;
-        const goalCenterY = goalArea.y + goalArea.height / 2;
-        
-        // Vector toward goal center
-        const toGoalX = goalCenterX - this.x;
-        const toGoalY = goalCenterY - this.y;
-        const toGoalMag = Math.sqrt(toGoalX * toGoalX + toGoalY * toGoalY);
-        
-        if (toGoalMag > 0) {
-          const toGoalNormX = toGoalX / toGoalMag;
-          const toGoalNormY = toGoalY / toGoalMag;
-          
-          // 60° angle adjustment (mix with original velocity)
-          const angle60 = Math.PI / 3; // 60 degrees
-          const bounceX = velNormX * Math.cos(angle60) + toGoalNormX * Math.sin(angle60);
-          const bounceY = velNormY * Math.cos(angle60) + toGoalNormY * Math.sin(angle60);
-          
-          // Select random goal zone for snap
-          try {
-            const zones = this.goal.getGoalZones();
-            if (zones && zones.length) {
-              const randomZone = zones[Math.floor(Math.random() * zones.length)];
-              const targetX = randomZone.x + randomZone.width / 2;
-              const targetY = randomZone.y + randomZone.height / 2;
-              
-              // Update curve end to random zone
-              this._curveEnd = { x: targetX, y: targetY };
-              this._snappedToZone = true;
-            }
-          } catch (e) {}
-          
-          this.triggerBounce(bounceX, bounceY, 0.6);
-          return;
-        }
-      }
-    }
-
-    // Priority 4: Left of left green rectangle - fly outward (no snap)
-    const greenW = Math.max(24, Math.min(60, goalArea.width * 0.08));
-    const leftGreenLeft = goalArea.x - greenW - 6;
-    if (this.x < leftGreenLeft && this.y >= goalArea.y && this.y <= goalArea.y + goalArea.height) {
-      this.triggerOutwardFlight(-1, velNormY);
-      return;
-    }
-
-    // Priority 5: Right of right green rectangle - fly outward (no snap)
-    const rightGreenRight = goalArea.x + goalArea.width + greenW + 6;
-    if (this.x > rightGreenRight && this.y >= goalArea.y && this.y <= goalArea.y + goalArea.height) {
-      this.triggerOutwardFlight(1, velNormY);
-      return;
-    }
-
-    // Priority 6: Above red crossbar - fly outward
-    if (this.y < goalArea.y && this.x >= goalArea.x - 50 && this.x <= goalArea.x + goalArea.width + 50) {
-      const outX = this.x < goalArea.x + goalArea.width / 2 ? -0.7 : 0.7;
-      this.triggerOutwardFlight(outX, -0.8);
-      return;
-    }
-
-    // Priority 7: Not enough power - stop mid-flight
-    if (this._lastShotPower < 30 && this._isMoving) {
-      const distanceToGoal = Math.sqrt((goalArea.x + goalArea.width / 2 - this.x) ** 2 + 
-                                      (goalArea.y + goalArea.height / 2 - this.y) ** 2);
-      if (distanceToGoal > 200) {
-        this.stopMidFlight();
-        return;
-      }
-    }
-
-    // Priority 8: Default - normal snap behavior (existing zone collision system)
-    if (this.goal.getInteractionZoneAt) {
-      const iz = this.goal.getInteractionZoneAt(this.x, this.y);
-      if (iz && !this._zoneTriggered) {
-        this._zoneTriggered = true;
-        this.handleZoneCollisionFromGoal(iz);
-        setTimeout(() => { try { this._zoneTriggered = false; } catch (e) {} }, 800);
-      }
-    }
+    // ... method disabled to prevent code overlap
   }
 
-  private triggerBounce(dirX: number, dirY: number, dampening: number) {
-    this._zoneTriggered = true;
-    
-    // Calculate new target based on bounce direction
-    const bounceDistance = 300;
-    const newTargetX = this.x + dirX * bounceDistance;
-    const newTargetY = this.y + dirY * bounceDistance;
-    
-    // Clamp to screen bounds
-    const margin = 50;
-    const clampedX = Math.max(margin, Math.min(window.innerWidth - margin, newTargetX));
-    const clampedY = Math.max(margin, Math.min(window.innerHeight - margin, newTargetY));
-    
-    // Update curve end and restart movement
-    this._curveEnd = { x: clampedX, y: clampedY };
-    this._moveDuration = this._moveDuration * dampening;
-    this._moveStartTime = performance.now();
-    this._snappedToZone = false; // Disable snap for bounces
-    
-    console.log(`Ball bounced: direction (${dirX.toFixed(2)}, ${dirY.toFixed(2)})`);
-    
-    setTimeout(() => { try { this._zoneTriggered = false; } catch (e) {} }, 1000);
+  private handleRedZoneCollision() {
+    // ... method disabled 
   }
 
-  private triggerOutwardFlight(dirX: number, dirY: number) {
-    this._zoneTriggered = true;
-    
-    // Fly outward with no snap
-    const outwardDistance = 400;
-    const newTargetX = this.x + dirX * outwardDistance;
-    const newTargetY = this.y + dirY * outwardDistance;
-    
-    // Don't clamp - allow ball to fly off screen
-    this._curveEnd = { x: newTargetX, y: newTargetY };
-    this._moveStartTime = performance.now();
-    this._snappedToZone = false;
-    
-    console.log(`Ball flying outward: direction (${dirX.toFixed(2)}, ${dirY.toFixed(2)})`);
-    
-    setTimeout(() => { try { this._zoneTriggered = false; } catch (e) {} }, 1000);
+  private handleGreenZoneCollision() {
+    // ... method disabled
   }
 
-  private stopMidFlight() {
-    console.log("Ball stopped mid-flight due to insufficient power");
-    this._isMoving = false;
-    this._snappedToZone = false;
-    this._curveStart = this._curveControl = this._curveEnd = null;
-    
-    // Start gentle settle animation
-    this._postGoalAnimating = true;
-    this._postGoalStartTime = performance.now();
-    this._postGoalAmplitude = 20;
-    this._postGoalDuration = 400;
-    this._animationBaseY = this.y;
-    this._currentYOffset = 0;
-    this._postGoalFinalY = this.y + 10; // Small settle
+  private handleYellowZoneCollision() {
+    // ... method disabled
   }
+
+  private applyTrajectoryFallback() {
+    // ... method disabled
+  }
+  */
 
   private predictTrajectoryCollision(startX: number, startY: number, dirX: number, dirY: number, range: number) {
     if (!this.goal) {
@@ -840,85 +695,10 @@ export default class Ball extends PIXI.Container {
     const endX = startX + dirX * range;
     const endY = startY + dirY * range;
 
-    // Priority 1: Check red crossbar collision
-    const crossbarY = goalArea.y;
-    const crossbarHeight = 40;
-    const crossbarRect = {
-      x: goalArea.x,
-      y: crossbarY,
-      width: goalArea.width,
-      height: crossbarHeight
-    };
+    // Only check for outbound cases and low power - Rectangle collision now handled by scale-based system
     
-    const crossbarHit = this.lineIntersectsRect(startX, startY, endX, endY, crossbarRect);
-    if (crossbarHit) {
-      return {
-        collisionType: 'red_crossbar',
-        finalTarget: { x: endX, y: endY },
-        shouldSnap: false,
-        hitPoint: crossbarHit
-      };
-    }
-
-    // Priority 2: Check green zone collision
-    const greenW = Math.max(24, Math.min(60, goalArea.width * 0.08));
-    const leftGreenRect = {
-      x: goalArea.x - greenW - 6,
-      y: goalArea.y,
-      width: greenW,
-      height: goalArea.height
-    };
-    const rightGreenRect = {
-      x: goalArea.x + goalArea.width + 6,
-      y: goalArea.y,
-      width: greenW,
-      height: goalArea.height
-    };
-
-    const leftGreenHit = this.lineIntersectsRect(startX, startY, endX, endY, leftGreenRect);
-    const rightGreenHit = this.lineIntersectsRect(startX, startY, endX, endY, rightGreenRect);
-    
-    if (leftGreenHit || rightGreenHit) {
-      return {
-        collisionType: 'green_zone',
-        finalTarget: { x: endX, y: endY },
-        shouldSnap: false,
-        hitPoint: leftGreenHit || rightGreenHit
-      };
-    }
-
-    // Priority 3: Check yellow zone collision
-    const yellowH = Math.max(8, goalArea.height * 0.12);
-    const yellowWSide = Math.max(3, goalArea.width * 0.1);
-    const yellowWSideSmall = Math.max(10, Math.round(yellowWSide * 0.5));
-    const yellowShiftX = -5;
-    
-    const leftYellowRect = {
-      x: goalArea.x + Math.max(1, goalArea.width * 0.03) - 30 + yellowShiftX,
-      y: goalArea.y + Math.max(6, goalArea.height * 0.03),
-      width: yellowWSideSmall,
-      height: yellowH + 300
-    };
-    const rightYellowRect = {
-      x: goalArea.x + goalArea.width - yellowWSideSmall - Math.max(6, goalArea.width * 0.03) + yellowShiftX,
-      y: goalArea.y + Math.max(6, goalArea.height * 0.03),
-      width: yellowWSideSmall,
-      height: yellowH + 300
-    };
-
-    const leftYellowHit = this.lineIntersectsRect(startX, startY, endX, endY, leftYellowRect);
-    const rightYellowHit = this.lineIntersectsRect(startX, startY, endX, endY, rightYellowRect);
-    
-    if (leftYellowHit || rightYellowHit) {
-      return {
-        collisionType: 'yellow_zone',
-        finalTarget: { x: endX, y: endY },
-        shouldSnap: true,
-        hitPoint: leftYellowHit || rightYellowHit
-      };
-    }
-
     // Priority 4 & 5: Check outbound areas
+    const greenW = Math.max(24, Math.min(60, goalArea.width * 0.08));
     if (endX < goalArea.x - greenW - 6 && endY >= goalArea.y && endY <= goalArea.y + goalArea.height) {
       return {
         collisionType: 'outbound_left',
@@ -1000,21 +780,23 @@ export default class Ball extends PIXI.Container {
     return t >= 0 && t <= 1 && u >= 0 && u <= 1;
   }
 
-  private checkBoundaries() {
-    const radius = this.ballSprite.width / 2;
-    
-    // Screen boundaries
-    if (this.x - radius < 0 || this.x + radius > window.innerWidth) {
-      this._velocity.x *= -0.8;
-      this.x = Math.max(radius, Math.min(window.innerWidth - radius, this.x));
-    }
-    
-    if (this.y - radius < 0 || this.y + radius > window.innerHeight) {
-      this._velocity.y *= -0.8;
-      this.y = Math.max(radius, Math.min(window.innerHeight - radius, this.y));
-    }
+  // Helper method for rectangle intersection
+  private rectIntersects(rect1: { x: number; y: number; width: number; height: number }, 
+                        rect2: { x: number; y: number; width: number; height: number }) {
+    return rect1.x < rect2.x + rect2.width &&
+           rect1.x + rect1.width > rect2.x &&
+           rect1.y < rect2.y + rect2.height &&
+           rect1.y + rect1.height > rect2.y;
   }
-  
+
+  // REMOVED: All collision handling methods
+  // (handleRedZoneCollision, handleGreenZoneCollision, handleYellowZoneCollision, flyOut, snapToGoal)
+  // All collision logic is now handled in trajectory prediction to prevent double flight
+
+  // REMOVED: checkBoundaries method
+  // Ball should fly freely off screen following trajectory prediction
+  // Boundary collision was interfering with Bézier curve movement
+
   private checkGoalCollision() {
     // Check if ball is in goal area
     const ballPosition = { x: this.x, y: this.y };

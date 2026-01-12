@@ -3,6 +3,7 @@ import Goal from './UI/goal.js';
 import Ball from './UI/ball.js';
 import Ground from './UI/ground.js';
 import { GAME_CONFIG } from './constant/global.js';
+import { Layer, addToLayer } from './layers.js';
 
 (async () => {
   // Create a new application
@@ -29,14 +30,15 @@ import { GAME_CONFIG } from './constant/global.js';
 
   // Create Ground first (background layer)
   const ground = new Ground();
-  container.addChild(ground);
+  addToLayer(container, ground, Layer.GROUND);
 
   // Create Goal instance with layered system
   const goal = new Goal();
-  container.addChild(goal); // This adds the net (back layer)
+  addToLayer(container, goal, Layer.NET); // This adds the net (back layer)
   
-  // Goal front layer will be added after ball for proper layering
+  // Goal front layer will be added once with proper layering
   const goalFrontLayer = goal.getFrontLayer();
+  addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
 
   // Game state management
   const gameState = {
@@ -85,10 +87,7 @@ import { GAME_CONFIG } from './constant/global.js';
       // You can add score tracking, visual effects, or other game logic here
     };
     
-    container.addChild(currentBall);
-    
-    // Add goal front layer (frame and posts) on top of ball
-    container.addChild(goalFrontLayer);
+    addToLayer(container, currentBall, Layer.BALL);
   }
   
   // Create initial ball
