@@ -51,6 +51,10 @@ export default class Goal extends PIXI.Container {
     }
   }
   
+    // Interaction zones (green/red/yellow) used by Ball for collisions
+    // `gfx` is optional — visuals are drawn into `zoneVisualization` to avoid duplicate Graphics children.
+    private _interactionZones: Array<{ type: 'green'|'yellow'; rectLocal: { x:number;y:number;w:number;h:number }; gfx?: PIXI.Graphics | null }>=[];
+  
   // Get front layer container (to be added to app after ball)
   public getFrontLayer(): PIXI.Container {
     const frontLayer = new PIXI.Container();
@@ -82,7 +86,62 @@ export default class Goal extends PIXI.Container {
     
     // Draw zone visualization
     this.drawZoneVisualization();
+
+    // Ensure interaction zones (green/red/yellow) are created and attached
+    // These are used by `Ball.getInteractionZoneAt()` to detect collisions.
+    try { this.setupInteractionZones(); } catch (e) { /* silent */ }
   }
+  
+    // Prepare interaction zones (used for collision behavior). Visuals are drawn centrally
+    // in `drawZoneVisualization()` to avoid creating multiple Graphics children.
+    private setupInteractionZones() {
+      // clear existing
+      try {
+        // If any gfx were accidentally created previously, remove them safely
+        for (const z of this._interactionZones) {
+          try { if (z.gfx && z.gfx.parent) z.gfx.parent.removeChild(z.gfx); if (z.gfx) z.gfx.destroy(); } catch(e) {}
+        }
+        this._interactionZones = [];
+      } catch(e) {}
+
+      const goalArea = this.getGoalArea();
+      const gx = goalArea.x;
+      const gy = goalArea.y;
+      const gw = goalArea.width;
+      const gh = goalArea.height;
+
+      // Red (front mouth) - local coords relative to goalArea
+     
+      // Green (outside posts)
+      const greenW = Math.max(24, Math.min(60, gw * 0.08));
+      const gLeft = { x: -greenW - 6, y: 0, w: greenW, h: gh };
+      const gRight = { x: gw + 6, y: 0, w: greenW, h: gh };
+      // Yellow (two small rectangles near top inside goal)
+      const yellowH = Math.max(18, gh * 0.12);
+      const yellowWSide = Math.max(30, gw * 0.18);
+      const yellowLeft = { x: Math.max(6, gw * 0.03), y: Math.max(6, gh * 0.03), w: yellowWSide, h: yellowH };
+      const yellowRight = { x: gw - yellowWSide - Math.max(6, gw * 0.03), y: Math.max(6, gh * 0.03), w: yellowWSide, h: yellowH };
+
+      // Only store rectLocal data; visuals are handled in drawZoneVisualization()
+      this._interactionZones.push({ type:'green', rectLocal: gLeft, gfx: null });
+      this._interactionZones.push({ type:'green', rectLocal: gRight, gfx: null });
+     
+      this._interactionZones.push({ type:'yellow', rectLocal: yellowLeft, gfx: null });
+      this._interactionZones.push({ type:'yellow', rectLocal: yellowRight, gfx: null });
+    }
+  
+    // Return interaction zone (type and world rect) at world coords x,y or null
+    public getInteractionZoneAt(worldX:number, worldY:number) : { type: 'green'|'yellow'; rectWorld: {x:number;y:number;w:number;h:number} } | null {
+      const goalArea = this.getGoalArea();
+      for (const z of this._interactionZones) {
+        const rLocal = z.rectLocal;
+        const world = { x: goalArea.x + rLocal.x, y: goalArea.y + rLocal.y, w: rLocal.w, h: rLocal.h };
+        if (worldX >= world.x && worldX <= world.x + world.w && worldY >= world.y && worldY <= world.y + world.h) {
+          return { type: z.type, rectWorld: world };
+        }
+      }
+      return null;
+    }
   
   private updateGoalPosts(scale: number) {
     const postColor = 0xFF0000; // red color
@@ -193,23 +252,40 @@ export default class Goal extends PIXI.Container {
     // Calculate circle diameter as 1/4 of goal area height
     const circleRadius = (goalArea.height / 4) / 2;
     
+    // Draw scoring grid (optional) using light outlines and center markers
     for (let i = 0; i < zones.length; i++) {
       const zone = zones[i];
-      
-      // Draw zone border (rectangle)
-      this.zoneVisualization.stroke({ color: 0xFF0000, alpha: 0.7, width: 2 });
-      this.zoneVisualization.rect(zone.x, zone.y, zone.width, zone.height);
-      this.zoneVisualization.stroke();
-      
-      // Draw zone center
+      const localX = zone.x; // zones are already world coords relative to stage
+      const localY = zone.y;
+      this.zoneVisualization.lineStyle(2, 0x880000, 0.5);
+      this.zoneVisualization.rect(localX, localY, zone.width, zone.height);
+      // center marker
       const centerX = zone.x + zone.width / 2;
       const centerY = zone.y + zone.height / 2;
-      
-      // Draw a circle with diameter = 1/4 of goalArea height
-      this.zoneVisualization.fill({ color: 0xFF0000, alpha: 0.5 });
+      this.zoneVisualization.fill(0xFF0000, 0.25);
       this.zoneVisualization.circle(centerX, centerY, circleRadius);
       this.zoneVisualization.fill();
     }
+
+    // Also draw the interaction rectangles (green / red / yellow) explicitly so they match
+    // the setupInteractionZones definitions. Draw them at absolute positions (goalArea-based)
+    try {
+      const gx = goalArea.x;
+      const gy = goalArea.y;
+      const gw = goalArea.width;
+      const gh = goalArea.height;
+
+
+      // Yellow (inside near posts)
+      const yellowH = Math.max(18, gh * 0.12);
+      const yellowWSide = Math.max(30, gw * 0.18);
+      const yellowLeft = { x: gx + Math.max(6, gw * 0.03), y: gy + Math.max(6, gh * 0.03), w: yellowWSide, h: yellowH };
+      const yellowRight = { x: gx + gw - yellowWSide - Math.max(6, gw * 0.03), y: gy + Math.max(6, gh * 0.03), w: yellowWSide, h: yellowH };
+      this.zoneVisualization.fill(0xFFFF00, 0.35);
+      this.zoneVisualization.rect(yellowLeft.x, yellowLeft.y, yellowLeft.w, yellowLeft.h);
+      this.zoneVisualization.rect(yellowRight.x, yellowRight.y, yellowRight.w, yellowRight.h);
+      this.zoneVisualization.fill();
+    } catch (e) {}
   }
   
   // Toggle zone visualization on/off

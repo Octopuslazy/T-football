@@ -20,9 +20,19 @@ export default class Ball extends PIXI.Container {
   private _isDragging = false;
   private _dragTime = 0; // Track drag duration for power
   private _inGoal = false; // Track if ball is inside goal
+  private _snappedToZone = false; // whether last shot was snapped to a goal zone
+  private _lastShotPower = 0; // store last shot power percent for animations
+  private _postGoalAnimating = false;
+  private _postGoalStartTime = 0;
+  private _postGoalDuration = 800;
+  private _postGoalAmplitude = 40;
+  private _animationBaseY = 0;
+  private _currentYOffset = 0;
+  private _postGoalFinalY: number | null = null;
   private _startPos = { x: 0, y: 0 };
-  private _minSpeed = 35;
+  private _minSpeed = 15;
   private _maxSpeed = 55;
+  private _zoneTriggered = false;
   private onEnterFrame: () => void;
   private _onResize: () => void;
   private _goalScored = false;
@@ -111,11 +121,25 @@ export default class Ball extends PIXI.Container {
   
   private updateShadow() {
     this.shadowSprite.clear();
-    
-    // Draw simple oval shadow under ball
-    const shadowRadius = this.ballSprite.width / 2 * 0.8;
-    this.shadowSprite.fill(0x000000, 0.3);
-    this.shadowSprite.ellipse(0, 10, shadowRadius, shadowRadius * 0.5); // Oval shadow, slightly below ball
+
+    // Adjust shadow based on vertical offset (simulated lift)
+    const yOff = this._currentYOffset || 0; // positive means lower, negative means higher
+    const lift = Math.max(0, -yOff); // how high the ball is above base
+
+    // Base shadow size from sprite texture at base scale
+    const texWidth = (this.ballSprite.texture && this.ballSprite.texture.width) ? this.ballSprite.texture.width : this.ballSprite.width;
+    const baseRadius = (texWidth * this._baseScale) / 2 * 0.8; // unscaled base radius at _baseScale
+    // Shrink shadow when ball rises
+    const shrinkFactor = 1 - Math.min(0.75, lift / Math.max(1, this._postGoalAmplitude * 1.2));
+    // Factor to account for current sprite scale relative to base
+    const scaleFactor = (this.ballSprite.scale && this._baseScale) ? (this.ballSprite.scale.x / this._baseScale) : 1;
+    const shadowRadius = baseRadius * shrinkFactor * scaleFactor;
+    const alpha = 0.35 * Math.max(0.25, shrinkFactor * scaleFactor);
+
+    this.shadowSprite.fill(0x000000, alpha);
+    // place shadow slightly below the ball, adjust with lift
+    const yPos = 10 + Math.max(0, lift * 0.2);
+    this.shadowSprite.ellipse(0, yPos, shadowRadius, shadowRadius * 0.5);
     this.shadowSprite.fill();
   }
 
@@ -186,8 +210,13 @@ export default class Ball extends PIXI.Container {
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     if (distance < 10 && powerPercent < 5) return; // ignore tiny gestures
 
-    // Determine intended range based on power and swipe distance
-    const range = Math.min(this._maxSpeed * 20, Math.max(this._minSpeed * 10, distance * (0.8 + powerPercent / 150)));
+    // Compute swipe speed (pixels per second) and use it to influence range and duration
+    const swipePps = distance * 1000 / Math.max(1, dragDuration); // px/s
+    const baselinePps = 1000; // tuning baseline (px/s)
+
+    // Determine intended range based on power, swipe distance and swipe speed
+    const rangeBoost = Math.max(0.8, Math.min(1.5, 1 + (swipePps - baselinePps) / (baselinePps * 2)));
+    const range = Math.min(this._maxSpeed * 20, Math.max(this._minSpeed * 10, distance * (0.8 + powerPercent / 150) * rangeBoost));
 
     // Direction normalized
     const dirX = deltaX / distance;
@@ -203,6 +232,9 @@ export default class Ball extends PIXI.Container {
     const margin = 10;
     target.x = Math.max(margin, Math.min(window.innerWidth - margin, target.x));
     target.y = Math.max(margin, Math.min(window.innerHeight - margin, target.y));
+
+    // store last shot power for post-goal animation
+    this._lastShotPower = powerPercent;
 
     // If goal exists, snap target to nearest goal-zone center (red circles)
     if (this.goal && typeof this.goal.getGoalZones === 'function') {
@@ -220,6 +252,8 @@ export default class Ball extends PIXI.Container {
           // Snap target to the chosen zone center
           target.x = bestZone.x + bestZone.width / 2;
           target.y = bestZone.y + bestZone.height / 2;
+          // mark that we snapped to a zone
+          this._snappedToZone = true;
         }
       } catch (e) {}
     }
@@ -233,14 +267,43 @@ export default class Ball extends PIXI.Container {
 
     // Control point: midpoint plus a perpendicular offset to create arc
     const mid = { x: (this.x + target.x) / 2, y: (this.y + target.y) / 2 };
-    // Perp vector (based on final direction)
-    const perp = { x: -finalDirY, y: finalDirX };
     // Offset magnitude depends on powerPercent and swipe verticality; reduce when snapping to zone
     const snapPenalty = (this.goal && typeof this.goal.getGoalZones === 'function') ? 0.6 : 1.0;
-    const arcStrength = Math.min(300, (50 + (powerPercent / 100) * 250 + Math.abs(deltaY) * 0.2) * snapPenalty);
+    // make arc subtler: smaller base, weaker speed influence, lower caps
+    const speedBoost = 1 + Math.max(0, (swipePps - baselinePps) / baselinePps) * 0.25; // much smaller influence
+    const arcStrength = Math.min(220, ((30 + (powerPercent / 100) * 120 + Math.abs(deltaY) * 0.15) * snapPenalty * speedBoost));
+
+    // Determine curve side based on swipe direction: if swipe moves right -> curve right, left -> curve left.
+    // If mostly vertical, bias upward based on verticality and use small horizontal sign if present.
+    let dirSign = 1;
+    const horizVsVert = Math.abs(deltaX) / Math.max(1, Math.abs(deltaY));
+    if (Math.abs(deltaX) > Math.abs(deltaY) * 0.5) {
+      // clearly horizontal-leaning swipe: follow horizontal direction
+      dirSign = deltaX >= 0 ? 1 : -1;
+    } else {
+      // mostly vertical swipe: if there's any horizontal component use its sign, otherwise default to right
+      dirSign = deltaX === 0 ? 1 : (deltaX > 0 ? 1 : -1);
+    }
+
+    // Upward swipes (negative deltaY) should produce stronger upward bias
+    const upBiasFactor = 0.3 + Math.min(1, Math.max(0, -deltaY) / 300) * 0.7; // 0.3 .. 1.0
+
+    // Use the original swipe direction (dirX, dirY) to determine perpendicular vector
+    // so the arc side follows the swipe regardless of snapping to targets.
+    const perp = { x: -dirY * dirSign, y: dirX * dirSign };
+    const extraUp = Math.abs(deltaY) * upBiasFactor + (upBiasFactor > 0.5 ? arcStrength * 0.12 : 0);
+
+    // Bias control point toward the start so curvature is stronger at launch
+    const startBias = 0.6; // 0..1, higher => control moves closer to start (more initial curve)
+    const arcStartBoost = 1 + Math.min(0.25, startBias * 0.15); // small boost near start
+    const arcUsed = arcStrength * arcStartBoost;
+    const controlAnchor = {
+      x: mid.x * (1 - startBias) + this.x * startBias,
+      y: mid.y * (1 - startBias) + this.y * startBias
+    };
     const control = {
-      x: mid.x + perp.x * arcStrength,
-      y: mid.y + perp.y * arcStrength - Math.abs(deltaY) * 0.3 // bias up if swipe upward
+      x: controlAnchor.x + perp.x * arcUsed,
+      y: controlAnchor.y + perp.y * arcUsed - extraUp // bias up depending on swipe verticality
     };
 
     // Set curve properties
@@ -248,8 +311,12 @@ export default class Ball extends PIXI.Container {
     this._curveControl = control;
     this._curveEnd = target;
 
-    // Duration scales with final distance and power — keep snappy
-    this._moveDuration = Math.max(200, Math.min(1400, (finalDist / (this._maxSpeed * 10)) * 500));
+    // Duration scales with final distance and swipe speed — faster swipe => shorter flight time
+    const baseDuration = (finalDist / (this._maxSpeed * 10)) * 500;
+    // speedFactor < 1 when swipe is faster than baseline (so duration shortens), >1 when slower
+    let speedFactor = baselinePps / Math.max(1, swipePps);
+    speedFactor = Math.max(0.5, Math.min(2.0, speedFactor));
+    this._moveDuration = Math.max(120, Math.min(1400, baseDuration * speedFactor));
     this._moveStartTime = performance.now();
     this._isMoving = true;
 
@@ -265,18 +332,88 @@ export default class Ball extends PIXI.Container {
   }
   
   private update() {
-    if (!this._isMoving) return;
+    // continue if moving or post-goal animation is running
+    if (!this._isMoving && !this._postGoalAnimating) return;
 
     const now = performance.now();
     const elapsed = now - this._moveStartTime;
     const t = Math.min(1, elapsed / this._moveDuration);
 
     if (this._curveStart && this._curveControl && this._curveEnd) {
-      // Quadratic Bezier interpolation
-      const nx = this.quadraticBezier(this._curveStart.x, this._curveControl.x, this._curveEnd.x, t);
-      const ny = this.quadraticBezier(this._curveStart.y, this._curveControl.y, this._curveEnd.y, t);
+      // Quadratic Bézier curve: P(t) = (1-t)² P₀ + 2(1-t)t P₁ + t² P₂
+      const u = 1 - t; // (1-t)
+      const u2 = u * u; // (1-t)²
+      const t2 = t * t; // t²
+      const twoUt = 2 * u * t; // 2(1-t)t
+      
+      // Apply Bézier formula for both x and y coordinates
+      const nx = u2 * this._curveStart.x + twoUt * this._curveControl.x + t2 * this._curveEnd.x;
+      const ny = u2 * this._curveStart.y + twoUt * this._curveControl.y + t2 * this._curveEnd.y;
+      
       this.x = nx;
       this.y = ny;
+      
+      // Visual lift for shadow: compute deviation of curve from straight line
+      const lx = this._curveStart.x + (this._curveEnd.x - this._curveStart.x) * t; // linear interp
+      const ly = this._curveStart.y + (this._curveEnd.y - this._curveStart.y) * t;
+      const deviation = Math.hypot(nx - lx, ny - ly);
+      // Lift shadow when ball is 'higher' (negative y offset)
+      this._currentYOffset = -deviation * 0.6; // negative means up for updateShadow
+
+      // --- Scale handling (snapped -> shrink toward goal, or depth-based inside goal) ---
+      try {
+        if (this._snappedToZone) {
+          // While flying to a snapped goal zone, interpolate scale from base to target (1/10 of goal width)
+          if (this.goal && typeof this.goal.getGoalArea === 'function' && this.ballSprite.texture && this.ballSprite.texture.width) {
+            try {
+              const goalArea = this.goal.getGoalArea();
+              if (goalArea && goalArea.width > 0) {
+                const desiredPixelWidth = goalArea.width / 8; // target ball pixel width at snap (1/5 of goal)
+                const desiredScale = desiredPixelWidth / this.ballSprite.texture.width;
+                // Interpolate based on flight progress t so scale reduces smoothly
+                const s = this.lerp(this._baseScale, desiredScale, t);
+                this.ballSprite.scale.set(s, s);
+              } else {
+                this.ballSprite.scale.set(this._baseScale, this._baseScale);
+              }
+            } catch (e) { this.ballSprite.scale.set(this._baseScale, this._baseScale); }
+          } else {
+            this.ballSprite.scale.set(this._baseScale, this._baseScale);
+          }
+        } else if (this._inGoal) {
+          // Depth-based scaling when ball is inside goal area (settling)
+          if (this.goal && typeof this.goal.getGoalArea === 'function') {
+            const goalArea = this.goal.getGoalArea();
+            if (goalArea && goalArea.height > 0) {
+              const depth = (this.y - goalArea.y) / goalArea.height; // 0..1 (may exceed)
+              const depthClamped = Math.max(0, Math.min(1, depth));
+              const depthScale = 1 - depthClamped * 0.5; // reduce up to ~50%
+              const finalScale = this._baseScale * Math.max(0.6, depthScale);
+              this.ballSprite.scale.set(finalScale, finalScale);
+            } else {
+              this.ballSprite.scale.set(this._baseScale, this._baseScale);
+            }
+          } else {
+            this.ballSprite.scale.set(this._baseScale, this._baseScale);
+          }
+        } else {
+          // Default size
+          this.ballSprite.scale.set(this._baseScale, this._baseScale);
+        }
+      } catch (e) {}
+
+      // --- Zones initialization and collision checks ---
+      try {
+        if (this.goal && typeof (this.goal as any).getInteractionZoneAt === 'function') {
+          const iz = (this.goal as any).getInteractionZoneAt(this.x, this.y);
+          if (iz && !this._zoneTriggered) {
+            this._zoneTriggered = true;
+            this.handleZoneCollisionFromGoal(iz);
+            setTimeout(() => { try { this._zoneTriggered = false; } catch (e) {} }, 800);
+          }
+        }
+      } catch (e) {}
+
     } else {
       // Fallback to linear velocity if curve missing
       this.x += this._velocity.x;
@@ -303,34 +440,96 @@ export default class Ball extends PIXI.Container {
         this._pathGraphics = null;
         setTimeout(() => { try { pg.destroy(); } catch (e) {} }, 5000);
       }
+
       // clear curve points
       this._curveStart = this._curveControl = this._curveEnd = null;
-    }
-    // Scale ball gradually when nearing goal
-    try {
-      if (this.goal && this._baseScale) {
-        const goalArea = this.goal.getGoalArea();
-        if (goalArea) {
-          const goalCenterX = goalArea.x + goalArea.width / 2;
-          const goalCenterY = goalArea.y + goalArea.height / 2;
-          const dx = this.x - goalCenterX;
-          const dy = this.y - goalCenterY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const maxDist = Math.max(window.innerWidth, window.innerHeight) * 0.5; // start scaling within half-screen
-          const tscale = Math.max(0, Math.min(1, dist / maxDist));
-          const scaleMultiplier = 0.7 + tscale * (1 - 0.7); // 0.7 .. 1.0
-          this.ballSprite.scale.set(this._baseScale * scaleMultiplier, this._baseScale * scaleMultiplier);
-          // update shadow to match
-          this.updateShadow();
+
+      // If ball landed in goal and was snapped to a zone, start a small bounce + settle animation
+      try {
+        if (this._inGoal && this._snappedToZone && !this._postGoalAnimating) {
+          this._postGoalAnimating = true;
+          this._postGoalStartTime = performance.now();
+          // amplitude based on shot power (clamped)
+          this._postGoalAmplitude = Math.min(80, 10 + (this._lastShotPower / 100) * 80);
+          this._postGoalDuration = 800; // ms
+          this._animationBaseY = this.y; // store arrival y
+          this._currentYOffset = 0;
+          // compute final settle Y as bottom of goal area (so ball sinks to lowest point)
+          try {
+            if (this.goal && typeof this.goal.getGoalArea === 'function') {
+              const goalArea = this.goal.getGoalArea();
+              if (goalArea) {
+                // place ball so its bottom rests at goalArea bottom
+                this._postGoalFinalY = goalArea.y + goalArea.height - (this.ballSprite.height / 2);
+              }
+            }
+          } catch (e) { this._postGoalFinalY = null; }
+        } else if (!this._inGoal && !this._postGoalAnimating) {
+          // Non-goal landing: give a more visible gentle bounce so player notices
+          this._postGoalAnimating = true;
+          this._postGoalStartTime = performance.now();
+          // stronger amplitude (but capped) based on shot power so stronger shots bounce more
+          this._postGoalAmplitude = Math.min(40, 6 + (this._lastShotPower / 100) * 34);
+          this._postGoalDuration = 600; // slightly longer so bounce is visible
+          this._animationBaseY = this.y; // base is current landing y
+          this._currentYOffset = 0;
+          // final settle slightly lower than landing to show a small sink after bounce
+          this._postGoalFinalY = this.y + Math.min(12, 2 + (this._lastShotPower / 100) * 8);
         }
+      } catch (e) {}
+    }
+    // Update shadow based on current offset
+    this.updateShadow();
+
+    // Handle post-goal bounce/fall animation
+    if (this._postGoalAnimating) {
+      const now = performance.now();
+      const p = Math.min(1, (now - this._postGoalStartTime) / this._postGoalDuration);
+      // yOffset: bounce then settle into net. Use a damped sine for bounce.
+      const bounce = -Math.sin(p * Math.PI) * this._postGoalAmplitude * (1 - p * 0.6);
+      // Determine settle target Y (goal bottom) and interpolate toward it after bounce
+      let settleYOffset = 0;
+      if (this._postGoalFinalY !== null && this._postGoalFinalY !== undefined) {
+        // compute desired final delta relative to animation base
+        const desiredFinalDelta = this._postGoalFinalY - this._animationBaseY;
+        // after bounce (p > 0.4) start moving towards final position
+        const settleProgress = Math.min(1, Math.max(0, (p - 0.4) / 0.6));
+        settleYOffset = desiredFinalDelta * settleProgress;
+      } else {
+        // fallback small sink
+        settleYOffset = p > 0.9 ? (p - 0.9) / 0.1 * 12 : 0;
       }
-    } catch (e) {}
+      this._currentYOffset = bounce + settleYOffset;
+      // Apply visual offset
+      this.y = this._animationBaseY + this._currentYOffset;
+      // Shadow should shrink and fade as the ball rises, then restore as it settles
+      this.updateShadow();
+
+      if (p >= 1) {
+        this._postGoalAnimating = false;
+        this._snappedToZone = false; // reset
+        // ensure final settle at computed goal bottom if available
+        if (this._postGoalFinalY !== null && this._postGoalFinalY !== undefined) {
+          this.y = this._postGoalFinalY;
+          this._currentYOffset = this._postGoalFinalY - this._animationBaseY;
+        } else {
+          this.y = this._animationBaseY + 12;
+          this._currentYOffset = 12;
+        }
+        this._postGoalFinalY = null;
+          this.updateShadow();
+      }
+    }
   }
 
-  // Quadratic bezier helper
-  private quadraticBezier(p0: number, p1: number, p2: number, t: number) {
-    const u = 1 - t;
-    return u * u * p0 + 2 * u * t * p1 + t * t * p2;
+  // Ease helper (easeOutQuad)
+  private easeOutQuad(t: number) {
+    return t * (2 - t);
+  }
+
+  // Linear interpolation helper
+  private lerp(a: number, b: number, t: number) {
+    return a + (b - a) * t;
   }
 
   // Draw flight path as a stroked curve and keep reference
@@ -342,8 +541,13 @@ export default class Ball extends PIXI.Container {
     const segments = 48;
     for (let i = 0; i <= segments; i++) {
       const t = i / segments;
-      const x = this.quadraticBezier(start.x, control.x, end.x, t);
-      const y = this.quadraticBezier(start.y, control.y, end.y, t);
+      // Quadratic Bézier curve: P(t) = (1-t)² P₀ + 2(1-t)t P₁ + t² P₂
+      const u = 1 - t;
+      const u2 = u * u;
+      const t2 = t * t;
+      const twoUt = 2 * u * t;
+      const x = u2 * start.x + twoUt * control.x + t2 * end.x;
+      const y = u2 * start.y + twoUt * control.y + t2 * end.y;
       if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
     }
     // Add to scene root (parent of ball) so it's visible under/over as desired
@@ -412,6 +616,30 @@ export default class Ball extends PIXI.Container {
     if (this.onBallDestroyed) {
       this.onBallDestroyed();
     }
+    
     super.destroy();
   }
+  
+  // Goal interaction zones are now handled inside the Goal class.
+  // Zone setup, visuals and collision responses were moved to src/UI/goal.ts.
+
+  private handleZoneCollisionFromGoal(zone: any) {
+    // Handle zone collision - can trigger special effects, scoring, etc.
+    console.log('Ball collided with zone:', zone);
+    
+    // If this zone represents a scoring area and we haven't scored yet
+    if (!this._goalScored && zone) {
+      // Trigger goal scoring callback if available
+      if (this.goalScoredCallback) {
+        this.goalScoredCallback(zone);
+      }
+      this._goalScored = true;
+      console.log('Goal scored through zone collision!');
+    }
+  }
+
 }
+// ---- Goal zone helpers added below ----
+
+// Note: helper functions are placed after class for readability but use closure to access class methods is not possible.
+// We'll instead add methods back into the class by reopening it earlier. To keep changes minimal, append new methods inside class by re-opening file region.
