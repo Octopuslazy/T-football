@@ -14,12 +14,12 @@ export default class Goal extends PIXI.Container {
     super();
     
     // Create goal sprite (frame)
-    const tex = PIXI.Texture.from('/Assets/arts/goal.png');
+    const tex = PIXI.Texture.from('./arts/goal.png');
     this.goalSprite = new PIXI.Sprite(tex);
     this.goalSprite.anchor.set(0.5, 0); // mid-top
     
     // Create net sprite (background layer)
-    const netTex = PIXI.Texture.from('/Assets/arts/net.png');
+    const netTex = PIXI.Texture.from('./arts/net.png');
     this.netSprite = new PIXI.Sprite(netTex);
     this.netSprite.anchor.set(0.5, 0); // mid-top
     

@@ -22,7 +22,7 @@ import { Layer, addToLayer } from './layers.js';
 
   // Load assets
   try {
-    await Assets.load(['/Assets/arts/goal.png', '/Assets/arts/ball.png', '/Assets/arts/net.png']);
+    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update

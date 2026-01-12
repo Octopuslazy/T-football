@@ -46,7 +46,7 @@ export default class Ball extends PIXI.Container {
     super();
     
     // Create ball sprite
-    const tex = PIXI.Texture.from('/Assets/arts/ball.png');
+    const tex = PIXI.Texture.from('./arts/ball.png');
     this.ballSprite = new PIXI.Sprite(tex);
     this.ballSprite.anchor.set(0.5, 0.5); // Center anchor
     
