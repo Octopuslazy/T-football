@@ -286,10 +286,10 @@ export default class Goal extends PIXI.Container {
       const yellowWSide = Math.max(3, gw * 0.1);
       const yellowWSideSmall = Math.max(10, Math.round(yellowWSide * 0.5));
       const yellowShiftX = -5;
-      const yellowLeft = { x: gx + Math.max(1, gw * 0.03)-30 + yellowShiftX, y: gy + Math.max(6, gh * 0.03), w: yellowWSideSmall, h: yellowH+300 };
-      const yellowRight = { x: gx + gw - yellowWSideSmall - Math.max(6, gw * 0.03) + yellowShiftX, y: gy + Math.max(6, gh * 0.03), w: yellowWSideSmall, h: yellowH+300 };
+      const yellowLeft = { x: gx +13 + Math.max(1, gw * 0.03)-30 + yellowShiftX, y: gy + Math.max(6, gh * 0.03), w: yellowWSideSmall-20, h: yellowH+300 };
+      const yellowRight = { x: gx +12 + gw - yellowWSideSmall - Math.max(6, gw * 0.03) + yellowShiftX, y: gy + Math.max(6, gh * 0.03), w: yellowWSideSmall-20, h: yellowH+300 };
       // Yellow crossbar: draw a thin yellow rect just inside the red crossbar
-      const yellowCrossbar = { x: gx + 2, y: gy, w: Math.max(0, gw - 4), h: yellowH -28};
+      const yellowCrossbar = { x: gx + 2, y: gy, w: Math.max(0, gw - 4), h: yellowH -30};
       this.zoneVisualization.fill(0xFFFF00, 0.35);
       this.zoneVisualization.rect(yellowLeft.x, yellowLeft.y, yellowLeft.w, yellowLeft.h);
       this.zoneVisualization.rect(yellowRight.x, yellowRight.y, yellowRight.w, yellowRight.h);
