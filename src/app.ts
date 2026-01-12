@@ -90,6 +90,40 @@ import { Layer, addToLayer } from './layers.js';
     addToLayer(container, currentBall, Layer.BALL);
   }
   
+  // Reset ball function
+  function resetBall() {
+    if (currentBall) {
+      // Clear callback to prevent infinite loop
+      currentBall.onBallDestroyed = undefined;
+      container.removeChild(currentBall);
+      currentBall.destroy();
+      currentBall = null;
+    }
+    
+    // Reset game state if needed
+    gameState.gameOver = false;
+    if (gameState.ballsRemaining <= 0) {
+      gameState.ballsRemaining = 1; // Give at least one ball for reset
+    }
+    
+    // Create new ball
+    createNewBall();
+    console.log("Ball reset!");
+  }
+  
+  // Add reset button event listener
+  const resetButton = document.getElementById('reset-btn');
+  if (resetButton) {
+    resetButton.addEventListener('click', resetBall);
+  }
+  
+  // Add keyboard event listener for Z key
+  document.addEventListener('keydown', (event) => {
+    if (event.key.toLowerCase() === 'z') {
+      resetBall();
+    }
+  });
+  
   // Create initial ball
   createNewBall();
 })();

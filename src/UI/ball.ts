@@ -114,8 +114,11 @@ export default class Ball extends PIXI.Container {
     
     // Position ball on ground level (3/4 down from top)
     const groundLevel = (window.innerHeight * 3) / 4;
+    // Elevate the drop point by 0.005 * goal.y
+    const goalY = this.goal?.goalSprite?.y || 0;
+    const elevationOffset = 0.005 * goalY;
     this.x = window.innerWidth / 2;
-    this.y = groundLevel; // Position at ground level
+    this.y = groundLevel - elevationOffset; // Position at elevated ground level
     
     // Update shadow
     this.updateShadow();
@@ -544,8 +547,10 @@ export default class Ball extends PIXI.Container {
             if (this.goal && typeof this.goal.getGoalArea === 'function') {
               const goalArea = this.goal.getGoalArea();
               if (goalArea) {
-                // place ball so its bottom rests at goalArea bottom
-                this._postGoalFinalY = goalArea.y + goalArea.height - (this.ballSprite.height / 2);
+                // place ball higher by 0.5 * goal.y
+                const goalY = this.goal?.goalSprite?.y || 0;
+                const elevationOffset = 0.055 * goalY;
+                this._postGoalFinalY = goalArea.y + goalArea.height - (this.ballSprite.height / 2) - elevationOffset;
               }
             }
           } catch (e) { this._postGoalFinalY = null; }
@@ -833,8 +838,13 @@ export default class Ball extends PIXI.Container {
   public destroy() {
     PIXI.Ticker.shared.remove(this.onEnterFrame);
     window.removeEventListener('resize', this._onResize);
-    if (this.onBallDestroyed) {
-      this.onBallDestroyed();
+    
+    // Store callback and clear it to prevent infinite loop
+    const callback = this.onBallDestroyed;
+    this.onBallDestroyed = undefined;
+    
+    if (callback) {
+      callback();
     }
     
     super.destroy();

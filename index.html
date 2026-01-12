@@ -15,10 +15,28 @@
   <style>
     html,body{height:100%;margin:0}
     #app{height:100%;}
+    #reset-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      padding: 10px 20px;
+      background: #FF4444;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #reset-btn:hover {
+      background: #CC3333;
+    }
   </style>
 </head>
 <body>
   <div id="app"></div>
+  <button id="reset-btn">🔄 Reset Ball</button>
   <script type="module">
     import './src/app.ts';
   </script>
