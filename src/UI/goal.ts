@@ -117,17 +117,13 @@ export default class Goal extends PIXI.Container {
       const gLeft = { x: -greenW - 6, y: 0, w: greenW, h: gh };
       const gRight = { x: gw + 6, y: 0, w: greenW, h: gh };
       // Yellow (two small rectangles near top inside goal)
-      const yellowH = Math.max(18, gh * 0.12);
-      const yellowWSide = Math.max(30, gw * 0.18);
-      const yellowLeft = { x: Math.max(6, gw * 0.03), y: Math.max(6, gh * 0.03), w: yellowWSide, h: yellowH };
-      const yellowRight = { x: gw - yellowWSide - Math.max(6, gw * 0.03), y: Math.max(6, gh * 0.03), w: yellowWSide, h: yellowH };
 
       // Only store rectLocal data; visuals are handled in drawZoneVisualization()
       this._interactionZones.push({ type:'green', rectLocal: gLeft, gfx: null });
       this._interactionZones.push({ type:'green', rectLocal: gRight, gfx: null });
+      
      
-      this._interactionZones.push({ type:'yellow', rectLocal: yellowLeft, gfx: null });
-      this._interactionZones.push({ type:'yellow', rectLocal: yellowRight, gfx: null });
+
     }
   
     // Return interaction zone (type and world rect) at world coords x,y or null
@@ -277,13 +273,19 @@ export default class Goal extends PIXI.Container {
 
 
       // Yellow (inside near posts)
-      const yellowH = Math.max(18, gh * 0.12);
-      const yellowWSide = Math.max(30, gw * 0.18);
-      const yellowLeft = { x: gx + Math.max(6, gw * 0.03), y: gy + Math.max(6, gh * 0.03), w: yellowWSide, h: yellowH };
-      const yellowRight = { x: gx + gw - yellowWSide - Math.max(6, gw * 0.03), y: gy + Math.max(6, gh * 0.03), w: yellowWSide, h: yellowH };
+      const yellowH = Math.max(8, gh * 0.12);
+      const yellowWSide = Math.max(3, gw * 0.1);
+      const yellowWSideSmall = Math.max(10, Math.round(yellowWSide * 0.5));
+      const yellowShiftX = -5;
+      const yellowLeft = { x: gx + Math.max(1, gw * 0.03)-30 + yellowShiftX, y: gy + Math.max(6, gh * 0.03), w: yellowWSideSmall, h: yellowH+300 };
+      const yellowRight = { x: gx + gw - yellowWSideSmall - Math.max(6, gw * 0.03) + yellowShiftX, y: gy + Math.max(6, gh * 0.03), w: yellowWSideSmall, h: yellowH+300 };
+      // Yellow crossbar: draw a thin yellow rect just inside the red crossbar
+      const yellowCrossbar = { x: gx + 2, y: gy, w: Math.max(0, gw - 4), h: yellowH -28};
       this.zoneVisualization.fill(0xFFFF00, 0.35);
       this.zoneVisualization.rect(yellowLeft.x, yellowLeft.y, yellowLeft.w, yellowLeft.h);
       this.zoneVisualization.rect(yellowRight.x, yellowRight.y, yellowRight.w, yellowRight.h);
+      // Draw the yellow crossbar inset slightly so it's visibly inside the red crossbar
+      this.zoneVisualization.rect(yellowCrossbar.x, yellowCrossbar.y, yellowCrossbar.w, yellowCrossbar.h);
       this.zoneVisualization.fill();
     } catch (e) {}
   }
