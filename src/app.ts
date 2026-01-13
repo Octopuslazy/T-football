@@ -2,8 +2,10 @@ import { Application, Assets, Container } from 'pixi.js';
 import Goal from './UI/goal.js';
 import Ball from './UI/ball.js';
 import Ground from './UI/ground.js';
+import Goalkeeper from './UI/goalkeeper.js';
+import ScoreDisplay from './UI/scoreDisplay.js';
 import { GAME_CONFIG } from './constant/global.js';
-import { Layer, addToLayer } from './layers.js';
+import { Layer, addToLayer } from './ControllUI/layers.js';
 
 (async () => {
   // Create a new application
@@ -22,7 +24,7 @@ import { Layer, addToLayer } from './layers.js';
 
   // Load assets
   try {
-    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png']);
+    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update
@@ -39,6 +41,15 @@ import { Layer, addToLayer } from './layers.js';
   // Goal front layer will be added once with proper layering
   const goalFrontLayer = goal.getFrontLayer();
   addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
+
+  // Create Goalkeeper
+  const goalkeeper = new Goalkeeper();
+  goalkeeper.setGoal(goal); // Set goal reference for scale calculation
+  addToLayer(container, goalkeeper, Layer.GOAL_FRONT); // Same layer as goal front
+
+  // Create Score Display
+  const scoreDisplay = new ScoreDisplay();
+  addToLayer(container, scoreDisplay, Layer.GOAL_FRONT); // Top layer
 
   // Game state management
   const gameState = {
@@ -62,7 +73,7 @@ import { Layer, addToLayer } from './layers.js';
       return;
     }
     
-    currentBall = new Ball(gameState, goal);
+    currentBall = new Ball(gameState, goal, goalkeeper);
     
     // Set callback for when ball is destroyed
     currentBall.onBallDestroyed = () => {
@@ -84,7 +95,13 @@ import { Layer, addToLayer } from './layers.js';
     // Set callback for when goal is scored with zone information
     currentBall.goalScoredCallback = (zone: any) => {
       console.log(`⚽ GOAL! Ball scored in zone ${zone.id}`);
+      scoreDisplay.addGoal();
       // You can add score tracking, visual effects, or other game logic here
+    };
+    
+    // Set callback for when goalkeeper saves
+    currentBall.saveCallback = () => {
+      scoreDisplay.addSave();
     };
     
     addToLayer(container, currentBall, Layer.BALL);
@@ -100,6 +117,12 @@ import { Layer, addToLayer } from './layers.js';
       currentBall = null;
     }
     
+    // Reset goalkeeper to initial position and state
+    goalkeeper.reset();
+    
+    // Reset score display
+    scoreDisplay.reset();
+    
     // Reset game state if needed
     gameState.gameOver = false;
     if (gameState.ballsRemaining <= 0) {
@@ -108,7 +131,7 @@ import { Layer, addToLayer } from './layers.js';
     
     // Create new ball
     createNewBall();
-    console.log("Ball reset!");
+    console.log("Ball and goalkeeper reset!");
   }
   
   // Add reset button event listener

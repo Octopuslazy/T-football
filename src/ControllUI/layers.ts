@@ -1,5 +1,5 @@
 import { Container} from 'pixi.js';
-import { DisplayObject } from '@pixi/display';
+import * as PIXI from 'pixi.js';
 
 export const Layer = {
   GROUND: 0,
@@ -8,15 +8,13 @@ export const Layer = {
   GOAL_FRONT: 2,
 };
 
-export function setLayer(obj: DisplayObject, layer: number) {
+export function setLayer(obj: PIXI.Container, layer: number) {
   (obj as any).__layer = layer;
 }
 
-export function addToLayer(container: Container, child: DisplayObject, layer: number) {
+export function addToLayer(container: Container, child: PIXI.Container, layer: number) {
   setLayer(child, layer);
-  // Container.addChild's typing may expect a different concrete DisplayObject type
-  // so cast to any to avoid type incompatibilities across @pixi packages.
-  container.addChild(child as any);
+  container.addChild(child);
   applyLayerOrder(container);
 }
 

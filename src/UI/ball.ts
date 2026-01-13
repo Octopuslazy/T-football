@@ -35,14 +35,17 @@ export default class Ball extends PIXI.Container {
   private _zoneTriggered = false;
   private _ballUsed = false; // Track if ball has been used (swiped once)
   private _firstCollisionHandled = false; // Track if first collision has been handled
+  private _keeperCooldown = false; // Prevent repeated goalkeeper triggers after a deflection
   private onEnterFrame: () => void;
   private _onResize: () => void;
   private _goalScored = false;
   public onBallDestroyed?: () => void;
   public goalScoredCallback?: (zone: any) => void;
+  public saveCallback?: () => void; // Callback for goalkeeper saves
   public gameState: { ballsRemaining: number; gameOver: boolean };
-  public goal: any;  
-  constructor(gameState: { ballsRemaining: number; gameOver: boolean }, goal: any) {
+  public goal: any;
+  public goalkeeper: any;  
+  constructor(gameState: { ballsRemaining: number; gameOver: boolean }, goal: any, goalkeeper?: any) {
     super();
     
     // Create ball sprite
@@ -76,6 +79,7 @@ export default class Ball extends PIXI.Container {
     this.cursor = 'pointer';
     this.gameState = gameState;
     this.goal = goal;
+    this.goalkeeper = goalkeeper;
     
     this._onResize = this.updateScale.bind(this);
     window.addEventListener('resize', this._onResize);
@@ -101,6 +105,29 @@ export default class Ball extends PIXI.Container {
     // Update loop
     this.onEnterFrame = this.update.bind(this);
     PIXI.Ticker.shared.add(this.onEnterFrame);
+  }
+
+  // Compute deflection velocity when keeper deflects the ball
+  private computeDeflectionVelocity(
+    ballPos: { x: number; y: number },
+    keeperPos: { x: number; y: number },
+    power = 1
+  ) {
+    const dx = ballPos.x - keeperPos.x;
+    const dy = ballPos.y - keeperPos.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    return {
+      x: (dx / len) * 40 * power,
+      y: (dy / len) * 45 * power - 4
+    };
+  }
+
+  // Public setter for velocity used by goalkeeper deflect logic
+  public setVelocity(x: number, y: number) {
+    this._velocity.x = x;
+    this._velocity.y = y;
+    this._isMoving = true;
+    this.startBounceMovement();
   }
   
   private updateScale() {
@@ -517,11 +544,17 @@ export default class Ball extends PIXI.Container {
     // Always check goal collision during motion 
     // DISABLED: checkBoundaries() - let ball fly freely off screen
     // this.checkBoundaries();
+    this.checkGoalkeeperCollision();
+    this.predictGoalkeeperTiming();
     this.checkGoalCollision();
 
     // Finish movement
     if (t >= 1) {
       this._isMoving = false;
+      
+      // Check if goalkeeper should attempt catch for missed shots
+      this.handleGoalkeeperForMissedShots();
+      
       // Keep path visible for 5s then clear
       if (this._pathGraphics) {
         const pg = this._pathGraphics;
@@ -780,10 +813,162 @@ export default class Ball extends PIXI.Container {
   // Ball should fly freely off screen following trajectory prediction
   // Boundary collision was interfering with Bézier curve movement
 
+  // Predict when ball will reach goal and trigger goalkeeper at the right time
+  private predictGoalkeeperTiming() {
+    if (!this.goalkeeper || !this._isMoving || this._goalScored || this._ballUsed || !this._curveEnd || this._keeperCooldown) {
+      return;
+    }
+
+    const goalArea = this.goal?.getGoalArea();
+    if (!goalArea) return;
+
+    // Calculate if ball trajectory will hit goal area
+    const currentProgress = this.getCurrentTrajectoryProgress();
+    const ballToGoalDistance = Math.sqrt(
+      Math.pow(this.x - (goalArea.x + goalArea.width / 2), 2) +
+      Math.pow(this.y - (goalArea.y + goalArea.height / 2), 2)
+    );
+
+    // Only trigger goalkeeper when ball is close and moving toward goal
+    const triggerDistance = Math.max(goalArea.width, goalArea.height) * 0.8;
+    
+    if (ballToGoalDistance <= triggerDistance && currentProgress > 0.6 && currentProgress < 0.9) {
+      console.log(`Triggering goalkeeper at optimal timing! Progress: ${(currentProgress * 100).toFixed(1)}%, Distance: ${ballToGoalDistance.toFixed(1)}`);
+      
+      // Predict where ball will land
+      const curveEnd = this._curveEnd!;
+      const predictedZone = this.goal.getZoneFromPosition(curveEnd.x, curveEnd.y) || 
+               { id: Math.floor(Math.random() * 12) + 1 };
+
+      this._goalScored = true; // Prevent multiple attempts
+
+      const ballRadius = this.ballSprite.width / 2;
+      this.goalkeeper.attemptCatch(curveEnd.x, curveEnd.y, predictedZone, ballRadius).then((result: any) => {
+        if (result.caught) {
+          console.log(`🥅 Perfect timing! Goalkeeper saved in zone ${result.catchZone.id}!`);
+          const catchPos = result.catchPos || { x: curveEnd.x, y: curveEnd.y };
+          const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.7);
+          this.setVelocity(def.x, def.y);
+          if (this.saveCallback) this.saveCallback();
+
+          // Prevent immediate re-triggering: set a short cooldown
+          this._keeperCooldown = true;
+          setTimeout(() => {
+            this._keeperCooldown = false;
+            this._goalScored = false;
+          }, 700);
+        } else {
+          console.log(`🤾‍♂️ Goalkeeper attempted but missed the timing!`);
+          this._goalScored = false; // Allow goal to continue
+        }
+      });
+    }
+  }
+
+  // Get current progress along trajectory curve (0 = start, 1 = end)
+  private getCurrentTrajectoryProgress(): number {
+    if (!this._curveStart || !this._curveEnd || this._moveStartTime === 0) {
+      return 0;
+    }
+    
+    const elapsed = performance.now() - this._moveStartTime;
+    const progress = Math.min(elapsed / this._moveDuration, 1);
+    return progress;
+  }
+
+  // Check collision with goalkeeper
+  private checkGoalkeeperCollision() {
+    if (!this.goalkeeper || !this._isMoving || this._goalScored || this._ballUsed) {
+      return;
+    }
+
+    // Get ball and goalkeeper positions
+    const ballX = this.x;
+    const ballY = this.y;
+    const keeperX = this.goalkeeper.x;
+    const keeperY = this.goalkeeper.y;
+    
+    // Calculate distance between ball and goalkeeper
+    const distance = Math.sqrt(
+      Math.pow(ballX - keeperX, 2) + 
+      Math.pow(ballY - keeperY, 2)
+    );
+    
+    // Collision radius (ball radius + goalkeeper radius)
+    const ballRadius = this.ballSprite.width / 2;
+    const keeperRadius = this.goalkeeper.getCollisionRadius();
+    const collisionDistance = ballRadius + keeperRadius;
+    
+    // Check if collision occurred
+    if (distance <= collisionDistance && !this._firstCollisionHandled) {
+      console.log('Ball hit goalkeeper! Bouncing off...');
+      this._firstCollisionHandled = true;
+      
+      // Calculate bounce direction (away from goalkeeper)
+      const bounceAngle = Math.atan2(ballY - keeperY, ballX - keeperX);
+      const bounceSpeed = 25; // Bounce velocity
+      
+      // Apply bounce velocity
+      this._velocity.x = Math.cos(bounceAngle) * bounceSpeed;
+      this._velocity.y = Math.sin(bounceAngle) * bounceSpeed;
+      
+      // Update ball position to prevent sticking
+      const separation = collisionDistance + 5; // Add small buffer
+      this.x = keeperX + Math.cos(bounceAngle) * separation;
+      this.y = keeperY + Math.sin(bounceAngle) * separation;
+      
+      // Stop the curve movement and switch to linear movement
+      this._curveStart = this._curveControl = this._curveEnd = null;
+      this._moveStartTime = 0;
+      
+      // Continue ball movement with bounce physics
+      this.startBounceMovement();
+    }
+  }
+  
+  // Handle bounced ball movement
+  private startBounceMovement() {
+    const bounceUpdate = () => {
+      if (!this._isMoving || this._goalScored || this._ballUsed) {
+        return;
+      }
+      
+      // Update position with velocity
+      this.x += this._velocity.x;
+      this.y += this._velocity.y;
+      
+      // Apply friction
+      this._velocity.x *= 0.95;
+      this._velocity.y *= 0.95;
+      
+      // Stop when velocity is very low
+      if (Math.abs(this._velocity.x) < 0.5 && Math.abs(this._velocity.y) < 0.5) {
+        this._velocity.x = 0;
+        this._velocity.y = 0;
+        this._isMoving = false;
+        
+        // Trigger ball destruction after bounce settles
+        setTimeout(() => {
+          if (this.onBallDestroyed) {
+            this.onBallDestroyed();
+          }
+        }, 1000);
+        return;
+      }
+      
+      // Continue bounce movement
+      requestAnimationFrame(bounceUpdate);
+    };
+    
+    bounceUpdate();
+  }
+  
   private checkGoalCollision() {
     // Check if ball is in goal area
     const ballPosition = { x: this.x, y: this.y };
     
+    if (this._keeperCooldown) return; // skip while in cooldown after deflection
+
     if (this.goal.isInGoalArea(ballPosition.x, ballPosition.y)) {
       // Mark as in goal
       if (!this._inGoal) {
@@ -791,14 +976,47 @@ export default class Ball extends PIXI.Container {
         console.log("Ball entered goal area!");
       }
       
-      // Only score once
+      // Only score once and trigger goalkeeper at the right moment
       if (!this._goalScored) {
         const zone = this.goal.getZoneFromPosition(ballPosition.x, ballPosition.y);
-        if (zone && this.goalScoredCallback) {
-          this.goalScoredCallback(zone);
+        
+        // Goalkeeper attempts when ball actually enters goal area (not before)
+        if (this.goalkeeper && zone) {
+          console.log(`Ball in goal area! Zone: ${zone.id}, triggering goalkeeper...`);
+          this._goalScored = true; // Mark as processed to prevent duplicate calls
+          
+          const ballRadius = this.ballSprite.width / 2;
+          this.goalkeeper.attemptCatch(ballPosition.x, ballPosition.y, zone, ballRadius).then((result: any) => {
+              if (result.caught) {
+                console.log(`🥅 Goalkeeper saved! Deflecting ball from zone ${result.catchZone.id}!`);
+                const catchPos = result.catchPos || { x: ballPosition.x, y: ballPosition.y };
+                const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.7);
+                this.setVelocity(def.x, def.y);
+                if (this.saveCallback) this.saveCallback();
+
+                // Prevent immediate re-triggering: set a short cooldown
+                this._keeperCooldown = true;
+                setTimeout(() => {
+                  this._keeperCooldown = false;
+                  this._goalScored = false;
+                }, 700);
+              } else {
+                // Goalkeeper attempted but failed to catch
+                console.log(`🤾‍♂️ Goalkeeper dove but missed! Ball scored in zone ${zone.id}!`);
+                console.log('GOAL!');
+                if (zone && this.goalScoredCallback) {
+                  this.goalScoredCallback(zone);
+                }
+              }
+          });
+        } else {
+          // No goalkeeper - proceed with normal goal scoring
+          console.log('GOAL!');
+          this._goalScored = true;
+          if (zone && this.goalScoredCallback) {
+            this.goalScoredCallback(zone);
+          }
         }
-        this._goalScored = true;
-        console.log('GOAL!');
       }
     } else {
       this._inGoal = false;
@@ -830,6 +1048,44 @@ export default class Ball extends PIXI.Container {
   
   // Goal interaction zones are now handled inside the Goal class.
   // Zone setup, visuals and collision responses were moved to src/UI/goal.ts.
+
+  // Handle goalkeeper catch for missed shots (outside goal area or hitting posts)
+  private handleGoalkeeperForMissedShots() {
+    // Avoid triggering while on cooldown after a recent goalkeeper interaction
+    if (this._keeperCooldown) return;
+
+    // Only trigger goalkeeper if ball is not in goal area and goalkeeper exists
+    if (this.goalkeeper && !this._inGoal && !this._goalScored) {
+      // Check if this was a "missed" shot that goalkeeper should try to catch
+      const goalArea = this.goal?.getGoalArea();
+      if (goalArea) {
+        // Determine if ball trajectory was aimed at goal but missed
+        const ballToGoalDistance = Math.sqrt(
+          Math.pow(this.x - (goalArea.x + goalArea.width / 2), 2) +
+          Math.pow(this.y - (goalArea.y + goalArea.height / 2), 2)
+        );
+        
+        // If ball is reasonably close to goal area (missed shot), let goalkeeper attempt catch
+        const maxCatchDistance = Math.max(goalArea.width, goalArea.height) * 1.5;
+        if (ballToGoalDistance <= maxCatchDistance) {
+          // Random chance for goalkeeper to catch missed shots
+          const ballRadius = this.ballSprite.width / 2;
+          this.goalkeeper.attemptCatch(this.x, this.y, null, ballRadius).then((result: any) => {
+            if (result.caught) {
+                console.log(`Goalkeeper saved a missed shot in zone ${result.catchZone.id}! Deflecting outward.`);
+                const catchPos = result.catchPos || { x: this.x, y: this.y };
+                const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.6);
+                this.setVelocity(def.x, def.y);
+
+                // Start cooldown to avoid immediate retriggers
+                this._keeperCooldown = true;
+                setTimeout(() => { this._keeperCooldown = false; }, 700);
+              }
+          });
+        }
+      }
+    }
+  }
 
   private handleZoneCollisionFromGoal(zone: any) {
     // Handle zone collision - can trigger special effects, scoring, etc.
