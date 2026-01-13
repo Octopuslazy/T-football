@@ -168,11 +168,25 @@ export default class Goalkeeper extends PIXI.Container {
       const willAttemptCatch = Math.random() < this._catchProbability;
       
       if (!willAttemptCatch) {
-        resolve({ caught: false });
+        // Even if roll fails, perform a random miss-dive so keeper appears to attempt elsewhere
+        this._lastActionTime = now;
+        this._isAnimating = true;
+        this._isActive = false;
+
+        let missZone = targetZone;
+        if (!targetZone || !this.isValidTargetZone(ballX, ballY, targetZone)) {
+          missZone = this.getRandomZone();
+        }
+
+        this.performFailedCatchAnimation(missZone).then((pos) => {
+          // return a deflect position to Ball (avoid actual ball position)
+          const deflect = this.getRandomDeflectPosition({ x: ballX, y: ballY });
+          resolve({ caught: false, catchZone: missZone, catchPos: deflect });
+        }).catch(() => { resolve({ caught: false }); });
         return;
       }
 
-      // Set cooldown start time ngay khi quyết định nhảy
+      // Set cooldown start time ngay khi quyết định nhảy (successful roll)
       this._lastActionTime = now;
       this._isAnimating = true;
       this._isActive = false;
@@ -245,10 +259,11 @@ export default class Goalkeeper extends PIXI.Container {
         if (progress < 1) {
           requestAnimationFrame(animateDive);
         } else {
-          const pos = { x: this.x, y: this.y };
-          this.fallToGround().then(() => {
-            resolve(pos);
-          }).catch(() => { resolve(pos); });
+            // When miss, return a random deflect position (not the actual ball snap)
+            const deflectPos = this.getRandomDeflectPosition();
+            this.fallToGround().then(() => {
+              resolve(deflectPos);
+            }).catch(() => { resolve(deflectPos); });
         }
       };
       
@@ -268,6 +283,36 @@ export default class Goalkeeper extends PIXI.Container {
       col: (randomZoneId - 1) % 4
     };
   }
+
+    // Get a random deflect position (used when keeper misses) - avoid returning the actual ball position when possible
+    private getRandomDeflectPosition(avoid?: { x: number; y: number }): { x: number; y: number } {
+      const goalArea = this._goal?.getGoalArea?.();
+      if (!goalArea) {
+        // fallback near keeper
+        const offsetX = (Math.random() < 0.5 ? -1 : 1) * (80 + Math.random() * 120);
+        const offsetY = -20 + Math.random() * 80;
+        return { x: this._initialPosition.x + offsetX, y: this._initialPosition.y + offsetY };
+      }
+
+      // pick a random side (left/right/top) away from the center
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const x = side === -1 ? goalArea.x - 40 - Math.random() * 80 : goalArea.x + goalArea.width + 40 + Math.random() * 80;
+      const y = goalArea.y + Math.random() * goalArea.height * 0.8 + goalArea.height * 0.1;
+
+      const pos = { x, y };
+      if (avoid) {
+        const dx = pos.x - avoid.x;
+        const dy = pos.y - avoid.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 60) {
+          // shift further out
+          pos.x += side * 80;
+          pos.y += (Math.random() - 0.5) * 80;
+        }
+      }
+
+      return pos;
+    }
   
   // LOGIC BẮT BÓNG MỚI (Bay thẳng tới bóng & Độ dài tay)
   private performCatchAnimation(zone: any, catchWorldPos?: { x: number; y: number }): Promise<{ x: number; y: number }> {
