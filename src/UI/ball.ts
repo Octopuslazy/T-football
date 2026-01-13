@@ -107,11 +107,11 @@ export default class Ball extends PIXI.Container {
     PIXI.Ticker.shared.add(this.onEnterFrame);
   }
 
-  // Compute deflection velocity when keeper deflects the ball
+
   private computeDeflectionVelocity(
     ballPos: { x: number; y: number },
     keeperPos: { x: number; y: number },
-    power = 1
+    power = 2
   ) {
     const dx = ballPos.x - keeperPos.x;
     const dy = ballPos.y - keeperPos.y;
@@ -122,7 +122,7 @@ export default class Ball extends PIXI.Container {
     };
   }
 
-  // Public setter for velocity used by goalkeeper deflect logic
+ 
   public setVelocity(x: number, y: number) {
     this._velocity.x = x;
     this._velocity.y = y;
@@ -430,8 +430,6 @@ export default class Ball extends PIXI.Container {
     // Clear indicators
     try { this.powerIndicator.clear(); } catch (e) {}
     this.powerText.text = '';
-
-    console.log(`Ball shot (curve). Power: ${powerPercent.toFixed(1)}%, Range: ${range.toFixed(1)}, Duration: ${this._moveDuration}ms`);
     
   }
   
@@ -906,7 +904,7 @@ export default class Ball extends PIXI.Container {
       
       // Calculate bounce direction (away from goalkeeper)
       const bounceAngle = Math.atan2(ballY - keeperY, ballX - keeperX);
-      const bounceSpeed = 25; // Bounce velocity
+      const bounceSpeed = 50; 
       
       // Apply bounce velocity
       this._velocity.x = Math.cos(bounceAngle) * bounceSpeed;
