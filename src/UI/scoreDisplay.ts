@@ -13,11 +13,11 @@ export default class ScoreDisplay extends PIXI.Container {
     // Create score text
     this.scoreText = new PIXI.Text(this.getScoreText(), {
       fontFamily: 'Arial',
-      fontSize: 24,
+      fontSize: 40,
       fill: 0xFFFFFF,
       fontWeight: 'bold',
       stroke: 0x000000,
-      strokeThickness: 2
+      strokeThickness: 3
     } as any);
     
     this.scoreText.anchor.set(0.5, 0); // Center-top anchor
@@ -38,6 +38,20 @@ export default class ScoreDisplay extends PIXI.Container {
     // Position at top center of screen
     this.x = screenWidth / 2;
     this.y = 20; // 20px from top
+    
+    // Neutralize ancestor scaling so score display stays constant relative to screen
+    let ancestor: any = this.parent;
+    let accumulatedScale = 1;
+    while (ancestor) {
+      if (ancestor.scale) {
+        const sx = typeof ancestor.scale.x === 'number' ? ancestor.scale.x : 1;
+        accumulatedScale *= sx;
+      }
+      ancestor = ancestor.parent;
+    }
+
+    const inv = accumulatedScale && accumulatedScale !== 0 ? 1 / accumulatedScale : 1;
+    this.scale.set(inv);
   }
   
   // Get formatted score text
