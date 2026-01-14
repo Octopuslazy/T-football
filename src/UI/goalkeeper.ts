@@ -7,7 +7,7 @@ export default class Goalkeeper extends PIXI.Container {
   private _initialRotation: number = 0;
   private _isActive: boolean = true;
   private _isAnimating: boolean = false;
-  private _catchProbability: number = 0.9; // Tỉ lệ bắt bóng
+  private _catchProbability: number = 0.8; // Tỉ lệ bắt bóng
   private _goal: any = null;
   private _lastActionTime: number = 0; // Biến lưu thời gian thực hiện hành động cuối
   private _actionCooldown: number = 1500; // Thời gian hồi chiêu (ms) để tránh nhảy 2 lần
@@ -177,10 +177,9 @@ export default class Goalkeeper extends PIXI.Container {
         if (!targetZone || !this.isValidTargetZone(ballX, ballY, targetZone)) {
           missZone = this.getRandomZone();
         }
-
-        this.performFailedCatchAnimation(missZone).then((pos) => {
+        this.performFailedCatchAnimation(missZone, { x: ballX, y: ballY }).then((pos) => {
           // return a deflect position to Ball (avoid actual ball position)
-          const deflect = this.getRandomDeflectPosition({ x: ballX, y: ballY });
+          const deflect = pos || this.getRandomDeflectPosition({ x: ballX, y: ballY });
           resolve({ caught: false, catchZone: missZone, catchPos: deflect });
         }).catch(() => { resolve({ caught: false }); });
         return;
@@ -199,7 +198,7 @@ export default class Goalkeeper extends PIXI.Container {
       const canReach = this.canReachZone(catchZone, ballX, ballY);
       
       if (!canReach) {
-        this.performFailedCatchAnimation(catchZone).then((pos) => {
+        this.performFailedCatchAnimation(catchZone, { x: ballX, y: ballY }).then((pos) => {
           resolve({ caught: false, catchZone, catchPos: pos });
         }).catch(() => { resolve({ caught: false }); });
         return;
@@ -225,48 +224,103 @@ export default class Goalkeeper extends PIXI.Container {
     return ballToGoalCenterX <= maxDistanceX && ballToGoalCenterY <= maxDistanceY;
   }
   
-  private performFailedCatchAnimation(zone: any): Promise<{ x: number; y: number }> {
+  private performFailedCatchAnimation(zone: any, avoidWorldPos?: { x: number; y: number }): Promise<{ x: number; y: number }> {
     return new Promise((resolve) => {
       this._isAnimating = true;
       this._isActive = false;
-      
+
       const targetRotation = this.getRotationForZone(zone.id);
-      const targetPosition = this.getPositionForZone(zone.id);
-      
+      let targetPosition = this.getPositionForZone(zone.id);
+
+      // Với các zone giữa (2,3,6,7,10,11), trên miss ta chuyển mục tiêu sang ô bên cạnh
+      // Mong muốn: nếu hụt ở 2 thì thủ môn nên nhảy tới vị trí của 3; 6 -> 7; 10 -> 11
+      // và ngược lại: 3 -> 2; 7 -> 6; 11 -> 10
+      const missNeighborMap: { [key: number]: number } = {
+        2: 3, 6: 7, 10: 11,
+        3: 2, 7: 6, 11: 10
+      };
+      if (missNeighborMap[zone.id]) {
+        const neighborId = missNeighborMap[zone.id];
+        const neighborPos = this.getPositionForZone(neighborId);
+        // Chỉ lấy X của ô lân cận để tránh thay đổi Y (không giảm Y)
+        targetPosition.x = neighborPos.x;
+        // giữ nguyên targetPosition.y để không giảm chiều cao đột ngột
+      }
+
       const catchTexture = PIXI.Texture.from('./arts/gkeeper2.png');
       this.goalkeeperSprite.texture = catchTexture;
-      
+
       const startRotation = this.rotation;
       const startX = this.x;
       const startY = this.y;
-      
+
       const rotationDiff = targetRotation - startRotation;
-      const positionDiffX = (targetPosition.x - startX) * 0.7; 
+      const positionDiffX = (targetPosition.x - startX) * 0.7;
       const positionDiffY = (targetPosition.y - startY) * 0.7;
-      
-      const animationDuration = 300; 
+
+      const animationDuration = 300;
       const startTime = Date.now();
-      
+      let resolved = false;
+
       const animateDive = () => {
         const elapsed = Date.now() - startTime;
         const progress = Math.min(elapsed / animationDuration, 1);
         const easedProgress = this.easeOutCubic(progress);
-        
+
         this.rotation = startRotation + (rotationDiff * easedProgress);
         this.x = startX + (positionDiffX * easedProgress);
         this.y = startY + (positionDiffY * easedProgress);
-        
+
+        // Resolve a deflect position at mid-dive so ball deflects visually on keeper body
+        if (!resolved && progress >= 0.45) {
+          resolved = true;
+          // approximate hand world point
+          const tex = this.goalkeeperSprite.texture;
+          const texH = tex ? tex.height : (this.goalkeeperSprite.height || 100);
+          const texW = tex ? tex.width : (this.goalkeeperSprite.width || 100);
+          const anchorY = this.goalkeeperSprite.anchor.y || 0.8;
+          const topLocalY = -anchorY * texH;
+          const handLocalY = topLocalY + texH * 0.14;
+          const handLocalX = rotationDiff < 0 ? -texW * 0.12 : texW * 0.12;
+
+          const sX = this.scale?.x || 1;
+          const sY = this.scale?.y || sX;
+          const theta = this.rotation;
+          const rx = handLocalX * sX * Math.cos(theta) - handLocalY * sY * Math.sin(theta);
+          const ry = handLocalX * sX * Math.sin(theta) + handLocalY * sY * Math.cos(theta);
+          const handWorld = { x: this.x + rx, y: this.y + ry };
+
+          let deflectPos = this.getRandomDeflectPosition(avoidWorldPos);
+          if (avoidWorldPos) {
+            const dx = handWorld.x - avoidWorldPos.x;
+            const dy = handWorld.y - avoidWorldPos.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            deflectPos = {
+              x: handWorld.x + (dx / len) * 60,
+              y: handWorld.y + (dy / len) * 40
+            };
+          } else {
+            deflectPos = {
+              x: handWorld.x + (Math.random() < 0.5 ? -1 : 1) * 60,
+              y: handWorld.y + (Math.random() - 0.5) * 40
+            };
+          }
+
+          resolve(deflectPos);
+        }
+
         if (progress < 1) {
           requestAnimationFrame(animateDive);
         } else {
-            // When miss, return a random deflect position (not the actual ball snap)
-            const deflectPos = this.getRandomDeflectPosition();
-            this.fallToGround().then(() => {
-              resolve(deflectPos);
-            }).catch(() => { resolve(deflectPos); });
+          if (!resolved) {
+            const deflectPos = this.getRandomDeflectPosition(avoidWorldPos);
+            this.fallToGround().then(() => { resolve(deflectPos); }).catch(() => { resolve(deflectPos); });
+          } else {
+            setTimeout(() => { try { this.fallToGround(); } catch (e) {} }, 0);
+          }
         }
       };
-      
+
       animateDive();
     });
   }
