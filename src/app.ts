@@ -8,6 +8,7 @@ import BallCountDisplay from './UI/ballCountDisplay.js';
 import StartScreen from './UI/startScreen.js';
 import ReversedGoal from './UI-2/goal.js';
 import Ball2 from './UI-2/ball2.js';
+import Goalkeeper2 from './UI-2/goalkeeper2.js';
 import { GAME_CONFIG } from './constant/global.js';
 import { Layer, addToLayer } from './ControllUI/layers.js';
 
@@ -57,6 +58,11 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   ball2.visible = false;
   addToLayer(container, ball2, Layer.BALL);
 
+  // Goalkeeper2 for Other mode
+  const goalkeeper2 = new Goalkeeper2();
+  goalkeeper2.visible = false;
+  addToLayer(container, goalkeeper2, Layer.GOAL_FRONT);
+
   // Create Goalkeeper
   const goalkeeper = new Goalkeeper();
   goalkeeper.setGoal(goal); // Set goal reference for scale calculation
@@ -92,6 +98,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       // Hide reversed goal and other Other-mode visuals when playing
       try { reversedGoal.visible = false; } catch (e) {}
       try { ball2.visible = false; } catch (e) {}
+      try { goalkeeper2.visible = false; } catch (e) {}
       // Re-enable DOM reset button when entering Play mode
       try {
         const rb = document.getElementById('reset-btn') as HTMLButtonElement | null;
@@ -118,6 +125,10 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       try { addToLayer(container, ball2, Layer.BALL); } catch (e) {}
       try { (ball2 as any).refresh?.(); } catch (e) {}
       try { ball2.visible = true; } catch (e) {}
+      // Show Goalkeeper2 centered
+      try { addToLayer(container, goalkeeper2, Layer.GOAL_FRONT); } catch (e) {}
+      try { (goalkeeper2 as any).refresh?.(); } catch (e) {}
+      try { goalkeeper2.visible = true; } catch (e) {}
       // (do not remove reversed goal; keep it visible only in Other mode)
       // Remove reset button DOM and unregister keyboard handler
       try {

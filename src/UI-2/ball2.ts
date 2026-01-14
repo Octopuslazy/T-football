@@ -20,8 +20,8 @@ export default class Ball2 extends PIXI.Container {
   private resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.x = w / 2;
-    this.y = 1.17*h / 2;
+    this.x = w / 1.4;
+    this.y = 1.05*h / 2;
   }
 
   public refresh() {
