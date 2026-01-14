@@ -5,6 +5,9 @@ import Ground from './UI/ground.js';
 import Goalkeeper from './UI/goalkeeper.js';
 import ScoreDisplay from './UI/scoreDisplay.js';
 import BallCountDisplay from './UI/ballCountDisplay.js';
+import StartScreen from './UI/startScreen.js';
+import ReversedGoal from './UI-2/goal.js';
+import Ball2 from './UI-2/ball2.js';
 import { GAME_CONFIG } from './constant/global.js';
 import { Layer, addToLayer } from './ControllUI/layers.js';
 
@@ -25,7 +28,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
   // Load assets
   try {
-    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png']);
+    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update
@@ -43,6 +46,17 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   const goalFrontLayer = goal.getFrontLayer();
   addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
 
+  // Create reversed goal background (visual only)
+  const reversedGoal = new ReversedGoal();
+  // Start hidden; show when user selects Other mode
+  reversedGoal.visible = false;
+  addToLayer(container, reversedGoal, Layer.NET);
+
+  // Ball2 for Other mode (centered static ball)
+  const ball2 = new Ball2();
+  ball2.visible = false;
+  addToLayer(container, ball2, Layer.BALL);
+
   // Create Goalkeeper
   const goalkeeper = new Goalkeeper();
   goalkeeper.setGoal(goal); // Set goal reference for scale calculation
@@ -57,6 +71,66 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   addToLayer(container, ballCountDisplay, Layer.GOAL_FRONT);
   // Let ball count scale/position relative to goal
   try { ballCountDisplay.setGoal(goal); } catch (e) {}
+
+  // Show start screen to choose mode before spawning balls
+  let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  let startScreenVisible = true;
+  const startScreen = new StartScreen();
+  addToLayer(container, startScreen, Layer.BALL);
+  // Disable DOM reset button while start screen is visible
+  try {
+    const rb = document.getElementById('reset-btn') as HTMLButtonElement | null;
+    if (rb) rb.disabled = true;
+  } catch (e) {}
+  startScreen.onSelect = (mode: 'play' | 'other') => {
+    try { container.removeChild(startScreen); } catch (e) {}
+    startScreenVisible = false;
+    if (mode === 'play') {
+      // Begin normal gameplay
+      // Ensure ball count UI shows initial count
+      try { ballCountDisplay.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
+      // Hide reversed goal and other Other-mode visuals when playing
+      try { reversedGoal.visible = false; } catch (e) {}
+      try { ball2.visible = false; } catch (e) {}
+      // Re-enable DOM reset button when entering Play mode
+      try {
+        const rb = document.getElementById('reset-btn') as HTMLButtonElement | null;
+        if (rb) rb.disabled = false;
+      } catch (e) {}
+      // Ensure original ground/background is present for gameplay
+      try { addToLayer(container, ground, Layer.GROUND); } catch (e) {}
+      createNewBall();
+    } else {
+      // Other mode: keep only background; remove goal, net, and gameplay UI
+      try { removeAllBalls(); } catch (e) {}
+      try { container.removeChild(goalkeeper); } catch (e) {}
+      try { container.removeChild(scoreDisplay); } catch (e) {}
+      try { container.removeChild(ballCountDisplay); } catch (e) {}
+      try { container.removeChild(goalFrontLayer); } catch (e) {}
+      try { container.removeChild(goal); } catch (e) {}
+      // Remove original ground/background so only the new background remains
+      try { container.removeChild(ground); } catch (e) {}
+      // Show reversed goal for Other mode: re-add to layer, refresh layout
+      try { addToLayer(container, reversedGoal, Layer.NET); } catch (e) {}
+      try { (reversedGoal as any).refresh?.(); } catch (e) {}
+      try { reversedGoal.visible = true; } catch (e) {}
+      // Show Ball2 centered
+      try { addToLayer(container, ball2, Layer.BALL); } catch (e) {}
+      try { (ball2 as any).refresh?.(); } catch (e) {}
+      try { ball2.visible = true; } catch (e) {}
+      // (do not remove reversed goal; keep it visible only in Other mode)
+      // Remove reset button DOM and unregister keyboard handler
+      try {
+        const rb = document.getElementById('reset-btn');
+        if (rb) rb.remove();
+      } catch (e) {}
+      try {
+        if (keydownHandler) document.removeEventListener('keydown', keydownHandler as any);
+      } catch (e) {}
+      // Stop gameplay spawns
+      gameState.gameOver = true;
+    };
+  };
 
   // Game state management
   const gameState = {
@@ -252,13 +326,14 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     resetButton.addEventListener('click', resetBall);
   }
   
-  // Add keyboard event listener for Z key
-  document.addEventListener('keydown', (event) => {
-    if (event.key.toLowerCase() === 'z') {
+  // Add keyboard event listener for Z key (removable)
+  keydownHandler = (event: KeyboardEvent) => {
+    if (typeof startScreenVisible !== 'undefined' && startScreenVisible) return;
+    if ((event.key || '').toLowerCase() === 'z') {
       resetBall();
     }
-  });
+  };
+  document.addEventListener('keydown', keydownHandler as any);
   
-  // Create initial ball
-  createNewBall();
+  // Note: initial ball will be created when StartScreen selection triggers it
 })();
