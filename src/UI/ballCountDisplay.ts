@@ -42,7 +42,7 @@ export default class BallCountDisplay extends PIXI.Container {
 
     // scale base sizes by goal scale so icons remain proportional to goal
     const goalScale = (this._goal && this._goal.scale && typeof this._goal.scale.x === 'number') ? this._goal.scale.x : 1;
-    const padding = Math.max(4, Math.round(paddingBase * goalScale));
+    const padding = Math.max(5, Math.round(paddingBase * goalScale));
     const baseSize = Math.max(20, Math.round(baseSizeBase * goalScale));
 
     const totalBase = this._count * baseSize + (this._count - 1) * padding;

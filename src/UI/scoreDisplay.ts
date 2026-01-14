@@ -4,6 +4,7 @@ export default class ScoreDisplay extends PIXI.Container {
   private scoreText: PIXI.Text;
   private goalsScored: number = 0;
   private ballsUsed: number = 0;
+  private outs: number = 0;
   private goalkeepersaves: number = 0;
   private _onResize: () => void;
 
@@ -56,7 +57,7 @@ export default class ScoreDisplay extends PIXI.Container {
   
   // Get formatted score text
   private getScoreText(): string {
-    return `Goals: ${this.goalsScored} | Saves: ${this.goalkeepersaves} | Shots: ${this.ballsUsed}`;
+    return `Goals: ${this.goalsScored} | Saves: ${this.goalkeepersaves} | Outs: ${this.outs} | Shots: ${this.ballsUsed}`;
   }
   
   // Add a goal
@@ -78,12 +79,20 @@ export default class ScoreDisplay extends PIXI.Container {
     this.ballsUsed++;
     this.updateDisplay();
   }
+
+  // Add an outbound / insufficient power shot
+  public addOut() {
+    this.outs++;
+    this.ballsUsed++;
+    this.updateDisplay();
+  }
   
   // Reset all scores
   public reset() {
     this.goalsScored = 0;
     this.goalkeepersaves = 0;
     this.ballsUsed = 0;
+    this.outs = 0;
     this.updateDisplay();
   }
   
@@ -97,6 +106,7 @@ export default class ScoreDisplay extends PIXI.Container {
     return {
       goals: this.goalsScored,
       saves: this.goalkeepersaves,
+      outs: this.outs,
       shots: this.ballsUsed,
       accuracy: this.ballsUsed > 0 ? (this.goalsScored / this.ballsUsed * 100).toFixed(1) : '0.0'
     };

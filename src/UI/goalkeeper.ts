@@ -236,8 +236,8 @@ export default class Goalkeeper extends PIXI.Container {
       // Mong muốn: nếu hụt ở 2 thì thủ môn nên nhảy tới vị trí của 3; 6 -> 7; 10 -> 11
       // và ngược lại: 3 -> 2; 7 -> 6; 11 -> 10
       const missNeighborMap: { [key: number]: number } = {
-        2: 3, 6: 7, 10: 11,
-        3: 2, 7: 6, 11: 10
+        2: 4, 6: 8, 10: 12,
+        3: 1, 7: 5, 11: 9
       };
       if (missNeighborMap[zone.id]) {
         const neighborId = missNeighborMap[zone.id];

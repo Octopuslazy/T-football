@@ -16,6 +16,10 @@ export default class Ball extends PIXI.Container {
   private _moveDuration = 800; // ms, will scale with power/distance
   private _pathGraphics: PIXI.Graphics | null = null;
   private _isMoving = false;
+  private _pendingGoalZone: any = null;
+  private _finalGoalCounted: boolean = false;
+  private _pendingSave: boolean = false;
+  private _pendingSaveZone: any = null;
   private _baseScale = 1;
   private _isDragging = false;
   private _dragTime = 0; // Track drag duration for power
@@ -36,12 +40,14 @@ export default class Ball extends PIXI.Container {
   private _ballUsed = false; // Track if ball has been used (swiped once)
   private _firstCollisionHandled = false; // Track if first collision has been handled
   private _keeperCooldown = false; // Prevent repeated goalkeeper triggers after a deflection
+  private _wasOut = false; // mark if trajectory is outbound/low_power
   private onEnterFrame: () => void;
   private _onResize: () => void;
   private _goalScored = false;
   public onBallDestroyed?: () => void;
   public goalScoredCallback?: (zone: any) => void;
   public saveCallback?: () => void; // Callback for goalkeeper saves
+  public outCallback?: () => void; // Callback for outbound / insufficient power shots
   public gameState: { ballsRemaining: number; gameOver: boolean };
   public goal: any;
   public goalkeeper: any;  
@@ -113,12 +119,45 @@ export default class Ball extends PIXI.Container {
     keeperPos: { x: number; y: number },
     power = 2
   ) {
-    const dx = ballPos.x - keeperPos.x;
-    const dy = ballPos.y - keeperPos.y;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    // Basic deflection vector from keeper to ball
+    let dx = ballPos.x - keeperPos.x;
+    let dy = ballPos.y - keeperPos.y;
+    let len = Math.sqrt(dx * dx + dy * dy) || 1;
+    let vx = dx / len;
+    let vy = dy / len;
+
+    // If a goal object exists, bias deflection away from the goal center
+    // so a keeper touch is less likely to send the ball inward into the net.
+    try {
+      const goalArea = this.goal?.getGoalArea && this.goal.getGoalArea();
+      if (goalArea) {
+        const gx = goalArea.x + goalArea.width / 2;
+        const gy = goalArea.y + goalArea.height / 2;
+        const toGoalX = gx - keeperPos.x;
+        const toGoalY = gy - keeperPos.y;
+        const dot = vx * toGoalX + vy * toGoalY;
+        // If deflection is pointing toward the goal center (dot > 0), flip/adjust it
+        if (dot > 0) {
+          // Prefer vector away from goal center
+          let awayX = keeperPos.x - gx;
+          let awayY = keeperPos.y - gy;
+          const awayLen = Math.sqrt(awayX * awayX + awayY * awayY) || 1;
+          vx = awayX / awayLen;
+          vy = awayY / awayLen;
+          // add a small lateral random component to make deflections look natural
+          const lateral = (Math.random() - 0.5) * 0.6;
+          const latX = -vy * lateral;
+          const latY = vx * lateral;
+          vx += latX; vy += latY;
+          const vlen = Math.sqrt(vx * vx + vy * vy) || 1;
+          vx /= vlen; vy /= vlen;
+        }
+      }
+    } catch (e) {}
+
     return {
-      x: (dx / len) * 40 * power,
-      y: (dy / len) * 45 * power - 4
+      x: vx * 40 * power,
+      y: vy * 45 * power - 4
     };
   }
 
@@ -304,6 +343,7 @@ export default class Ball extends PIXI.Container {
           y: this.y + (dirY > 0 ? 0.5 : -0.5) * range
         };
         shouldSnap = false;
+        this._wasOut = true;
         break;
         
       case 'outbound_right':
@@ -313,6 +353,7 @@ export default class Ball extends PIXI.Container {
           y: this.y + (dirY > 0 ? 0.5 : -0.5) * range
         };
         shouldSnap = false;
+        this._wasOut = true;
         break;
         
       case 'above_crossbar':
@@ -323,6 +364,7 @@ export default class Ball extends PIXI.Container {
           y: this.y - range * 1.8 // Strong upward
         };
         shouldSnap = false;
+        this._wasOut = true;
         break;
         
       case 'low_power':
@@ -332,6 +374,7 @@ export default class Ball extends PIXI.Container {
           y: this.y + dirY * (range * 0.4)
         };
         shouldSnap = false;
+        this._wasOut = true;
         break;
         
       case 'normal':
@@ -639,6 +682,53 @@ export default class Ball extends PIXI.Container {
         }
         this._postGoalFinalY = null;
           this.updateShadow();
+        // Finalize pending goal if any: only count as goal if final resting pos is inside net
+        try {
+          if (this._pendingGoalZone && !this._finalGoalCounted) {
+            try {
+              if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
+                if (this.goalScoredCallback) this.goalScoredCallback(this._pendingGoalZone);
+                this._finalGoalCounted = true;
+              }
+            } catch (e) {}
+            this._pendingGoalZone = null;
+          }
+        } catch (e) {}
+        // Finalize pending save: if ball ended inside goal, treat as goal (do not count save).
+        try {
+          if (this._pendingSave) {
+            try {
+              if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
+                // Ball ended in net -> count as goal instead of save
+                if (!this._finalGoalCounted) {
+                  const zone = this.goal.getZoneFromPosition(this.x, this.y) || this._pendingSaveZone;
+                  if (zone && this.goalScoredCallback) this.goalScoredCallback(zone);
+                  this._finalGoalCounted = true;
+                }
+              } else {
+                // Ball did not end in net -> count as save
+                if (this.saveCallback) this.saveCallback();
+              }
+            } catch (e) {}
+            this._pendingSave = false;
+            this._pendingSaveZone = null;
+          }
+        } catch (e) {}
+        // Notify application that this ball's flight/settle has finished so it can schedule next ball.
+        // If this shot was outbound/low power, notify via outCallback before destroying
+        try {
+          if (this._wasOut && this.outCallback) {
+            try { this.outCallback(); } catch (e) {}
+          }
+        } catch (e) {}
+        // Always call onBallDestroyed after a short delay to allow visuals to settle
+        try {
+          if (this.onBallDestroyed) {
+            setTimeout(() => {
+              try { if (this.onBallDestroyed) this.onBallDestroyed(); } catch (e) {}
+            }, 800);
+          }
+        } catch (e) {}
       }
     }
   }
@@ -847,7 +937,11 @@ export default class Ball extends PIXI.Container {
           const catchPos = result.catchPos || { x: curveEnd.x, y: curveEnd.y };
           const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.7);
           this.setVelocity(def.x, def.y);
-          if (this.saveCallback) this.saveCallback();
+          // Clear outbound flag to avoid later double-counting as 'out'
+          this._wasOut = false;
+          // Defer save counting until we know final resting position; mark pending save
+          this._pendingSave = true;
+          this._pendingSaveZone = result.catchZone;
 
           // Prevent immediate re-triggering: set a short cooldown
           this._keeperCooldown = true;
@@ -947,9 +1041,40 @@ export default class Ball extends PIXI.Container {
         
         // Trigger ball destruction after bounce settles
         setTimeout(() => {
-          if (this.onBallDestroyed) {
-            this.onBallDestroyed();
-          }
+          // Finalize pending goal if any: only count as goal if final resting pos is inside net
+          try {
+            if (this._pendingGoalZone && !this._finalGoalCounted) {
+              try {
+                if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
+                  if (this.goalScoredCallback) this.goalScoredCallback(this._pendingGoalZone);
+                  this._finalGoalCounted = true;
+                }
+              } catch (e) {}
+              this._pendingGoalZone = null;
+            }
+          } catch (e) {}
+            // Finalize pending save similarly: convert to goal if ended in net, otherwise call save
+            try {
+              if (this._pendingSave) {
+                try {
+                  if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
+                    if (!this._finalGoalCounted) {
+                      const zone = this.goal.getZoneFromPosition(this.x, this.y) || this._pendingSaveZone;
+                      if (zone && this.goalScoredCallback) this.goalScoredCallback(zone);
+                      this._finalGoalCounted = true;
+                    }
+                  } else {
+                    if (this.saveCallback) this.saveCallback();
+                  }
+                } catch (e) {}
+                this._pendingSave = false;
+                this._pendingSaveZone = null;
+              }
+            } catch (e) {}
+
+            if (this.onBallDestroyed) {
+              this.onBallDestroyed();
+            }
         }, 1000);
         return;
       }
@@ -990,7 +1115,11 @@ export default class Ball extends PIXI.Container {
                 const catchPos = result.catchPos || { x: ballPosition.x, y: ballPosition.y };
                 const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.7);
                 this.setVelocity(def.x, def.y);
-                if (this.saveCallback) this.saveCallback();
+                // Prevent marking this later as an 'out'
+                this._wasOut = false;
+                  // Defer save counting until final resting position is known
+                  this._pendingSave = true;
+                  this._pendingSaveZone = result.catchZone;
 
                 // Prevent immediate re-triggering: set a short cooldown
                 this._keeperCooldown = true;
@@ -1000,20 +1129,18 @@ export default class Ball extends PIXI.Container {
                 }, 700);
               } else {
                 // Goalkeeper attempted but failed to catch
-                console.log(`🤾‍♂️ Goalkeeper dove but missed! Ball scored in zone ${zone.id}!`);
-                console.log('GOAL!');
-                if (zone && this.goalScoredCallback) {
-                  this.goalScoredCallback(zone);
-                }
+                console.log(`🤾‍♂️ Goalkeeper dove but missed! Pending final settle for zone ${zone.id}.`);
+                // Defer final scoring until ball settles; mark pending zone
+                this._pendingGoalZone = zone;
+                this._finalGoalCounted = false;
               }
           });
         } else {
-          // No goalkeeper - proceed with normal goal scoring
-          console.log('GOAL!');
-          this._goalScored = true;
-          if (zone && this.goalScoredCallback) {
-            this.goalScoredCallback(zone);
-          }
+          // No goalkeeper - defer scoring until final settle
+            console.log('No goalkeeper: pending final settle for goal.');
+            this._goalScored = true;
+            this._pendingGoalZone = zone;
+            this._finalGoalCounted = false;
         }
       }
     } else {
@@ -1091,12 +1218,11 @@ export default class Ball extends PIXI.Container {
     
     // If this zone represents a scoring area and we haven't scored yet
     if (!this._goalScored && zone) {
-      // Trigger goal scoring callback if available
-      if (this.goalScoredCallback) {
-        this.goalScoredCallback(zone);
-      }
+      // Defer final scoring until ball settles — mark pending zone
+      this._pendingGoalZone = zone;
+      this._finalGoalCounted = false;
       this._goalScored = true;
-      console.log('Goal scored through zone collision!');
+      console.log('Pending goal through zone collision (will finalize on settle).');
     }
   }
 

@@ -129,6 +129,13 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       // Schedule reset and next ball after delay
       scheduleNextBallIfNeeded();
     };
+
+    // Set callback for outbound/insufficient power shots
+    currentBall.outCallback = () => {
+      scoreDisplay.addOut();
+      // Schedule next ball now (match goal/save behavior) so spawn timing matches other outcomes
+      scheduleNextBallIfNeeded();
+    };
     
     addToLayer(container, currentBall, Layer.BALL);
 
@@ -217,7 +224,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
     const stats = scoreDisplay.getStats();
     popup.innerHTML = `<div style="text-align:center;"><h2 style=\"margin:0 0 12px 0;\">Game End</h2>
-      <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Shots: ${stats.shots}</p>
+      <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Outs: ${stats.outs}&nbsp; Shots: ${stats.shots}</p>
       <p style=\"margin:8px 0;\">Accuracy: ${stats.accuracy}%</p>
       <button id=\"game-end-restart\" style=\"margin-top:12px;padding:10px 18px;font-size:16px;border-radius:6px;\">Play Again</button>
     </div>`;
