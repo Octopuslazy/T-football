@@ -10,7 +10,7 @@ export default class Goalkeeper extends PIXI.Container {
   private _catchProbability: number = 0.8; // Tỉ lệ bắt bóng
   private _goal: any = null;
   private _lastActionTime: number = 0; // Biến lưu thời gian thực hiện hành động cuối
-  private _actionCooldown: number = 1500; // Thời gian hồi chiêu (ms) để tránh nhảy 2 lần
+  private _actionCooldown: number = 3000; // Thời gian hồi chiêu (ms) để tránh nhảy 2 lần
   
   constructor() {
     super();

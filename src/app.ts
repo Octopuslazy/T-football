@@ -4,6 +4,7 @@ import Ball from './UI/ball.js';
 import Ground from './UI/ground.js';
 import Goalkeeper from './UI/goalkeeper.js';
 import ScoreDisplay from './UI/scoreDisplay.js';
+import BallCountDisplay from './UI/ballCountDisplay.js';
 import { GAME_CONFIG } from './constant/global.js';
 import { Layer, addToLayer } from './ControllUI/layers.js';
 
@@ -51,6 +52,12 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   const scoreDisplay = new ScoreDisplay();
   addToLayer(container, scoreDisplay, Layer.GOAL_FRONT); // Top layer
 
+  // Create Ball Count Display
+  const ballCountDisplay = new BallCountDisplay();
+  addToLayer(container, ballCountDisplay, Layer.GOAL_FRONT);
+  // Let ball count scale/position relative to goal
+  try { ballCountDisplay.setGoal(goal); } catch (e) {}
+
   // Game state management
   const gameState = {
     ballsRemaining: GAME_CONFIG.MAX_BALLS,
@@ -62,6 +69,10 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     if (gameState.ballsRemaining <= 0) {
       gameState.gameOver = true;
     }
+    // Update ball count UI: show balls remaining excluding current ball in play
+    // If currentBall exists, visual remaining = gameState.ballsRemaining - 1
+    const visual = Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0));
+    try { ballCountDisplay.setCount(visual); } catch (e) {}
   }
 
   // Ball management
@@ -120,6 +131,10 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     };
     
     addToLayer(container, currentBall, Layer.BALL);
+
+    // Update visual ball count when a new ball is spawned
+    const visualNow = Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0));
+    try { ballCountDisplay.setCount(visualNow); } catch (e) {}
   }
   
   // Reset ball function
@@ -148,6 +163,10 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     // Create new ball
     createNewBall();
     console.log("Ball and goalkeeper reset!");
+
+    // Update ball count display when manual reset
+    const visual = Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0));
+    try { ballCountDisplay.setCount(visual); } catch (e) {}
   }
 
   function scheduleNextBallIfNeeded() {
@@ -213,6 +232,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         scoreDisplay.reset();
         gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS;
         gameState.gameOver = false;
+        // Update ball count display
+        try { ballCountDisplay.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
         createNewBall();
       });
     }
