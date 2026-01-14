@@ -66,6 +66,23 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
   // Ball management
   let currentBall: Ball | null = null;
+  let nextBallTimer: any = null;
+
+  function removeAllBalls() {
+    // Remove and destroy any Ball instances currently in the container
+    const toRemove: any[] = [];
+    container.children.forEach((c: any) => {
+      if (c instanceof Ball) toRemove.push(c);
+    });
+    toRemove.forEach((b) => {
+      try {
+        if (b.onBallDestroyed) b.onBallDestroyed = undefined;
+      } catch (e) {}
+      try { container.removeChild(b); } catch (e) {}
+      try { b.destroy(); } catch (e) {}
+      if (currentBall === b) currentBall = null;
+    });
+  }
   
   function createNewBall() {
     if (gameState.gameOver) {
@@ -77,31 +94,29 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     
     // Set callback for when ball is destroyed
     currentBall.onBallDestroyed = () => {
+      // If a ball is destroyed (out of play), schedule the next ball after respawn delay
       if (currentBall) {
         container.removeChild(currentBall);
         currentBall.destroy();
         currentBall = null;
-        
-        // Decrement ball count
-        decrementBalls();
-        
-        // Create new ball if game not over
-        if (!gameState.gameOver) {
-          createNewBall();
-        }
       }
+      scheduleNextBallIfNeeded();
     };
     
     // Set callback for when goal is scored with zone information
     currentBall.goalScoredCallback = (zone: any) => {
       console.log(`⚽ GOAL! Ball scored in zone ${zone.id}`);
       scoreDisplay.addGoal();
+      // Schedule reset and next ball after delay
+      scheduleNextBallIfNeeded();
       // You can add score tracking, visual effects, or other game logic here
     };
     
     // Set callback for when goalkeeper saves
     currentBall.saveCallback = () => {
       scoreDisplay.addSave();
+      // Schedule reset and next ball after delay
+      scheduleNextBallIfNeeded();
     };
     
     addToLayer(container, currentBall, Layer.BALL);
@@ -121,7 +136,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     goalkeeper.reset();
     
     // Reset score display
-    scoreDisplay.reset();
+    // Do not reset scores here; keep them for the turn
+    // scoreDisplay.reset();
     
     // Reset game state if needed
     gameState.gameOver = false;
@@ -132,6 +148,74 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     // Create new ball
     createNewBall();
     console.log("Ball and goalkeeper reset!");
+  }
+
+  function scheduleNextBallIfNeeded() {
+    if (gameState.gameOver) return;
+    if (nextBallTimer) return; // already scheduled
+
+    nextBallTimer = setTimeout(() => {
+      // After respawn delay, remove any existing balls then create the next one
+      removeAllBalls();
+      nextBallTimer = null;
+
+      // Decrement ball count for the completed attempt
+      decrementBalls();
+
+      // Reset goalkeeper (but keep scores)
+      goalkeeper.reset();
+
+      // If no balls remain, show game end popup
+      if (gameState.gameOver) {
+        showGameEndPopup();
+        return;
+      }
+
+      // Create next ball
+      createNewBall();
+    }, GAME_CONFIG.GOAL_RESPAWN_DELAY);
+  }
+
+  function showGameEndPopup() {
+    // Create simple DOM popup overlay
+    const existing = document.getElementById('game-end-popup');
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.id = 'game-end-popup';
+    popup.style.position = 'fixed';
+    popup.style.left = '50%';
+    popup.style.top = '50%';
+    popup.style.transform = 'translate(-50%, -50%)';
+    popup.style.padding = '48px';
+    popup.style.background = 'rgba(0,0,0,0.85)';
+    popup.style.color = 'white';
+    popup.style.fontSize = '20px';
+    popup.style.borderRadius = '12px';
+    popup.style.zIndex = '9999';
+    // Double the popup size visually
+    popup.style.transform = 'translate(-50%, -50%) scale(2)';
+
+    const stats = scoreDisplay.getStats();
+    popup.innerHTML = `<div style="text-align:center;"><h2 style=\"margin:0 0 12px 0;\">Game Over</h2>
+      <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Shots: ${stats.shots}</p>
+      <p style=\"margin:8px 0;\">Accuracy: ${stats.accuracy}%</p>
+      <button id=\"game-end-restart\" style=\"margin-top:12px;padding:10px 18px;font-size:16px;border-radius:6px;\">Play Again</button>
+    </div>`;
+
+    document.body.appendChild(popup);
+
+    const btn = document.getElementById('game-end-restart');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        popup.remove();
+        // Reset scores and state
+        scoreDisplay.reset();
+        gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS;
+        gameState.gameOver = false;
+        createNewBall();
+      });
+    }
   }
   
   // Add reset button event listener
