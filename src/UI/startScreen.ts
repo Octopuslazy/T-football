@@ -15,14 +15,14 @@ export default class StartScreen extends PIXI.Container {
     this.drawBackground();
     this.addChild(this.bg);
 
-    this.title = new PIXI.Text('Chọn chế độ chơi', {
+    this.title = new PIXI.Text('Play Mode', {
       fontFamily: 'Arial', fontSize: 36, fill: 0xffffff, fontWeight: 'bold'
     } as any);
     this.title.anchor.set(0.5, 0);
     this.addChild(this.title);
 
-    this.playBtn = this.createButton('Chơi', 0x2ecc71);
-    this.otherBtn = this.createButton('Chế độ khác', 0x3498db);
+    this.playBtn = this.createButton('Penalty Kick Mode', 0x2ecc71);
+    this.otherBtn = this.createButton('Goalkeeper Mode', 0x3498db);
 
     this.addChild(this.playBtn);
     this.addChild(this.otherBtn);
@@ -59,7 +59,7 @@ export default class StartScreen extends PIXI.Container {
     c.interactive = true;
     c.cursor = 'pointer';
     c.on('pointerdown', () => {
-      if (label === 'Chơi') this.onSelect?.('play'); else this.onSelect?.('other');
+      if (label === 'Penalty Kick Mode') this.onSelect?.('play'); else this.onSelect?.('other');
     });
     return c;
   }

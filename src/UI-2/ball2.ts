@@ -100,12 +100,12 @@ export default class Ball2 extends PIXI.Container {
         return;
       }
       // tween to target, then wait 2s, then tween back to home and finish
-      this._tweenTo(screen.x, screen.y, 1000, () => {
+      this._tweenTo(screen.x, screen.y, 700, () => {
         setTimeout(() => {
           this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot(), false);
-        }, 500);
+        }, 300);
       }, true);
-    }, 500);
+    }, 300);
   }
 
   private _finishShoot() {
