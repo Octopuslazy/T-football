@@ -7,6 +7,12 @@ export default class Ball2 extends PIXI.Container {
   private _isShooting: boolean = false;
   private _homeX: number = 0;
   private _homeY: number = 0;
+  private _homeScale: number = 1;
+  // optional reference to goalkeeper container (set by game code)
+  public keeper: PIXI.Container | null = null;
+  private _tweenCancelled: boolean = false;
+  private _hasDeflected: boolean = false;
+  private _collideScaleThreshold = 2.3; // scale multiplier to enable collision deflection
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
@@ -26,6 +32,7 @@ export default class Ball2 extends PIXI.Container {
     this.sprite.anchor.set(0.5);
     this.sprite.scale.set(0.1);
     this.addChild(this.sprite);
+    this._homeScale = this.sprite.scale.x;
 
     this._onResize = this.resize.bind(this);
     window.addEventListener('resize', this._onResize);
@@ -43,7 +50,7 @@ export default class Ball2 extends PIXI.Container {
     txt.anchor.set(0.5);
     btn.addChild(bg, txt);
     btn.interactive = true;
-    btn.buttonMode = true;
+    (btn as any).buttonMode = true;
     btn.on('pointerdown', () => this._onShootPress());
     this._button = btn;
     this.addChild(btn);
@@ -90,12 +97,12 @@ export default class Ball2 extends PIXI.Container {
         return;
       }
       // tween to target, then wait 2s, then tween back to home and finish
-      this._tweenTo(screen.x, screen.y, 220, () => {
+      this._tweenTo(screen.x, screen.y, 420, () => {
         setTimeout(() => {
-          this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot());
-        }, 2000);
-      });
-    }, 2000);
+          this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot(), false);
+        }, 500);
+      }, true);
+    }, 500);
   }
 
   private _finishShoot() {
@@ -123,16 +130,86 @@ export default class Ball2 extends PIXI.Container {
     } catch (e) { return null; }
   }
 
-  private _tweenTo(destX: number, destY: number, duration: number, cb?: () => void) {
+  private _tweenTo(destX: number, destY: number, duration: number, cb?: () => void, scaleUp?: boolean) {
+    // Quadratic Bezier arc from current (start) to dest with a single control point.
     const startX = this.x;
     const startY = this.y;
+    // midpoint
+    const midX = (startX + destX) / 2;
+    const midY = (startY + destY) / 2;
+    // perpendicular vector from start->dest
+    const dx = destX - startX;
+    const dy = destY - startY;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = -dy / len; // normalized perp x
+    const ny = dx / len;  // normalized perp y
+    // arc magnitude proportional to distance, clamped
+    const arcMag = Math.min(250, Math.max(40, len * 0.25));
+    // bias upward (smaller y) a bit so arc looks natural
+    const controlX = midX + nx * arcMag;
+    const controlY = midY + ny * arcMag - Math.abs(len) * 0.02;
+
+    this._tweenCancelled = false;
     const start = performance.now();
+    const startScale = (this.sprite && this.sprite.scale) ? this.sprite.scale.x : 1;
+    const targetScale = (typeof scaleUp === 'boolean') ? (scaleUp ? this._homeScale * 2.3 : this._homeScale) : startScale;
     const animate = (now: number) => {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-      this.x = startX + (destX - startX) * eased;
-      this.y = startY + (destY - startY) * eased;
-      if (t < 1) requestAnimationFrame(animate);
+      if (this._tweenCancelled) return;
+      const tRaw = Math.min(1, (now - start) / duration);
+      const t = tRaw < 0.5 ? 2 * tRaw * tRaw : -1 + (4 - 2 * tRaw) * tRaw; // ease
+      // Quadratic Bézier interpolation
+      const u = 1 - t;
+      const u2 = u * u;
+      const t2 = t * t;
+      const twoUt = 2 * u * t;
+      const px = u2 * startX + twoUt * controlX + t2 * destX;
+      const py = u2 * startY + twoUt * controlY + t2 * destY;
+      this.x = px;
+      this.y = py;
+
+      // scale interpolation
+      try {
+        const s = startScale + (targetScale - startScale) * t;
+        if (this.sprite && this.sprite.scale) this.sprite.scale.set(s, s);
+      } catch (e) {}
+
+      // collision detection: if keeper provided and ball is scaled beyond threshold
+      try {
+        if (!this._hasDeflected && this.keeper && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
+          const ballB = this.getBounds();
+          const keeperB = (this.keeper as any).getBounds();
+          const overlap = ballB.x < keeperB.x + keeperB.width && ballB.x + ballB.width > keeperB.x &&
+                          ballB.y < keeperB.y + keeperB.height && ballB.y + ballB.height > keeperB.y;
+          if (overlap) {
+            // cancel the current tween and perform a deflection away from keeper center
+            this._tweenCancelled = true;
+            this._hasDeflected = true;
+            const kcx = keeperB.x + keeperB.width / 2;
+            const kcy = keeperB.y + keeperB.height / 2;
+            const vx = this.x - kcx;
+            const vy = this.y - kcy;
+            const vlen = Math.sqrt(vx * vx + vy * vy) || 1;
+            const nxv = vx / vlen;
+            const nyv = vy / vlen;
+            // deflect distance and duration
+            const deflectDist = Math.max(160, vlen * 1.2);
+            const deflectTargetX = this.x + nxv * deflectDist;
+            const deflectTargetY = this.y + nyv * deflectDist;
+            // short deflect tween, then return home
+            this._tweenTo(deflectTargetX, deflectTargetY, 300, () => {
+              this._tweenTo(this._homeX, this._homeY, 400, () => {
+                // reset scale and flags
+                try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(this._homeScale, this._homeScale); } catch(e){}
+                this._hasDeflected = false;
+                if (cb) cb();
+              }, false);
+            }, false);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      if (tRaw < 1) requestAnimationFrame(animate);
       else if (cb) cb();
     };
     requestAnimationFrame(animate);

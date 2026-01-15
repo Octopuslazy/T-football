@@ -56,7 +56,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   // Ball2 for Other mode (centered static ball)
   const ball2 = new Ball2();
   ball2.visible = false;
-  addToLayer(container, ball2, Layer.BALL);
+  // place Ball2 under the goalkeeper (NET layer) so it's not drawn on top of the keeper
+  addToLayer(container, ball2, Layer.NET);
 
   // Goalkeeper2 for Other mode
   const goalkeeper2 = new Goalkeeper2();
@@ -121,8 +122,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       try { addToLayer(container, reversedGoal, Layer.NET); } catch (e) {}
       try { (reversedGoal as any).refresh?.(); } catch (e) {}
       try { reversedGoal.visible = true; } catch (e) {}
-      // Show Ball2 centered
-      try { addToLayer(container, ball2, Layer.BALL); } catch (e) {}
+      // Show Ball2 centered (ensure it's beneath goalkeeper)
+      try { addToLayer(container, ball2, Layer.NET); } catch (e) {}
       try { (ball2 as any).refresh?.(); } catch (e) {}
       try { ball2.visible = true; } catch (e) {}
       // Show Goalkeeper2 centered
