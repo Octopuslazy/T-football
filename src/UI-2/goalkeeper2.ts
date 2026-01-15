@@ -14,12 +14,13 @@ export default class Goalkeeper2 extends PIXI.Container {
   private _startPos: { x: number; y: number } = { x: 0, y: 0 };
 
   private _targets = [
-    { x: 0.18, y: 0.62 }, // bottom-left
-    { x: 0.82, y: 0.62 }, // bottom-right
-    { x: 0.18, y: 0.48 }, // mid-left
-    { x: 0.82, y: 0.48 }, // mid-right
-    { x: 0.18, y: 0.32 }, // upper-left
-    { x: 0.82, y: 0.32 }, // upper-right
+    { x: 0.18, y: 0.62 }, // bottom-left (1)
+    { x: 0.82, y: 0.62 }, // bottom-right (7)
+    { x: 0.18, y: 0.48 }, // mid-left (2)
+    { x: 0.82, y: 0.48 }, // mid-right (6)
+    { x: 0.18, y: 0.32 }, // upper-left (3)
+    { x: 0.5, y: 0.32 },  // upper-center (4) - jump only, no rotation
+    { x: 0.82, y: 0.32 }, // upper-right (5)
   ];
 
   constructor() {
@@ -103,6 +104,8 @@ export default class Goalkeeper2 extends PIXI.Container {
     // choose a target based on swipe direction / power
     const target = this._nearestTargetForSwipe(dx, dy) || this._nearestTargetToPoint(endPos.x, endPos.y);
     if (!target) return;
+    // compute target rotation (radians) based on normalized target position
+    const targetRot = this._rotationForNormalizedTarget(target);
 
     this._isAnimating = true;
     const toDuration = Math.max(240, Math.min(700, 300 + (100 - powerPercent) * 3));
@@ -117,7 +120,53 @@ export default class Goalkeeper2 extends PIXI.Container {
           this._isAnimating = false;
         }, 0);
       }, GAME_CONFIG.GOAL_RESPAWN_DELAY_2 || 800);
-    });
+    }, targetRot);
+  }
+
+  // determine rotation (radians) for a normalized target {x:0..1,y:0..1}
+  private _rotationForNormalizedTarget(t: { x: number; y: number }) {
+    // The `t` passed in may be screen/world coords (pixels) or normalized (0..1).
+    // Convert to normalized goal-relative coordinates when needed.
+    let nx = t.x;
+    let ny = t.y;
+    try {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const tex = PIXI.Texture.from('./arts/goal2.png');
+      if (tex && tex.width && tex.height) {
+        const sx = w / tex.width;
+        const sy = h / tex.height;
+        const s = Math.max(sx, sy);
+        const imgW = tex.width * s;
+        const imgH = tex.height * s;
+        const imgLeft = w / 2 - imgW / 2;
+        const imgTop = h / 2 - imgH / 2;
+        // if coordinates look like pixels (greater than 1), convert
+        if (t.x > 1 || t.y > 1) {
+          nx = (t.x - imgLeft) / imgW;
+          ny = (t.y - imgTop) / imgH;
+        }
+      } else {
+        // fallback: if values >1 treat them as pixels relative to window
+        if (t.x > 1 || t.y > 1) {
+          nx = t.x / window.innerWidth;
+          ny = t.y / window.innerHeight;
+        }
+      }
+    } catch (e) {
+      // ignore and assume provided coords are normalized
+    }
+
+    // center-ish target -> no rotation (jump only)
+    if (Math.abs(nx - 0.5) < 0.06) return 0;
+    // sign: left negative, right positive (mirror) — inverted per request
+    const sign = nx < 0.5 ? -1 : 1;
+    // decide magnitude by vertical zone (bottom, mid, top)
+    let deg = 35;
+    if (ny >= 0.57) deg = 90; // bottom
+    else if (ny >= 0.44) deg = 35; // mid
+    else deg = 55; // top
+    return sign * deg * Math.PI / 180;
   }
 
   // compute head world position for a given container position and rotation
@@ -241,7 +290,11 @@ export default class Goalkeeper2 extends PIXI.Container {
 
     const start = performance.now();
     // target tilt angle for the sprite (radians) - lean toward movement direction
-    const targetAngle = (typeof finalRotation === 'number') ? finalRotation : -Math.atan2(dy, dx) * 0.6;
+    // Use the head vector (startHead -> destHead) so rotation matches the visual motion
+    const headDx = destHeadX - startHeadX;
+    const headDy = destHeadY - startHeadY;
+    const headAngle = Math.atan2(headDy, headDx);
+    const targetAngle = (typeof finalRotation === 'number') ? finalRotation : headAngle * 0.6;
 
     const animate = (now: number) => {
       const t = Math.min(1, (now - start) / durationMs);
