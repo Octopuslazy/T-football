@@ -8,11 +8,12 @@ export default class Ball2 extends PIXI.Container {
   private _homeX: number = 0;
   private _homeY: number = 0;
   private _homeScale: number = 1;
+  private _currentTargetIndex: number | null = null;
   // optional reference to goalkeeper container (set by game code)
   public keeper: PIXI.Container | null = null;
   private _tweenCancelled: boolean = false;
   private _hasDeflected: boolean = false;
-  private _collideScaleThreshold = 2.3; // scale multiplier to enable collision deflection
+  private _collideScaleThreshold = 2.3; // scale multiplier to enable collision deflection (exact match required)
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
@@ -90,14 +91,16 @@ export default class Ball2 extends PIXI.Container {
   public shoot() {
     // delay 2s then snap
     setTimeout(() => {
-      const t = this._targets[Math.floor(Math.random() * this._targets.length)];
+      const idx = Math.floor(Math.random() * this._targets.length);
+      this._currentTargetIndex = idx;
+      const t = this._targets[idx];
       const screen = this._normalizedToScreen(t.x, t.y);
       if (!screen) {
         this._finishShoot();
         return;
       }
       // tween to target, then wait 2s, then tween back to home and finish
-      this._tweenTo(screen.x, screen.y, 420, () => {
+      this._tweenTo(screen.x, screen.y, 1000, () => {
         setTimeout(() => {
           this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot(), false);
         }, 500);
@@ -108,6 +111,7 @@ export default class Ball2 extends PIXI.Container {
   private _finishShoot() {
     this._isShooting = false;
     if (this._button) this._button.alpha = 1;
+    this._currentTargetIndex = null;
   }
 
   // convert normalized goal coordinates (0..1) into screen coordinates using goal2.png placement
@@ -175,12 +179,22 @@ export default class Ball2 extends PIXI.Container {
 
       // collision detection: if keeper provided and ball is scaled beyond threshold
       try {
-        if (!this._hasDeflected && this.keeper && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
+        const keeperObj = this.keeper as any;
+        if (!this._hasDeflected && keeperObj && keeperObj.isAnimating && this._currentTargetIndex != null && keeperObj.currentTargetIndex != null && keeperObj.currentTargetIndex === this._currentTargetIndex && (this.sprite.scale.x === this._homeScale * this._collideScaleThreshold)) {
           const ballB = this.getBounds();
-          const keeperB = (this.keeper as any).getBounds();
+          const keeperB = keeperObj.getBounds();
           const overlap = ballB.x < keeperB.x + keeperB.width && ballB.x + ballB.width > keeperB.x &&
                           ballB.y < keeperB.y + keeperB.height && ballB.y + ballB.height > keeperB.y;
           if (overlap) {
+            console.log('Ball2 collision: overlap detected', {
+              ballScale: this.sprite?.scale?.x,
+              homeScale: this._homeScale,
+              scaleThreshold: this._homeScale * this._collideScaleThreshold,
+              ballPos: { x: this.x, y: this.y },
+              keeperBounds: keeperB,
+              ballBounds: ballB,
+              keeperAnimating: !!keeperObj.isAnimating,
+            });
             // cancel the current tween and perform a deflection away from keeper center
             this._tweenCancelled = true;
             this._hasDeflected = true;
@@ -201,6 +215,7 @@ export default class Ball2 extends PIXI.Container {
                 // reset scale and flags
                 try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(this._homeScale, this._homeScale); } catch(e){}
                 this._hasDeflected = false;
+                this._currentTargetIndex = null;
                 if (cb) cb();
               }, false);
             }, false);

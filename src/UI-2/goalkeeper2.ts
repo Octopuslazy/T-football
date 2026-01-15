@@ -9,6 +9,7 @@ export default class Goalkeeper2 extends PIXI.Container {
   private _isAnimating: boolean = false;
   private _homeX: number = 0;
   private _homeY: number = 0;
+  private _currentTargetIndex: number | null = null;
   private _isDragging: boolean = false;
   private _dragTime: number = 0;
   private _startPos: { x: number; y: number } = { x: 0, y: 0 };
@@ -44,13 +45,23 @@ export default class Goalkeeper2 extends PIXI.Container {
     this.resize();
   }
 
+  // expose whether goalkeeper is currently performing an animation (catching)
+  public get isAnimating(): boolean {
+    return this._isAnimating;
+  }
+
+  // expose which normalized target index the keeper moved to (or null)
+  public get currentTargetIndex(): number | null {
+    return this._currentTargetIndex;
+  }
+
   private resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
 
     // place horizontally centered, vertically around 66% down the screen
     this.x = w / 2;
-    this.y = h * 0.72;
+    this.y = h * 0.75;
 
     // store home position
     this._homeX = this.x;
@@ -60,10 +71,10 @@ export default class Goalkeeper2 extends PIXI.Container {
     const desiredWidth = Math.max(120, Math.round(w * 0.22));
     const tex = this.sprite.texture;
     if (tex && tex.width) {
-      const s = 1.3*desiredWidth / tex.width;
+      const s = 1*desiredWidth / tex.width;
       this.sprite.scale.set(s, s);
     } else {
-      this.sprite.scale.set(0.7, 0.7);
+      this.sprite.scale.set(0.5, 0.5);
     }
   }
 
@@ -104,6 +115,11 @@ export default class Goalkeeper2 extends PIXI.Container {
     // choose a target based on swipe direction / power
     const target = this._nearestTargetForSwipe(dx, dy) || this._nearestTargetToPoint(endPos.x, endPos.y);
     if (!target) return;
+    // record which target index we moved to (if any)
+    try {
+      const idx = this._indexForScreenTarget(target.x, target.y);
+      this._currentTargetIndex = (typeof idx === 'number') ? idx : null;
+    } catch (e) { this._currentTargetIndex = null; }
     // compute target rotation (radians) based on normalized target position
     const targetRot = this._rotationForNormalizedTarget(target);
 
@@ -121,8 +137,40 @@ export default class Goalkeeper2 extends PIXI.Container {
         this.x = this._homeX;
         this.y = this._homeY;
         this._isAnimating = false;
-      }, 1000);
+        this._currentTargetIndex = null;
+      }, 400);
     }, targetRot);
+  }
+
+  // find the index of the nearest normalized target for a screen coord
+  private _indexForScreenTarget(screenX: number, screenY: number): number | null {
+    try {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const tex = PIXI.Texture.from('./arts/goal2.png');
+      if (!tex || !tex.width || !tex.height) return null;
+      const sx = w / tex.width;
+      const sy = h / tex.height;
+      const s = Math.max(sx, sy);
+      const imgW = tex.width * s;
+      const imgH = tex.height * s;
+      const imgLeft = w / 2 - imgW / 2;
+      const imgTop = h / 2 - imgH / 2;
+
+      let bestIdx: number | null = null;
+      let bestDist = Infinity;
+      for (let i = 0; i < this._targets.length; i++) {
+        const t = this._targets[i];
+        const tx = imgLeft + t.x * imgW;
+        const ty = imgTop + t.y * imgH;
+        const dx = tx - screenX;
+        const dy = ty - screenY;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      if (bestDist > Math.max(80, Math.min(w, h) * 0.12)) return null;
+      return bestIdx;
+    } catch (e) { return null; }
   }
 
   // determine rotation (radians) for a normalized target {x:0..1,y:0..1}

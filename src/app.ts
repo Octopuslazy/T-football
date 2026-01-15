@@ -63,6 +63,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   const goalkeeper2 = new Goalkeeper2();
   goalkeeper2.visible = false;
   addToLayer(container, goalkeeper2, Layer.GOAL_FRONT);
+    // link ball2 to goalkeeper2 for collision checks
+    try { (ball2 as any).keeper = goalkeeper2; } catch (e) {}
 
   // Create Goalkeeper
   const goalkeeper = new Goalkeeper();
@@ -126,6 +128,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       try { addToLayer(container, ball2, Layer.NET); } catch (e) {}
       try { (ball2 as any).refresh?.(); } catch (e) {}
       try { ball2.visible = true; } catch (e) {}
+        try { (ball2 as any).keeper = goalkeeper2; } catch (e) {}
       // Show Goalkeeper2 centered
       try { addToLayer(container, goalkeeper2, Layer.GOAL_FRONT); } catch (e) {}
       try { (goalkeeper2 as any).refresh?.(); } catch (e) {}

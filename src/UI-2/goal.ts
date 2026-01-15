@@ -63,7 +63,8 @@ export default class GoalBackground extends PIXI.Container {
         const stroke = Math.max(6, Math.round(Math.min(w, h) * 0.009));
         for (const r of rects) {
           const rx = imgLeft + r.x * imgW;
-          const ry = imgTop + r.y * imgH;
+            const ry = imgTop + r.y * imgH;
+            this.guides.alpha = 0;
           const rw = r.w * imgW;
           const rh = r.h * imgH;
           // Draw semi-transparent filled rectangle with red border
