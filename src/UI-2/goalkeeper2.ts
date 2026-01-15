@@ -111,15 +111,17 @@ export default class Goalkeeper2 extends PIXI.Container {
     const toDuration = Math.max(240, Math.min(700, 300 + (100 - powerPercent) * 3));
     const returnDuration = Math.max(300, 400 - Math.round(powerPercent * 1.2));
 
+    // switch to catch animation texture while moving to the target
+    try { this.sprite.texture = PIXI.Texture.from('./arts/gkeeper2.png'); } catch (e) {}
     this.animateTo(target.x, target.y, toDuration, () => {
+      // wait 1s so catch pose is visible, then reset keeper to home
       setTimeout(() => {
-        const homeHead = this._getHeadWorldPos(this._homeX, this._homeY, 0);
-        this.animateTo(homeHead.x, homeHead.y, returnDuration, () => {
-          // reset sprite rotation smoothly
-          if (this.sprite) this.sprite.rotation = 0;
-          this._isAnimating = false;
-        }, 0);
-      }, GAME_CONFIG.GOAL_RESPAWN_DELAY_2 || 800);
+        try { this.sprite.texture = PIXI.Texture.from('./arts/gkeeper.png'); } catch (e) {}
+        if (this.sprite) this.sprite.rotation = 0;
+        this.x = this._homeX;
+        this.y = this._homeY;
+        this._isAnimating = false;
+      }, 1000);
     }, targetRot);
   }
 
@@ -165,7 +167,7 @@ export default class Goalkeeper2 extends PIXI.Container {
     let deg = 35;
     if (ny >= 0.57) deg = 90; // bottom
     else if (ny >= 0.44) deg = 35; // mid
-    else deg = 55; // top
+    else deg = 50; // top
     return sign * deg * Math.PI / 180;
   }
 
