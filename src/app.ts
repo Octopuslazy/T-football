@@ -10,6 +10,7 @@ import StartScreen from './UI/startScreen.js';
 import ReversedGoal from './UI-2/goal.js';
 import Ball2 from './UI-2/ball2.js';
 import Goalkeeper2 from './UI-2/goalkeeper2.js';
+import ScoreDisplay2 from './UI-2/scoreDisplay2.js';
 import { GAME_CONFIG } from './constant/global.js';
 import { Layer, addToLayer } from './ControllUI/layers.js';
 
@@ -45,6 +46,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   let goalkeeper2: Goalkeeper2 | null = null;
   let goalkeeper: Goalkeeper | null = null;
   let scoreDisplay: ScoreDisplay | null = null;
+  let scoreDisplay2: ScoreDisplay2 | null = null;
   let ballCountDisplay: BallCountDisplay | null = null;
 
   // Show start screen to choose mode before spawning balls
@@ -166,6 +168,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       try { if (reversedGoal) reversedGoal.visible = false; } catch (e) {}
       try { if (ball2) ball2.visible = false; } catch (e) {}
       try { if (goalkeeper2) goalkeeper2.visible = false; } catch (e) {}
+      try { if (scoreDisplay2) scoreDisplay2.visible = false; } catch (e) {}
 
       // Re-enable DOM reset button when entering Play mode
       try {
@@ -216,6 +219,20 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         addToLayer(container, goalkeeper2, Layer.GOAL_FRONT);
         (goalkeeper2 as any).refresh?.();
         goalkeeper2.visible = true;
+        // create and show ScoreDisplay2 for goalkeeper mode
+        try {
+          if (!scoreDisplay2) {
+            scoreDisplay2 = new ScoreDisplay2();
+            addToLayer(container, scoreDisplay2, Layer.GOAL_FRONT);
+          } else if (!container.children.includes(scoreDisplay2)) {
+            addToLayer(container, scoreDisplay2, Layer.GOAL_FRONT);
+          }
+          // keep score display hidden until zoom+pivot finishes for cinematic effect
+          scoreDisplay2.visible = false;
+          // Wire ball2 callbacks to update keeper scores
+          try { (ball2 as any).onGoal = () => { try { scoreDisplay2?.addGoal(); } catch (e) {} }; } catch (e) {}
+          try { (ball2 as any).onSave = () => { try { scoreDisplay2?.addSave(); } catch (e) {} }; } catch (e) {}
+        } catch (e) {}
       } catch (e) {}
 
       // Ensure Home button exists and enabled now that start screen is gone
@@ -295,6 +312,23 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
                                   followTicker = tickerFn;
                                   // Re-enable Home button now that zoom+follow setup finished
                                   try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = false; hb.style.display = startScreenVisible ? 'none' : 'block'; } } catch (e) {}
+                                  // Show score display now that zoom+pivot finished
+                                  try {
+                                    if (!scoreDisplay2) {
+                                      scoreDisplay2 = new ScoreDisplay2();
+                                      addToLayer(container, scoreDisplay2, Layer.GOAL_FRONT);
+                                    } else if (!container.children.includes(scoreDisplay2)) {
+                                      addToLayer(container, scoreDisplay2, Layer.GOAL_FRONT);
+                                    }
+                                    // place the score display in world coords near the goalkeeper
+                                    try {
+                                      scoreDisplay2.visible = true;
+                                      if (goalkeeper2 && scoreDisplay2) {
+                                        try { scoreDisplay2.x = (goalkeeper2 as any).x*0.63 ; } catch (e) {}
+                                        try { scoreDisplay2.y = (goalkeeper2 as any).y*0.395 ; } catch (e) {}
+                                      }
+                                    } catch (e) {}
+                                  } catch (e) {}
                                   // remove input blocker and unlock input
                                   try {
                                     if (inputBlocker) { try { container.removeChild(inputBlocker); } catch (e) {} ; try { inputBlocker.destroy(); } catch (e) {} inputBlocker = null; }

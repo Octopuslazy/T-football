@@ -46,6 +46,9 @@ export default class Ball2 extends PIXI.Container {
 
   // Called by external controller to know when a full shot sequence finished
   public onShotComplete?: () => void;
+  // Keeper-mode callbacks
+  public onGoal?: () => void;
+  public onSave?: () => void;
 
   private _createButton() {
     const btn = new PIXI.Container();
@@ -116,6 +119,7 @@ export default class Ball2 extends PIXI.Container {
         } else {
           // Goal scored: fall to the goal frame bottom (ground) with physics-like motion
           this._fallToGoalGround(screen.x, screen.y, () => {
+            try { if (typeof this.onGoal === 'function') this.onGoal(); } catch (e) {}
             this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false);
           });
         }
@@ -235,6 +239,7 @@ export default class Ball2 extends PIXI.Container {
                 try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(this._homeScale, this._homeScale); } catch(e){}
                 this._hasDeflected = false;
                 this._currentTargetIndex = null;
+                try { if (typeof this.onSave === 'function') this.onSave(); } catch (e) {}
                 if (cb) cb();
               }, false);
             }, false);
