@@ -54,6 +54,44 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   let inputBlocker: PIXI.Graphics | null = null;
   let inputLocked = false;
   const startScreen = new StartScreen();
+   let shotTimeoutId: any = null;
+  
+
+  // Keeper auto-shoot helpers
+  function stopKeeperAutoShoot() {
+    try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
+    try { if (ball2) (ball2 as any).onShotComplete = undefined; } catch (e) {}
+  }
+
+  function startKeeperAutoShoot() {
+    stopKeeperAutoShoot();
+    try {
+      if (!ball2 || !goalkeeper2) return;
+      let shotCount = 0;
+      const maxShots = 5;
+
+      const scheduleNext = () => {
+        try {
+          if (shotCount >= maxShots) {
+            // when finished, show keeper-specific results popup after a short delay
+            shotTimeoutId = setTimeout(() => {
+              try { showKeeperEndPopup(); } catch (e) {}
+              shotTimeoutId = null;
+            }, 800);
+            return;
+          }
+          try { (ball2 as any).refresh?.(); } catch (e) {}
+          shotCount++;
+          try { (ball2 as any).shoot?.(); } catch (e) {}
+        } catch (e) {}
+      };
+
+      try { (ball2 as any).onShotComplete = () => { shotTimeoutId = setTimeout(() => scheduleNext(), 1000); }; } catch (e) {}
+      scheduleNext();
+    } catch (e) {}
+  }
+
+  
   addToLayer(container, startScreen, Layer.BALL);
   // Disable DOM reset button while start screen is visible
   try {
@@ -61,28 +99,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     if (rb) rb.disabled = true;
   } catch (e) {}
 
-      // Setup auto-shoot chain for goalkeeper mode: up to 5 shots with 1s pause after animation completes
-      try {
-        if (ball2 && goalkeeper2) {
-          let shotCount = 0;
-          const maxShots = 5;
-
-          const scheduleNext = () => {
-            if (shotCount >= maxShots) return;
-            // ensure ball ready and reset
-            try { (ball2 as any).refresh?.(); } catch (e) {}
-            try { (ball2 as any).sprite && ((ball2 as any).sprite.scale.set((ball2 as any)._homeScale || 0.1)); } catch (e) {}
-            shotCount++;
-            try { (ball2 as any).shoot?.(); } catch (e) {}
-          };
-
-          // when ball completes a shot, wait 1s then schedule next
-          try { (ball2 as any).onShotComplete = () => { setTimeout(() => scheduleNext(), 1000); }; } catch (e) {}
-
-          // start immediately
-          scheduleNext();
-        }
-      } catch (e) {}
+      
   startScreen.onSelect = (mode: 'play' | 'other') => {
     try { container.removeChild(startScreen); } catch (e) {}
     startScreenVisible = false;
@@ -283,6 +300,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
                                     if (inputBlocker) { try { container.removeChild(inputBlocker); } catch (e) {} ; try { inputBlocker.destroy(); } catch (e) {} inputBlocker = null; }
                                   } catch (e) {}
                                   try { inputLocked = false; } catch (e) {}
+                                  // Start keeper auto-shoot chain now that zoom+follow began
+                                  try { startKeeperAutoShoot(); } catch (e) {}
                     } catch (e) {}
                   }
                 };
@@ -340,9 +359,13 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     try { container.scale.set(1, 1); } catch (e) {}
     try { container.pivot.set(0, 0); } catch (e) {}
     try { container.position.set(0, 0); } catch (e) {}
+    try { stopKeeperAutoShoot(); } catch (e) {}
     // Hide home and reset while on start screen
     try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = true; hb.style.display = 'none'; } } catch (e) {}
     try { const rb = document.getElementById('reset-btn') as HTMLButtonElement | null; if (rb) rb.disabled = true; } catch (e) {}
+    // Clear any pending shot scheduling timeouts
+    try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
+    
   }
 
   function ensureHomeButton() {
@@ -559,6 +582,55 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         // Update ball count display
         try { ballCountDisplay?.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
         createNewBall();
+      });
+    }
+  }
+
+  function showKeeperEndPopup() {
+    try { stopKeeperAutoShoot(); } catch (e) {}
+    const existing = document.getElementById('keeper-end-popup');
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.id = 'keeper-end-popup';
+    popup.style.position = 'fixed';
+    popup.style.left = '50%';
+    popup.style.top = '50%';
+    popup.style.transform = 'translate(-50%, -50%)';
+    popup.style.padding = '36px';
+    popup.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.95), rgba(240,240,255,0.95))';
+    popup.style.color = '#222';
+    popup.style.fontSize = '18px';
+    popup.style.borderRadius = '12px';
+    popup.style.zIndex = '10002';
+    popup.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35)';
+
+    const stats = scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0, outs: 0, shots: 0, accuracy: 0 };
+    popup.innerHTML = `<div style="text-align:center;min-width:260px;">
+      <h2 style="margin:0 0 8px 0;">Keeper Mode</h2>
+      <p style="margin:6px 0;">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Outs: ${stats.outs}</p>
+      <p style="margin:6px 0;">Shots: ${stats.shots} &nbsp; Accuracy: ${stats.accuracy}%</p>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;">
+        <button id="keeper-playagain" style="padding:8px 14px;border-radius:6px;font-size:16px;">Play Again</button>
+        <button id="keeper-home" style="padding:8px 14px;border-radius:6px;font-size:16px;">Home</button>
+      </div>
+    </div>`;
+
+    document.body.appendChild(popup);
+
+    const btn = document.getElementById('keeper-playagain');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        try { popup.remove(); } catch (e) {}
+        try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
+        try { shotTimeoutId = setTimeout(() => { try { startKeeperAutoShoot(); } catch (e) {} ; shotTimeoutId = null; }, 2000); } catch (e) {}
+      });
+    }
+    const hb = document.getElementById('keeper-home');
+    if (hb) {
+      hb.addEventListener('click', () => {
+        try { popup.remove(); } catch (e) {}
+        try { goHome(); } catch (e) {}
       });
     }
   }
