@@ -1,4 +1,5 @@
 import { Application, Assets, Container } from 'pixi.js';
+import * as PIXI from 'pixi.js';
 import Goal from './UI/goal.js';
 import Ball from './UI/ball.js';
 import Ground from './UI/ground.js';
@@ -50,6 +51,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
   let startScreenVisible = true;
   let cameraLoopId: number | null = null;
+  let inputBlocker: PIXI.Graphics | null = null;
+  let inputLocked = false;
   const startScreen = new StartScreen();
   addToLayer(container, startScreen, Layer.BALL);
   // Disable DOM reset button while start screen is visible
@@ -205,6 +208,20 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         const hb = document.getElementById('home-btn') as HTMLButtonElement | null;
         if (hb) { hb.disabled = true; hb.style.display = 'none'; }
       } catch (e) {}
+      // block all player input while zooming setup is pending
+      try {
+        inputLocked = true;
+        if (!inputBlocker) {
+          inputBlocker = new PIXI.Graphics();
+          inputBlocker.beginFill(0x000000, 0);
+          inputBlocker.drawRect(0, 0, window.innerWidth, window.innerHeight);
+          inputBlocker.endFill();
+          inputBlocker.interactive = true;
+          (inputBlocker as any).hitArea = new PIXI.Rectangle(0, 0, window.innerWidth, window.innerHeight);
+          inputBlocker.on('pointerdown', (e: any) => { try { e.stopPropagation?.(); } catch (e) {} });
+          addToLayer(container, inputBlocker, Layer.OVERLAY);
+        }
+      } catch (e) {}
 
           // Camera zoom+follow: after 3s, zoom over 2s then start following goalkeeper2 with lerp
           try {
@@ -255,12 +272,17 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
                           container.pivot.set(clampedX, clampedY);
                         } catch (e) {}
                       };
-                              // register to rAF loop and keep id so we can cancel when returning Home
-                              const loop = (now: number) => { tickerFn(now); cameraLoopId = requestAnimationFrame(loop); };
-                              cameraLoopId = requestAnimationFrame(loop);
-                              followTicker = tickerFn;
-                              // Re-enable Home button now that zoom+follow setup finished
-                              try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = false; hb.style.display = startScreenVisible ? 'none' : 'block'; } } catch (e) {}
+                                  // register to rAF loop and keep id so we can cancel when returning Home
+                                  const loop = (now: number) => { tickerFn(now); cameraLoopId = requestAnimationFrame(loop); };
+                                  cameraLoopId = requestAnimationFrame(loop);
+                                  followTicker = tickerFn;
+                                  // Re-enable Home button now that zoom+follow setup finished
+                                  try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = false; hb.style.display = startScreenVisible ? 'none' : 'block'; } } catch (e) {}
+                                  // remove input blocker and unlock input
+                                  try {
+                                    if (inputBlocker) { try { container.removeChild(inputBlocker); } catch (e) {} ; try { inputBlocker.destroy(); } catch (e) {} inputBlocker = null; }
+                                  } catch (e) {}
+                                  try { inputLocked = false; } catch (e) {}
                     } catch (e) {}
                   }
                 };
@@ -550,6 +572,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   // Add keyboard event listener for Z key (removable)
   keydownHandler = (event: KeyboardEvent) => {
     if (typeof startScreenVisible !== 'undefined' && startScreenVisible) return;
+    if (inputLocked) return;
     if ((event.key || '').toLowerCase() === ' ') {
       resetBall();
     }
