@@ -16,17 +16,17 @@ export default class Ball2 extends PIXI.Container {
   private _suppressArrival: boolean = false;
   private _tweenCancelled: boolean = false;
   private _hasDeflected: boolean = false;
-  private _collideScaleThreshold = 2.3; // scale multiplier to enable collision deflection (slightly reduced)
+  private _collideScaleThreshold = 1.4; // scale multiplier to enable collision deflection (slightly reduced)
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
-    { x: 0.18, y: 0.62 }, // bottom-left (1)
-    { x: 0.82, y: 0.62 }, // bottom-right (7)
-    { x: 0.18, y: 0.48 }, // mid-left (2)
-    { x: 0.82, y: 0.48 }, // mid-right (6)
-    { x: 0.18, y: 0.32 }, // upper-left (3)
-    { x: 0.5, y: 0.32 },  // upper-center (4)
-    { x: 0.82, y: 0.32 }, // upper-right (5)
+    { x: 0.228, y: 0.75 }, // bottom-left (1)
+    { x: 0.78, y: 0.75 },  // bottom-right (7)
+    { x: 0.228, y: 0.69 }, // mid-left (2)
+    { x: 0.78, y: 0.69 },  // mid-right (6)
+    { x: 0.228, y: 0.63 }, // upper-left (3)
+    { x: 0.50, y: 0.63 },  // upper-center (4)
+    { x: 0.78, y: 0.63 },  // upper-right (5)
   ];
 
   constructor() {
@@ -133,7 +133,7 @@ export default class Ball2 extends PIXI.Container {
     try {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const tex = PIXI.Texture.from('./arts/goal2.png');
+      const tex = PIXI.Texture.from('./arts/bg2.png');
       if (!tex || !tex.width || !tex.height) return null;
       const sx = w / tex.width;
       const sy = h / tex.height;

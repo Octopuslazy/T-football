@@ -15,13 +15,13 @@ export default class Goalkeeper2 extends PIXI.Container {
   private _startPos: { x: number; y: number } = { x: 0, y: 0 };
 
   private _targets = [
-    { x: 0.18, y: 0.62 }, // bottom-left (1)
-    { x: 0.82, y: 0.62 }, // bottom-right (7)
-    { x: 0.18, y: 0.48 }, // mid-left (2)
-    { x: 0.82, y: 0.48 }, // mid-right (6)
-    { x: 0.18, y: 0.32 }, // upper-left (3)
-    { x: 0.5, y: 0.32 },  // upper-center (4) - jump only, no rotation
-    { x: 0.82, y: 0.32 }, // upper-right (5)
+    { x: 0.228, y: 0.75 }, // bottom-left (1)
+    { x: 0.78, y: 0.75 },  // bottom-right (7)
+    { x: 0.228, y: 0.69 }, // mid-left (2)
+    { x: 0.78, y: 0.69 },  // mid-right (6)
+    { x: 0.228, y: 0.63 }, // upper-left (3)
+    { x: 0.5, y: 0.63 },   // upper-center (4) - jump only, no rotation
+    { x: 0.78, y: 0.63 },  // upper-right (5)
   ];
 
   constructor() {
@@ -45,6 +45,23 @@ export default class Goalkeeper2 extends PIXI.Container {
     this.resize();
   }
 
+  // multiplier applied to calculated scale (1 = no change, <1 smaller, >1 larger)
+  private _scaleMultiplier: number = 0.45;
+  // vertical position as fraction of window height (0..1)
+  private _verticalOffset: number = 0.78;
+
+  // Public API to adjust size and vertical placement
+  public setScaleMultiplier(v: number) {
+    this._scaleMultiplier = Math.max(0.05, v || 1);
+    this.resize();
+  }
+
+  public setVerticalOffset(fraction: number) {
+    if (typeof fraction !== 'number') return;
+    this._verticalOffset = Math.max(0, Math.min(1, fraction));
+    this.resize();
+  }
+
   // expose whether goalkeeper is currently performing an animation (catching)
   public get isAnimating(): boolean {
     return this._isAnimating;
@@ -61,7 +78,7 @@ export default class Goalkeeper2 extends PIXI.Container {
 
     // place horizontally centered, vertically around 66% down the screen
     this.x = w / 2;
-    this.y = h * 0.75;
+    this.y = h * this._verticalOffset;
 
     // store home position
     this._homeX = this.x;
@@ -71,10 +88,11 @@ export default class Goalkeeper2 extends PIXI.Container {
     const desiredWidth = Math.max(120, Math.round(w * 0.22));
     const tex = this.sprite.texture;
     if (tex && tex.width) {
-      const s = 1*desiredWidth / tex.width;
+      const s = 1*desiredWidth / tex.width * this._scaleMultiplier;
       this.sprite.scale.set(s, s);
     } else {
-      this.sprite.scale.set(0.5, 0.5);
+      const s = 0.5 * this._scaleMultiplier;
+      this.sprite.scale.set(s, s);
     }
   }
 
@@ -147,7 +165,7 @@ export default class Goalkeeper2 extends PIXI.Container {
     try {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const tex = PIXI.Texture.from('./arts/goal2.png');
+      const tex = PIXI.Texture.from('./arts/bg2.png');
       if (!tex || !tex.width || !tex.height) return null;
       const sx = w / tex.width;
       const sy = h / tex.height;
@@ -182,7 +200,7 @@ export default class Goalkeeper2 extends PIXI.Container {
     try {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const tex = PIXI.Texture.from('./arts/goal2.png');
+      const tex = PIXI.Texture.from('./arts/bg2.png');
       if (tex && tex.width && tex.height) {
         const sx = w / tex.width;
         const sy = h / tex.height;
@@ -243,7 +261,7 @@ export default class Goalkeeper2 extends PIXI.Container {
     try {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const tex = PIXI.Texture.from('./arts/goal2.png');
+      const tex = PIXI.Texture.from('./arts/bg2.png');
       if (!tex || !tex.width || !tex.height) return null;
       const sx = w / tex.width;
       const sy = h / tex.height;
@@ -276,7 +294,7 @@ export default class Goalkeeper2 extends PIXI.Container {
     try {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const tex = PIXI.Texture.from('./arts/goal2.png');
+      const tex = PIXI.Texture.from('./arts/bg2.png');
       if (!tex || !tex.width || !tex.height) return null;
       const scaleX = w / tex.width;
       const scaleY = h / tex.height;

@@ -77,16 +77,16 @@ export default class GoalBackground extends PIXI.Container {
         const imgTop = this.bgSprite.y - imgH / 2;
 
         const circles = [
-          { x: 0.18, y: 0.62 },
-          { x: 0.82, y: 0.62 },
-          { x: 0.18, y: 0.48 },
-          { x: 0.82, y: 0.48 },
-          { x: 0.18, y: 0.32 },
-          { x: 0.50, y: 0.32 },
-          { x: 0.82, y: 0.32 },
+          { x: 0.228, y: 0.75 },
+          { x: 0.78, y: 0.75 },
+          { x: 0.228, y: 0.69 },
+          { x: 0.78, y: 0.69 },
+          { x: 0.228, y: 0.63 },
+          { x: 0.50, y: 0.63 },
+          { x: 0.78, y: 0.63 },
         ];
 
-        const circRadius = Math.max(24, Math.round(imgW * 0.09));
+        const circRadius = Math.max(24, Math.round(imgW * 0.03));
         const stroke = Math.max(3, Math.round(Math.min(w, h) * 0.009));
         for (const c of circles) {
           const cx2 = imgLeft + c.x * imgW;
