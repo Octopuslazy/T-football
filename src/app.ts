@@ -577,7 +577,23 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   }
 
   function showGameEndPopup() {
-    // Create simple DOM popup overlay
+    // Create dim overlay to block input behind popup
+    try {
+      const prevOv = document.getElementById('popup-overlay');
+      if (prevOv) prevOv.remove();
+      const ov = document.createElement('div');
+      ov.id = 'popup-overlay';
+      ov.style.position = 'fixed';
+      ov.style.left = '0';
+      ov.style.top = '0';
+      ov.style.width = '100%';
+      ov.style.height = '100%';
+      ov.style.background = 'rgba(0,0,0,0.45)';
+      ov.style.zIndex = '10001';
+      ov.style.pointerEvents = 'auto';
+      document.body.appendChild(ov);
+    } catch (e) {}
+
     const existing = document.getElementById('game-end-popup');
     if (existing) existing.remove();
 
@@ -592,15 +608,17 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     popup.style.color = 'white';
     popup.style.fontSize = '20px';
     popup.style.borderRadius = '12px';
-    popup.style.zIndex = '9999';
-    // Double the popup size visually
+    popup.style.zIndex = '10002';
     popup.style.transform = 'translate(-50%, -50%) scale(2)';
+    popup.style.minWidth = '360px';
+    
 
     const stats = scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0, outs: 0, shots: 0, accuracy: 0 };
     popup.innerHTML = `<div style="text-align:center;"><h2 style=\"margin:0 0 12px 0;\">Game End</h2>
       <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Outs: ${stats.outs}&nbsp; Shots: ${stats.shots}</p>
       <p style=\"margin:8px 0;\">Accuracy: ${stats.accuracy}%</p>
       <button id=\"game-end-restart\" style=\"margin-top:12px;padding:10px 18px;font-size:16px;border-radius:6px;\">Play Again</button>
+      <button id=\"game-end-home\" style=\"margin-top:12px;margin-left:8px;padding:10px 18px;font-size:16px;border-radius:6px;\">Home</button>
     </div>`;
 
     document.body.appendChild(popup);
@@ -608,7 +626,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     const btn = document.getElementById('game-end-restart');
     if (btn) {
       btn.addEventListener('click', () => {
-        popup.remove();
+        try { popup.remove(); } catch (e) {}
+        try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         // Reset scores and state
         try { scoreDisplay?.reset?.(); } catch (e) {}
         gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS;
@@ -618,10 +637,34 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         createNewBall();
       });
     }
+    const hb = document.getElementById('game-end-home');
+    if (hb) {
+      hb.addEventListener('click', () => {
+        try { popup.remove(); } catch (e) {}
+        try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
+        try { goHome(); } catch (e) {}
+      });
+    }
   }
 
   function showKeeperEndPopup() {
     try { stopKeeperAutoShoot(); } catch (e) {}
+    try {
+      const prevOv = document.getElementById('popup-overlay');
+      if (prevOv) prevOv.remove();
+      const ov = document.createElement('div');
+      ov.id = 'popup-overlay';
+      ov.style.position = 'fixed';
+      ov.style.left = '0';
+      ov.style.top = '0';
+      ov.style.width = '100%';
+      ov.style.height = '100%';
+      ov.style.background = 'rgba(0,0,0,0.45)';
+      ov.style.zIndex = '10001';
+      ov.style.pointerEvents = 'auto';
+      document.body.appendChild(ov);
+    } catch (e) {}
+
     const existing = document.getElementById('keeper-end-popup');
     if (existing) existing.remove();
 
@@ -631,23 +674,23 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     popup.style.left = '50%';
     popup.style.top = '50%';
     popup.style.transform = 'translate(-50%, -50%)';
-    popup.style.padding = '36px';
-    popup.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.95), rgba(240,240,255,0.95))';
-    popup.style.color = '#222';
-    popup.style.fontSize = '18px';
+    popup.style.padding = '48px';
+    popup.style.background = 'rgba(0,0,0,0.85)';
+    popup.style.color = 'white';
+    popup.style.fontSize = '20px';
     popup.style.borderRadius = '12px';
-    popup.style.zIndex = '10002';
-    popup.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35)';
+      popup.style.zIndex = '10002';
+      // make keeper popup larger and more prominent (match game-end)
+      popup.style.transform = 'translate(-50%, -50%) scale(2)';
+      popup.style.minWidth = '360px';
 
     const stats = scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0, outs: 0, shots: 0, accuracy: 0 };
-    popup.innerHTML = `<div style="text-align:center;min-width:260px;">
-      <h2 style="margin:0 0 8px 0;">Keeper Mode</h2>
-      <p style="margin:6px 0;">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Outs: ${stats.outs}</p>
-      <p style="margin:6px 0;">Shots: ${stats.shots} &nbsp; Accuracy: ${stats.accuracy}%</p>
-      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;">
-        <button id="keeper-playagain" style="padding:8px 14px;border-radius:6px;font-size:16px;">Play Again</button>
-        <button id="keeper-home" style="padding:8px 14px;border-radius:6px;font-size:16px;">Home</button>
-      </div>
+    popup.innerHTML = `<div style="text-align:center;">
+      <h2 style=\"margin:0 0 12px 0;\">Keeper Mode</h2>
+      <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Outs: ${stats.outs}&nbsp; Shots: ${stats.shots}</p>
+      <p style=\"margin:8px 0;\">Accuracy: ${stats.accuracy}%</p>
+      <button id=\"keeper-playagain\" style=\"margin-top:12px;padding:10px 18px;font-size:16px;border-radius:6px;\">Play Again</button>
+      <button id=\"keeper-home\" style=\"margin-top:12px;margin-left:8px;padding:10px 18px;font-size:16px;border-radius:6px;\">Home</button>
     </div>`;
 
     document.body.appendChild(popup);
@@ -656,6 +699,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     if (btn) {
       btn.addEventListener('click', () => {
         try { popup.remove(); } catch (e) {}
+        try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
         try { shotTimeoutId = setTimeout(() => { try { startKeeperAutoShoot(); } catch (e) {} ; shotTimeoutId = null; }, 2000); } catch (e) {}
       });
@@ -664,6 +708,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     if (hb) {
       hb.addEventListener('click', () => {
         try { popup.remove(); } catch (e) {}
+        try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         try { goHome(); } catch (e) {}
       });
     }
