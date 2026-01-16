@@ -4,6 +4,7 @@ export default class StartScreen extends PIXI.Container {
   public onSelect?: (mode: 'play' | 'other') => void;
 
   private bg: PIXI.Graphics;
+  private bgSprite?: PIXI.Sprite;
   private title: PIXI.Text;
   private playBtn: PIXI.Container;
   private otherBtn: PIXI.Container;
@@ -14,6 +15,24 @@ export default class StartScreen extends PIXI.Container {
     this.bg = new PIXI.Graphics();
     this.drawBackground();
     this.addChild(this.bg);
+
+    // background image (optional). Use project-relative path; texture may be loaded by the app preloader.
+    try {
+      // Create sprite with a texture; prefer the texture stored in PIXI.Assets if available
+      const key = './arts/startscreen.png';
+      let tex: PIXI.Texture | null = null;
+      try {
+        const assetsGet = (PIXI as any).Assets && (PIXI as any).Assets.get;
+        if (assetsGet) tex = (PIXI as any).Assets.get(key) as PIXI.Texture || null;
+      } catch (e) {}
+      if (!tex) {
+        try { tex = PIXI.Texture.from(key); } catch (e) { tex = null; }
+      }
+      if (tex) {
+        this.bgSprite = new PIXI.Sprite(tex);
+        this.addChildAt(this.bgSprite, 0);
+      }
+    } catch (e) {}
 
     this.title = new PIXI.Text('Play Mode', {
       fontFamily: 'Arial', fontSize: 36, fill: 0xffffff, fontWeight: 'bold'
@@ -40,10 +59,31 @@ export default class StartScreen extends PIXI.Container {
   }
 
   private drawBackground() {
+    // If a sprite background is available, size it to cover (best-effort). Otherwise draw solid background.
+    if (this.bgSprite && this.bgSprite.texture) {
+      try {
+        const tex = this.bgSprite.texture;
+        const tw = (tex.width && tex.width > 0) ? tex.width : ((tex.orig && (tex.orig as any).width) || ((tex.baseTexture && (tex.baseTexture as any).width) || 1));
+        const th = (tex.height && tex.height > 0) ? tex.height : ((tex.orig && (tex.orig as any).height) || ((tex.baseTexture && (tex.baseTexture as any).height) || 1));
+        const sx = window.innerWidth / tw;
+        const sy = window.innerHeight / th;
+        const s = Math.max(sx, sy);
+        this.bgSprite.scale.set(s, s);
+        this.bgSprite.x = (window.innerWidth - tw * s) / 2;
+        this.bgSprite.y = (window.innerHeight - th * s) / 2;
+        this.bg.visible = false;
+        this.bgSprite.visible = true;
+        return;
+      } catch (e) {
+        // fall back to solid background
+      }
+    }
+
     this.bg.clear();
     this.bg.beginFill(0x000000, 1);
     this.bg.drawRect(0, 0, window.innerWidth, window.innerHeight);
     this.bg.endFill();
+    if (this.bgSprite) this.bgSprite.visible = false;
   }
 
   private createButton(label: string, color: number) {

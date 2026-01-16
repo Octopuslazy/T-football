@@ -29,7 +29,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
   // Load assets
   try {
-    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png']);
+    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update
@@ -59,6 +59,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   startScreen.onSelect = (mode: 'play' | 'other') => {
     try { container.removeChild(startScreen); } catch (e) {}
     startScreenVisible = false;
+    try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) hb.disabled = false; } catch (e) {}
     if (mode === 'play') {
       // Begin normal gameplay: create UI on demand
       try {
@@ -128,6 +129,9 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         goalkeeper2.visible = true;
       } catch (e) {}
 
+      // Ensure Home button exists and enabled now that start screen is gone
+      try { ensureHomeButton(); } catch (e) {}
+
       // Remove reset button DOM and unregister keyboard handler
       try {
         const rb = document.getElementById('reset-btn');
@@ -142,6 +146,44 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     }
     ;
   };
+
+  // Home button and navigation helper: return to StartScreen and clear UI
+  function goHome() {
+    try { startScreenVisible = true; } catch (e) {}
+    try { if (nextBallTimer) { clearTimeout(nextBallTimer); nextBallTimer = null; } } catch (e) {}
+    // Remove all stage children to reset UI, then re-add start screen
+    try { container.removeChildren(); } catch (e) {}
+    try { gameState.gameOver = true; gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
+    try { currentBall = null; } catch (e) {}
+    try { addToLayer(container, startScreen, Layer.BALL); } catch (e) {}
+    // Disable home and reset while on start screen
+    try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) hb.disabled = true; } catch (e) {}
+    try { const rb = document.getElementById('reset-btn') as HTMLButtonElement | null; if (rb) rb.disabled = true; } catch (e) {}
+  }
+
+  function ensureHomeButton() {
+    const id = 'home-btn';
+    let hb = document.getElementById(id) as HTMLButtonElement | null;
+    if (!hb) {
+      hb = document.createElement('button');
+      hb.id = id;
+      hb.textContent = 'Home';
+      hb.style.position = 'fixed';
+      hb.style.left = '12px';
+      hb.style.top = '12px';
+      hb.style.zIndex = '10000';
+      hb.style.pointerEvents = 'auto';
+      hb.style.cursor = 'pointer';
+      hb.style.padding = '8px 12px';
+      hb.style.fontSize = '14px';
+      document.body.appendChild(hb);
+      hb.addEventListener('click', () => goHome());
+    }
+    try { hb.disabled = !!startScreenVisible; } catch (e) {}
+  }
+
+  // Ensure Home button exists and is initialized
+  try { ensureHomeButton(); } catch (e) {}
 
   // Game state management
   const gameState = {
@@ -340,7 +382,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   // Add keyboard event listener for Z key (removable)
   keydownHandler = (event: KeyboardEvent) => {
     if (typeof startScreenVisible !== 'undefined' && startScreenVisible) return;
-    if ((event.key || '').toLowerCase() === 'z') {
+    if ((event.key || '').toLowerCase() === ' ') {
       resetBall();
     }
   };
