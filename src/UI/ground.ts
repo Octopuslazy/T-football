@@ -48,16 +48,12 @@ export default class Ground extends PIXI.Container {
   }
   
   private drawSky(width: number, height: number) {
-    // Create sky gradient (light blue to darker blue)
-    const skyGradient = [
-      { color: 0x87CEEB, alpha: 1 }, // Sky blue at top
-      { color: 0x4682B4, alpha: 1 }  // Steel blue at bottom
-    ];
-    
-    // Draw sky background
-    this.skySprite.fill(0x87CEEB);
-    this.skySprite.rect(-width/2, -height, width, height);
-    this.skySprite.fill();
+    // Draw sky background (simple solid fill)
+    this.skySprite.clear();
+    this.skySprite.beginFill(0x87CEEB);
+    // Container is positioned at (screenWidth/2, screenHeight), so top-left is (-width/2, -window.innerHeight)
+    this.skySprite.drawRect(-width / 2, -window.innerHeight, width, height);
+    this.skySprite.endFill();
   }
   
   private drawGround(width: number, height: number, skyOffset: number) {
@@ -65,14 +61,11 @@ export default class Ground extends PIXI.Container {
     const fieldColor = 0x228B22; // Forest green
     
     // Draw ground base
-    this.groundSprite.fill(fieldColor);
-    this.groundSprite.rect(-width/2, -height, width, height);
-    this.groundSprite.fill();
-    
-    // Add field gradient for depth
-  
-    
- 
+    this.groundSprite.clear();
+    this.groundSprite.beginFill(fieldColor);
+    // Ground should occupy the bottom portion; container is at y=screenHeight so draw from -height to 0
+    this.groundSprite.drawRect(-width / 2, -height, width, height);
+    this.groundSprite.endFill();
   }
  
   // Get ground level for ball physics

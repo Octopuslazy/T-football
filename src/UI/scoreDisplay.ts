@@ -38,7 +38,7 @@ export default class ScoreDisplay extends PIXI.Container {
     
     // Position at top center of screen
     this.x = screenWidth / 2;
-    this.y = 20; // 20px from top
+    this.y = screenHeight/11; // 20px from top
     
     // Neutralize ancestor scaling so score display stays constant relative to screen
     let ancestor: any = this.parent;

@@ -59,24 +59,64 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   startScreen.onSelect = (mode: 'play' | 'other') => {
     try { container.removeChild(startScreen); } catch (e) {}
     startScreenVisible = false;
-    try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) hb.disabled = false; } catch (e) {}
+    try { ensureHomeButton(); } catch (e) {}
     if (mode === 'play') {
       // Begin normal gameplay: create UI on demand
       try {
-        if (!ground) { ground = new Ground(); addToLayer(container, ground, Layer.GROUND); }
+        if (!ground) {
+          ground = new Ground();
+          addToLayer(container, ground, Layer.GROUND);
+        } else if (!container.children.includes(ground)) {
+          addToLayer(container, ground, Layer.GROUND);
+        }
+
         if (!goal) {
           goal = new Goal();
           addToLayer(container, goal, Layer.NET);
           goalFrontLayer = goal.getFrontLayer();
           addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
+        } else {
+          if (!container.children.includes(goal)) addToLayer(container, goal, Layer.NET);
+          if (!goalFrontLayer) {
+            goalFrontLayer = goal.getFrontLayer();
+            addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
+          } else if (!container.children.includes(goalFrontLayer)) {
+            addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
+          }
         }
-        if (!goalkeeper) { goalkeeper = new Goalkeeper(); try { goalkeeper.setGoal(goal); } catch (e) {} addToLayer(container, goalkeeper, Layer.GOAL_FRONT); }
-        if (!scoreDisplay) { scoreDisplay = new ScoreDisplay(); addToLayer(container, scoreDisplay, Layer.GOAL_FRONT); }
-        if (!ballCountDisplay) { ballCountDisplay = new BallCountDisplay(); addToLayer(container, ballCountDisplay, Layer.GOAL_FRONT); try { ballCountDisplay.setGoal(goal); } catch(e) {} }
+
+        if (!goalkeeper) {
+          goalkeeper = new Goalkeeper();
+          try { goalkeeper.setGoal(goal); } catch (e) {}
+          addToLayer(container, goalkeeper, Layer.GOAL_FRONT);
+        } else if (!container.children.includes(goalkeeper)) {
+          try { goalkeeper.setGoal(goal); } catch (e) {}
+          addToLayer(container, goalkeeper, Layer.GOAL_FRONT);
+        }
+
+        if (!scoreDisplay) {
+          scoreDisplay = new ScoreDisplay();
+          addToLayer(container, scoreDisplay, Layer.GOAL_FRONT);
+        } else if (!container.children.includes(scoreDisplay)) {
+          addToLayer(container, scoreDisplay, Layer.GOAL_FRONT);
+        }
+
+        if (!ballCountDisplay) {
+          ballCountDisplay = new BallCountDisplay();
+          addToLayer(container, ballCountDisplay, Layer.GOAL_FRONT);
+          try { ballCountDisplay.setGoal(goal); } catch(e) {}
+        } else if (!container.children.includes(ballCountDisplay)) {
+          addToLayer(container, ballCountDisplay, Layer.GOAL_FRONT);
+          try { ballCountDisplay.setGoal(goal); } catch(e) {}
+        }
       } catch (e) {}
 
       // Ensure ball count UI shows initial count
       try { ballCountDisplay?.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
+
+      // Reset scores when entering Play mode (start fresh for a new session)
+      try { scoreDisplay?.reset?.(); } catch (e) {}
+      try { gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
 
       // Hide Other-mode visuals if present
       try { if (reversedGoal) reversedGoal.visible = false; } catch (e) {}
@@ -89,6 +129,11 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         if (rb) rb.disabled = false;
       } catch (e) {}
 
+      // Ensure game state allows spawning and create first ball
+      try { gameState.gameOver = false; } catch (e) {}
+      try { if (gameState.ballsRemaining <= 0) gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
+      // Reset goalkeeper to ensure it's ready
+      try { goalkeeper?.reset(); } catch (e) {}
       // Create first ball
       createNewBall();
     } else {
@@ -156,8 +201,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     try { gameState.gameOver = true; gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
     try { currentBall = null; } catch (e) {}
     try { addToLayer(container, startScreen, Layer.BALL); } catch (e) {}
-    // Disable home and reset while on start screen
-    try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) hb.disabled = true; } catch (e) {}
+    // Hide home and reset while on start screen
+    try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = true; hb.style.display = 'none'; } } catch (e) {}
     try { const rb = document.getElementById('reset-btn') as HTMLButtonElement | null; if (rb) rb.disabled = true; } catch (e) {}
   }
 
@@ -174,12 +219,18 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       hb.style.zIndex = '10000';
       hb.style.pointerEvents = 'auto';
       hb.style.cursor = 'pointer';
-      hb.style.padding = '8px 12px';
-      hb.style.fontSize = '14px';
+      // Larger, more prominent style
+      hb.style.padding = '40px 50px';
+      hb.style.fontSize = '30px';
+      hb.style.borderRadius = '10px';
+      hb.style.minWidth = '100px';
+      hb.style.background = '#ffffff';
+      hb.style.color = '#333333';
+      hb.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
       document.body.appendChild(hb);
       hb.addEventListener('click', () => goHome());
     }
-    try { hb.disabled = !!startScreenVisible; } catch (e) {}
+    try { hb.disabled = !!startScreenVisible; hb.style.display = startScreenVisible ? 'none' : 'block'; } catch (e) {}
   }
 
   // Ensure Home button exists and is initialized

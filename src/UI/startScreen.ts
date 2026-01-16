@@ -34,7 +34,7 @@ export default class StartScreen extends PIXI.Container {
       }
     } catch (e) {}
 
-    this.title = new PIXI.Text('Play Mode', {
+    this.title = new PIXI.Text(' ', {
       fontFamily: 'Arial', fontSize: 36, fill: 0xffffff, fontWeight: 'bold'
     } as any);
     this.title.anchor.set(0.5, 0);
