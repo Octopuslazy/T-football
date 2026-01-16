@@ -44,6 +44,9 @@ export default class Ball2 extends PIXI.Container {
     this._createButton();
   }
 
+  // Called by external controller to know when a full shot sequence finished
+  public onShotComplete?: () => void;
+
   private _createButton() {
     const btn = new PIXI.Container();
     const bg = new PIXI.Graphics();
@@ -124,6 +127,7 @@ export default class Ball2 extends PIXI.Container {
     this._isShooting = false;
     if (this._button) this._button.alpha = 1;
     this._currentTargetIndex = null;
+    try { if (typeof this.onShotComplete === 'function') this.onShotComplete(); } catch (e) {}
   }
 
   // convert normalized goal coordinates (0..1) into screen coordinates using goal2.png placement

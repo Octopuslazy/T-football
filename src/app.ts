@@ -49,6 +49,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   // Show start screen to choose mode before spawning balls
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
   let startScreenVisible = true;
+  let cameraLoopId: number | null = null;
   const startScreen = new StartScreen();
   addToLayer(container, startScreen, Layer.BALL);
   // Disable DOM reset button while start screen is visible
@@ -56,6 +57,29 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     const rb = document.getElementById('reset-btn') as HTMLButtonElement | null;
     if (rb) rb.disabled = true;
   } catch (e) {}
+
+      // Setup auto-shoot chain for goalkeeper mode: up to 5 shots with 1s pause after animation completes
+      try {
+        if (ball2 && goalkeeper2) {
+          let shotCount = 0;
+          const maxShots = 5;
+
+          const scheduleNext = () => {
+            if (shotCount >= maxShots) return;
+            // ensure ball ready and reset
+            try { (ball2 as any).refresh?.(); } catch (e) {}
+            try { (ball2 as any).sprite && ((ball2 as any).sprite.scale.set((ball2 as any)._homeScale || 0.1)); } catch (e) {}
+            shotCount++;
+            try { (ball2 as any).shoot?.(); } catch (e) {}
+          };
+
+          // when ball completes a shot, wait 1s then schedule next
+          try { (ball2 as any).onShotComplete = () => { setTimeout(() => scheduleNext(), 1000); }; } catch (e) {}
+
+          // start immediately
+          scheduleNext();
+        }
+      } catch (e) {}
   startScreen.onSelect = (mode: 'play' | 'other') => {
     try { container.removeChild(startScreen); } catch (e) {}
     startScreenVisible = false;
@@ -176,6 +200,94 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
       // Ensure Home button exists and enabled now that start screen is gone
       try { ensureHomeButton(); } catch (e) {}
+      // For goalkeeper mode, keep Home disabled/hidden until zoom completes
+      try {
+        const hb = document.getElementById('home-btn') as HTMLButtonElement | null;
+        if (hb) { hb.disabled = true; hb.style.display = 'none'; }
+      } catch (e) {}
+
+          // Camera zoom+follow: after 3s, zoom over 2s then start following goalkeeper2 with lerp
+          try {
+            if (goalkeeper2) {
+              const zoomDelay = 1000;
+              const zoomDuration = 2000;
+              const targetScale = 1.6;
+              setTimeout(() => {
+                // tween container.scale.x/y from current to targetScale over zoomDuration
+                const start = performance.now();
+                const startScale = container.scale.x || 1;
+                const animateZoom = (now: number) => {
+                  const t = Math.min(1, (now - start) / zoomDuration);
+                  const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+                  const s = startScale + (targetScale - startScale) * ease;
+                  container.scale.set(s, s);
+                  if (t < 1) requestAnimationFrame(animateZoom);
+                  else {
+                    // start follow ticker
+                    let followTicker: (now: number) => void = (_now: number) => {};
+                    try {
+                      const lerp = (a: number, b: number, f: number) => a + (b - a) * f;
+                      let last = performance.now();
+                      const tickerFn = (now: number) => {
+                        // compute desired root pivot based on goalkeeper2 world position
+                        try {
+                          const keeper = goalkeeper2 as any;
+                          const keeperWorldX = keeper.x;
+                          const keeperWorldY = keeper.y;
+                          // target pivot to center on keeper
+                          const targetPivotX = keeperWorldX;
+                          const targetPivotY = keeperWorldY;
+                          // lerp current pivot toward target (0.1 factor)
+                          const curPivotX = container.pivot.x || 0;
+                          const curPivotY = container.pivot.y || 0;
+                          const npX = lerp(curPivotX, targetPivotX, 0.1);
+                          const npY = lerp(curPivotY, targetPivotY, 0.1);
+                          container.pivot.set(npX, npY);
+                          // clamp to bounds: ensure we don't show outside the play field (approx)
+                          // compute world extents roughly from stage size and scale
+                          const worldW = window.innerWidth / container.scale.x;
+                          const worldH = window.innerHeight / container.scale.y;
+                          const halfW = worldW / 2;
+                          const halfH = worldH / 2;
+                          // clamp pivot within [halfW, groundWidth-halfW] etc. For now, minimal clamp to non-negative
+                          const clampedX = Math.max(0, Math.min(npX, 20000));
+                          const clampedY = Math.max(0, Math.min(npY, 20000));
+                          container.pivot.set(clampedX, clampedY);
+                        } catch (e) {}
+                      };
+                              // register to rAF loop and keep id so we can cancel when returning Home
+                              const loop = (now: number) => { tickerFn(now); cameraLoopId = requestAnimationFrame(loop); };
+                              cameraLoopId = requestAnimationFrame(loop);
+                              followTicker = tickerFn;
+                              // Re-enable Home button now that zoom+follow setup finished
+                              try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = false; hb.style.display = startScreenVisible ? 'none' : 'block'; } } catch (e) {}
+                    } catch (e) {}
+                  }
+                };
+                // BEFORE starting the zoom, set pivot to goalkeeper local coords but keep the keeper's
+                // current screen position so the keeper does not get centered — scaling will occur around that fixed screen point.
+                try {
+                  if (goalkeeper2) {
+                    const keeper = goalkeeper2 as any;
+                    const kx = keeper.x || 0;
+                    const ky = keeper.y || 0;
+                    // compute keeper's current screen position: screen = position + (local - pivot) * scale
+                    const curScaleX = container.scale.x || 1;
+                    const curScaleY = container.scale.y || curScaleX;
+                    const oldScreenX = (container.position.x || 0) + (kx - (container.pivot.x || 0)) * curScaleX;
+                    const oldScreenY = (container.position.y || 0) + (ky - (container.pivot.y || 0)) * curScaleY;
+                    // set pivot to keeper local coords
+                    container.pivot.set(kx, ky);
+                    // set position so keeper remains at same screen coords
+                    container.position.set(oldScreenX, oldScreenY);
+                  }
+                } catch (e) {}
+                // Disable Home button while zooming
+                try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = true; } } catch (e) {}
+                requestAnimationFrame(animateZoom);
+              }, zoomDelay);
+            }
+          } catch (e) {}
 
       // Remove reset button DOM and unregister keyboard handler
       try {
@@ -201,6 +313,11 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     try { gameState.gameOver = true; gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
     try { currentBall = null; } catch (e) {}
     try { addToLayer(container, startScreen, Layer.BALL); } catch (e) {}
+    // Cancel camera follow loop (if running) and reset transforms
+    try { if (cameraLoopId != null) { cancelAnimationFrame(cameraLoopId); cameraLoopId = null; } } catch (e) {}
+    try { container.scale.set(1, 1); } catch (e) {}
+    try { container.pivot.set(0, 0); } catch (e) {}
+    try { container.position.set(0, 0); } catch (e) {}
     // Hide home and reset while on start screen
     try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = true; hb.style.display = 'none'; } } catch (e) {}
     try { const rb = document.getElementById('reset-btn') as HTMLButtonElement | null; if (rb) rb.disabled = true; } catch (e) {}
