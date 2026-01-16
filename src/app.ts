@@ -35,61 +35,16 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     // ignore load errors here; components will listen for texture update
   }
 
-  // Create Ground first (background layer)
-  const ground = new Ground();
-  addToLayer(container, ground, Layer.GROUND);
-
-  // Create Goal instance with layered system
-  const goal = new Goal();
-  addToLayer(container, goal, Layer.NET); // This adds the net (back layer)
-  
-  // Goal front layer will be added once with proper layering
-  const goalFrontLayer = goal.getFrontLayer();
-  addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
-
-  // Create reversed goal background (visual only)
-  const reversedGoal = new ReversedGoal();
-  // Start hidden; show when user selects Other mode
-  reversedGoal.visible = false;
-  addToLayer(container, reversedGoal, Layer.GROUND);
-
-  // Detach the frame sprite from the reversed goal and add it as an overlay
-  try {
-    const frameSprite = (reversedGoal as any).detachFrameSprite?.();
-    if (frameSprite) {
-      const frameContainer = new Container();
-      frameContainer.addChild(frameSprite);
-      addToLayer(container, frameContainer, Layer.OVERLAY);
-    }
-  } catch (e) {}
-
-  // Ball2 for Other mode (centered static ball)
-  const ball2 = new Ball2();
-  ball2.visible = false;
-  // place Ball2 under the goalkeeper (NET layer) so it's not drawn on top of the keeper
-  addToLayer(container, ball2, Layer.BALL);
-
-  // Goalkeeper2 for Other mode
-  const goalkeeper2 = new Goalkeeper2();
-  goalkeeper2.visible = false;
-  addToLayer(container, goalkeeper2, Layer.GOAL_FRONT);
-    // link ball2 to goalkeeper2 for collision checks
-    try { (ball2 as any).keeper = goalkeeper2; } catch (e) {}
-
-  // Create Goalkeeper
-  const goalkeeper = new Goalkeeper();
-  goalkeeper.setGoal(goal); // Set goal reference for scale calculation
-  addToLayer(container, goalkeeper, Layer.GOAL_FRONT); // Same layer as goal front
-
-  // Create Score Display
-  const scoreDisplay = new ScoreDisplay();
-  addToLayer(container, scoreDisplay, Layer.GOAL_FRONT); // Top layer
-
-  // Create Ball Count Display
-  const ballCountDisplay = new BallCountDisplay();
-  addToLayer(container, ballCountDisplay, Layer.GOAL_FRONT);
-  // Let ball count scale/position relative to goal
-  try { ballCountDisplay.setGoal(goal); } catch (e) {}
+  // Defer creation of major UI until user selects mode on the StartScreen.
+  let ground: Ground | null = null;
+  let goal: Goal | null = null;
+  let goalFrontLayer: any = null;
+  let reversedGoal: ReversedGoal | null = null;
+  let ball2: Ball2 | null = null;
+  let goalkeeper2: Goalkeeper2 | null = null;
+  let goalkeeper: Goalkeeper | null = null;
+  let scoreDisplay: ScoreDisplay | null = null;
+  let ballCountDisplay: BallCountDisplay | null = null;
 
   // Show start screen to choose mode before spawning balls
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
@@ -105,53 +60,74 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     try { container.removeChild(startScreen); } catch (e) {}
     startScreenVisible = false;
     if (mode === 'play') {
-      // Begin normal gameplay
+      // Begin normal gameplay: create UI on demand
+      try {
+        if (!ground) { ground = new Ground(); addToLayer(container, ground, Layer.GROUND); }
+        if (!goal) {
+          goal = new Goal();
+          addToLayer(container, goal, Layer.NET);
+          goalFrontLayer = goal.getFrontLayer();
+          addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
+        }
+        if (!goalkeeper) { goalkeeper = new Goalkeeper(); try { goalkeeper.setGoal(goal); } catch (e) {} addToLayer(container, goalkeeper, Layer.GOAL_FRONT); }
+        if (!scoreDisplay) { scoreDisplay = new ScoreDisplay(); addToLayer(container, scoreDisplay, Layer.GOAL_FRONT); }
+        if (!ballCountDisplay) { ballCountDisplay = new BallCountDisplay(); addToLayer(container, ballCountDisplay, Layer.GOAL_FRONT); try { ballCountDisplay.setGoal(goal); } catch(e) {} }
+      } catch (e) {}
+
       // Ensure ball count UI shows initial count
-      try { ballCountDisplay.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
-      // Hide reversed goal and other Other-mode visuals when playing
-      try { reversedGoal.visible = false; } catch (e) {}
-      try { ball2.visible = false; } catch (e) {}
-      try { goalkeeper2.visible = false; } catch (e) {}
+      try { ballCountDisplay?.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
+
+      // Hide Other-mode visuals if present
+      try { if (reversedGoal) reversedGoal.visible = false; } catch (e) {}
+      try { if (ball2) ball2.visible = false; } catch (e) {}
+      try { if (goalkeeper2) goalkeeper2.visible = false; } catch (e) {}
+
       // Re-enable DOM reset button when entering Play mode
       try {
         const rb = document.getElementById('reset-btn') as HTMLButtonElement | null;
         if (rb) rb.disabled = false;
       } catch (e) {}
-      // Ensure original ground/background is present for gameplay
-      try { addToLayer(container, ground, Layer.GROUND); } catch (e) {}
+
+      // Create first ball
       createNewBall();
     } else {
-      // Other mode: keep only background; remove goal, net, and gameplay UI
+      // Other mode: create Other-mode visuals on demand and remove gameplay UI
       try { removeAllBalls(); } catch (e) {}
-      try { container.removeChild(goalkeeper); } catch (e) {}
-      try { container.removeChild(scoreDisplay); } catch (e) {}
-      try { container.removeChild(ballCountDisplay); } catch (e) {}
-      try { container.removeChild(goalFrontLayer); } catch (e) {}
-      try { container.removeChild(goal); } catch (e) {}
+      try { if (goalkeeper && container.children.includes(goalkeeper)) container.removeChild(goalkeeper); } catch (e) {}
+      try { if (scoreDisplay && container.children.includes(scoreDisplay)) container.removeChild(scoreDisplay); } catch (e) {}
+      try { if (ballCountDisplay && container.children.includes(ballCountDisplay)) container.removeChild(ballCountDisplay); } catch (e) {}
+      try { if (goalFrontLayer && container.children.includes(goalFrontLayer)) container.removeChild(goalFrontLayer); } catch (e) {}
+      try { if (goal && container.children.includes(goal)) container.removeChild(goal); } catch (e) {}
       // Remove original ground/background so only the new background remains
-      try { container.removeChild(ground); } catch (e) {}
-      // Show reversed goal for Other mode: re-add to layer, refresh layout
-      try { addToLayer(container, reversedGoal, Layer.GROUND); } catch (e) {}
+      try { if (ground && container.children.includes(ground)) container.removeChild(ground); } catch (e) {}
+
+      // Create reversed goal background if needed
       try {
+        if (!reversedGoal) reversedGoal = new ReversedGoal();
+        addToLayer(container, reversedGoal, Layer.GROUND);
         const frameSprite = (reversedGoal as any).detachFrameSprite?.();
         if (frameSprite) {
           const frameContainer = new Container();
           frameContainer.addChild(frameSprite);
           addToLayer(container, frameContainer, Layer.OVERLAY);
         }
+        (reversedGoal as any).refresh?.();
+        reversedGoal.visible = true;
       } catch (e) {}
-      try { (reversedGoal as any).refresh?.(); } catch (e) {}
-      try { reversedGoal.visible = true; } catch (e) {}
-      // Show Ball2 centered (ensure it's beneath goalkeeper)
-      try { addToLayer(container, ball2, Layer.BALL); } catch (e) {}
-      try { (ball2 as any).refresh?.(); } catch (e) {}
-      try { ball2.visible = true; } catch (e) {}
+
+      // Create Ball2 and Goalkeeper2 for Other mode
+      try {
+        if (!ball2) ball2 = new Ball2();
+        if (!goalkeeper2) goalkeeper2 = new Goalkeeper2();
+        addToLayer(container, ball2, Layer.BALL);
+        (ball2 as any).refresh?.();
+        ball2.visible = true;
         try { (ball2 as any).keeper = goalkeeper2; } catch (e) {}
-      // Show Goalkeeper2 centered
-      try { addToLayer(container, goalkeeper2, Layer.GOAL_FRONT); } catch (e) {}
-      try { (goalkeeper2 as any).refresh?.(); } catch (e) {}
-      try { goalkeeper2.visible = true; } catch (e) {}
-      // (do not remove reversed goal; keep it visible only in Other mode)
+        addToLayer(container, goalkeeper2, Layer.GOAL_FRONT);
+        (goalkeeper2 as any).refresh?.();
+        goalkeeper2.visible = true;
+      } catch (e) {}
+
       // Remove reset button DOM and unregister keyboard handler
       try {
         const rb = document.getElementById('reset-btn');
@@ -160,9 +136,11 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       try {
         if (keydownHandler) document.removeEventListener('keydown', keydownHandler as any);
       } catch (e) {}
+
       // Stop gameplay spawns
       gameState.gameOver = true;
-    };
+    }
+    ;
   };
 
   // Game state management

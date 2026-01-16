@@ -41,7 +41,7 @@ export default class StartScreen extends PIXI.Container {
 
   private drawBackground() {
     this.bg.clear();
-    this.bg.beginFill(0x000000, 0.6);
+    this.bg.beginFill(0x000000, 1);
     this.bg.drawRect(0, 0, window.innerWidth, window.innerHeight);
     this.bg.endFill();
   }
