@@ -109,7 +109,7 @@ export default class Ball2 extends PIXI.Container {
         return;
       }
       // tween to target, then either deflect or play goal fall animation
-      this._tweenTo(screen.x, screen.y, 700, () => {
+      this._tweenTo(screen.x, screen.y, 1000, () => {
         if (this._hasDeflected) {
           // deflected path already started; do nothing here
         } else if (this._suppressArrival) {

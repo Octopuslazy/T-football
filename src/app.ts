@@ -394,6 +394,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     try { container.pivot.set(0, 0); } catch (e) {}
     try { container.position.set(0, 0); } catch (e) {}
     try { stopKeeperAutoShoot(); } catch (e) {}
+    // reset and destroy keeper-mode score display so re-entering creates a fresh instance
+    try { if (scoreDisplay2) { try { scoreDisplay2.destroy(); } catch (e) {} scoreDisplay2 = null; } } catch (e) {}
     // Hide home and reset while on start screen
     try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = true; hb.style.display = 'none'; } } catch (e) {}
     try { const rb = document.getElementById('reset-btn') as HTMLButtonElement | null; if (rb) rb.disabled = true; } catch (e) {}
@@ -613,7 +615,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     popup.style.minWidth = '360px';
     
 
-    const stats = scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0, outs: 0, shots: 0, accuracy: 0 };
+    const stats = scoreDisplay2?.getStats?.() ?? scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0, outs: 0, shots: 0, accuracy: 0 };
     popup.innerHTML = `<div style="text-align:center;"><h2 style=\"margin:0 0 12px 0;\">Game End</h2>
       <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Outs: ${stats.outs}&nbsp; Shots: ${stats.shots}</p>
       <p style=\"margin:8px 0;\">Accuracy: ${stats.accuracy}%</p>
@@ -684,10 +686,10 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       popup.style.transform = 'translate(-50%, -50%) scale(2)';
       popup.style.minWidth = '360px';
 
-    const stats = scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0, outs: 0, shots: 0, accuracy: 0 };
+    const stats = scoreDisplay2?.getStats?.() ?? scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0,  shots: 0, accuracy: 0 };
     popup.innerHTML = `<div style="text-align:center;">
       <h2 style=\"margin:0 0 12px 0;\">Keeper Mode</h2>
-      <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Outs: ${stats.outs}&nbsp; Shots: ${stats.shots}</p>
+      <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp;  Shots: ${stats.shots}</p>
       <p style=\"margin:8px 0;\">Accuracy: ${stats.accuracy}%</p>
       <button id=\"keeper-playagain\" style=\"margin-top:12px;padding:10px 18px;font-size:16px;border-radius:6px;\">Play Again</button>
       <button id=\"keeper-home\" style=\"margin-top:12px;margin-left:8px;padding:10px 18px;font-size:16px;border-radius:6px;\">Home</button>
@@ -701,6 +703,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         try { popup.remove(); } catch (e) {}
         try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
+        try { scoreDisplay2?.reset?.(); } catch (e) {}
         try { shotTimeoutId = setTimeout(() => { try { startKeeperAutoShoot(); } catch (e) {} ; shotTimeoutId = null; }, 2000); } catch (e) {}
       });
     }
