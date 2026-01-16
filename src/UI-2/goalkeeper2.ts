@@ -56,6 +56,15 @@ export default class Goalkeeper2 extends PIXI.Container {
     this.resize();
   }
 
+  // Multiplier applied to movement durations (1 = default speed).
+  // Values >1 make motions slower (longer durations); values <1 make them faster.
+  private _moveDurationMultiplier: number = 1;
+
+  public setMoveDurationMultiplier(m: number) {
+    if (typeof m !== 'number' || !isFinite(m)) return;
+    this._moveDurationMultiplier = Math.max(0.1, m);
+  }
+
   public setVerticalOffset(fraction: number) {
     if (typeof fraction !== 'number') return;
     this._verticalOffset = Math.max(0, Math.min(1, fraction));
@@ -123,9 +132,9 @@ export default class Goalkeeper2 extends PIXI.Container {
     const dragDuration = Math.max(1, Date.now() - this._dragTime);
 
     // swipe speed (pixels per second)
-    const swipePps = distance * 1000 / dragDuration;
-    const maxSwipeSpeed = 2000;
-    const minSwipeSpeed = 100;
+    const swipePps = distance * 100 / dragDuration;
+    const maxSwipeSpeed = 100;
+    const minSwipeSpeed = 40;
     const powerPercent = Math.max(0, Math.min(100, ((swipePps - minSwipeSpeed) / (maxSwipeSpeed - minSwipeSpeed)) * 100));
 
     if (distance < 10 || powerPercent < 5) return; // ignore tiny/weak gestures
@@ -142,8 +151,11 @@ export default class Goalkeeper2 extends PIXI.Container {
     const targetRot = this._rotationForNormalizedTarget(target);
 
     this._isAnimating = true;
-    const toDuration = Math.max(240, Math.min(700, 300 + (100 - powerPercent) * 3));
-    const returnDuration = Math.max(300, 400 - Math.round(powerPercent * 1.2));
+    let toDuration = Math.max(440, Math.min(700, 300 + (100 - powerPercent) * 3));
+    let returnDuration = Math.max(300, 400 - Math.round(powerPercent * 1.2));
+    // apply external multiplier to slow down / speed up animations
+    toDuration = Math.round(toDuration * this._moveDurationMultiplier);
+    returnDuration = Math.round(returnDuration * this._moveDurationMultiplier);
 
     // switch to catch animation texture while moving to the target
     try { this.sprite.texture = PIXI.Texture.from('./arts/gkeeper2.png'); } catch (e) {}
