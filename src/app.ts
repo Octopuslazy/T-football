@@ -157,7 +157,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     // Update ball count UI: show balls remaining excluding current ball in play
     // If currentBall exists, visual remaining = gameState.ballsRemaining - 1
     const visual = Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0));
-    try { ballCountDisplay.setCount(visual); } catch (e) {}
+    try { ballCountDisplay?.setCount(visual); } catch (e) {}
   }
 
   // Ball management
@@ -202,7 +202,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     // Set callback for when goal is scored with zone information
     currentBall.goalScoredCallback = (zone: any) => {
       console.log(`⚽ GOAL! Ball scored in zone ${zone.id}`);
-      scoreDisplay.addGoal();
+      try { scoreDisplay?.addGoal?.(); } catch (e) {}
       // Schedule reset and next ball after delay
       scheduleNextBallIfNeeded();
       // You can add score tracking, visual effects, or other game logic here
@@ -210,14 +210,14 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     
     // Set callback for when goalkeeper saves
     currentBall.saveCallback = () => {
-      scoreDisplay.addSave();
+      try { scoreDisplay?.addSave?.(); } catch (e) {}
       // Schedule reset and next ball after delay
       scheduleNextBallIfNeeded();
     };
 
     // Set callback for outbound/insufficient power shots
     currentBall.outCallback = () => {
-      scoreDisplay.addOut();
+      try { scoreDisplay?.addOut?.(); } catch (e) {}
       // Schedule next ball now (match goal/save behavior) so spawn timing matches other outcomes
       scheduleNextBallIfNeeded();
     };
@@ -226,7 +226,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
     // Update visual ball count when a new ball is spawned
     const visualNow = Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0));
-    try { ballCountDisplay.setCount(visualNow); } catch (e) {}
+    try { ballCountDisplay?.setCount(visualNow); } catch (e) {}
   }
   
   // Reset ball function
@@ -240,7 +240,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     }
     
     // Reset goalkeeper to initial position and state
-    goalkeeper.reset();
+    goalkeeper?.reset();
     
     // Reset score display
     // Do not reset scores here; keep them for the turn
@@ -258,7 +258,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
     // Update ball count display when manual reset
     const visual = Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0));
-    try { ballCountDisplay.setCount(visual); } catch (e) {}
+    try { ballCountDisplay?.setCount(visual); } catch (e) {}
   }
 
   function scheduleNextBallIfNeeded() {
@@ -274,7 +274,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       decrementBalls();
 
       // Reset goalkeeper (but keep scores)
-      goalkeeper.reset();
+      goalkeeper?.reset();
 
       // If no balls remain, show game end popup
       if (gameState.gameOver) {
@@ -307,7 +307,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     // Double the popup size visually
     popup.style.transform = 'translate(-50%, -50%) scale(2)';
 
-    const stats = scoreDisplay.getStats();
+    const stats = scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0, outs: 0, shots: 0, accuracy: 0 };
     popup.innerHTML = `<div style="text-align:center;"><h2 style=\"margin:0 0 12px 0;\">Game End</h2>
       <p style=\"margin:8px 0;\">Goals: ${stats.goals} &nbsp; Saves: ${stats.saves} &nbsp; Outs: ${stats.outs}&nbsp; Shots: ${stats.shots}</p>
       <p style=\"margin:8px 0;\">Accuracy: ${stats.accuracy}%</p>
@@ -321,11 +321,11 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       btn.addEventListener('click', () => {
         popup.remove();
         // Reset scores and state
-        scoreDisplay.reset();
+        try { scoreDisplay?.reset?.(); } catch (e) {}
         gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS;
         gameState.gameOver = false;
         // Update ball count display
-        try { ballCountDisplay.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
+        try { ballCountDisplay?.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
         createNewBall();
       });
     }
