@@ -11,9 +11,12 @@ export default class Ball2 extends PIXI.Container {
   private _currentTargetIndex: number | null = null;
   // optional reference to goalkeeper container (set by game code)
   public keeper: PIXI.Container | null = null;
+  // optional callback invoked when the ball is deflected (useful to suppress other animations)
+  public onDeflect?: () => void;
+  private _suppressArrival: boolean = false;
   private _tweenCancelled: boolean = false;
   private _hasDeflected: boolean = false;
-  private _collideScaleThreshold = 2.3; // scale multiplier to enable collision deflection (exact match required)
+  private _collideScaleThreshold = 2.3; // scale multiplier to enable collision deflection (slightly reduced)
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
@@ -99,10 +102,21 @@ export default class Ball2 extends PIXI.Container {
         this._finishShoot();
         return;
       }
-      // tween to target, then wait 2s, then tween back to home and finish
+      // tween to target, then either deflect, pass-through, or return home
       this._tweenTo(screen.x, screen.y, 700, () => {
         setTimeout(() => {
-          this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot(), false);
+          if (this._hasDeflected) {
+            // deflected path already started; do nothing here
+          } else if (this._suppressArrival) {
+            // suppressed by external callback — just return home
+            this._suppressArrival = false;
+            this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot(), false);
+          } else {
+            // keeper didn't stop the ball — play pass-through animation
+            this._passThrough(screen.x, screen.y, () => {
+              this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot(), false);
+            });
+          }
         }, 300);
       }, true);
     }, 300);
@@ -156,7 +170,7 @@ export default class Ball2 extends PIXI.Container {
     this._tweenCancelled = false;
     const start = performance.now();
     const startScale = (this.sprite && this.sprite.scale) ? this.sprite.scale.x : 1;
-    const targetScale = (typeof scaleUp === 'boolean') ? (scaleUp ? this._homeScale * 2.3 : this._homeScale) : startScale;
+    const targetScale = (typeof scaleUp === 'boolean') ? (scaleUp ? this._homeScale * this._collideScaleThreshold : this._homeScale) : startScale;
     const animate = (now: number) => {
       if (this._tweenCancelled) return;
       const tRaw = Math.min(1, (now - start) / duration);
@@ -198,6 +212,9 @@ export default class Ball2 extends PIXI.Container {
             // cancel the current tween and perform a deflection away from keeper center
             this._tweenCancelled = true;
             this._hasDeflected = true;
+            // suppress any arrival/pass-through animation and notify listener
+            this._suppressArrival = true;
+            try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
             const kcx = keeperB.x + keeperB.width / 2;
             const kcy = keeperB.y + keeperB.height / 2;
             const vx = this.x - kcx;
@@ -228,6 +245,40 @@ export default class Ball2 extends PIXI.Container {
       else if (cb) cb();
     };
     requestAnimationFrame(animate);
+  }
+
+  // pass-through: move from arrival point into the goal center and slightly scale down/up to 1.1
+  private _passThrough(fromX: number, fromY: number, cb?: () => void) {
+    try {
+      const center = this._normalizedToScreen(0.5, 0.5);
+      if (!center) { if (cb) cb(); return; }
+      // choose an off-screen target: lower-right for right-side shots, lower-left for left-side
+      const screenW = window.innerWidth;
+      const screenH = window.innerHeight;
+      const side = (fromX >= screenW / 2) ? 'right' : 'left';
+      const offExtra = Math.max(300, Math.round(screenW * 0.25));
+      let targetX: number;
+      let targetY: number = screenH + offExtra; // drive below the bottom of the screen
+      if (side === 'right') targetX = screenW + offExtra;
+      else targetX = -offExtra;
+
+      const startX = this.x;
+      const startY = this.y;
+      const startScale = (this.sprite && this.sprite.scale) ? this.sprite.scale.x : this._homeScale;
+      const targetScale = 1.05;
+      const duration = 700;
+      const start = performance.now();
+      const animate = (now: number) => {
+        const tRaw = Math.min(1, (now - start) / duration);
+        const t = tRaw < 0.5 ? 2 * tRaw * tRaw : -1 + (4 - 2 * tRaw) * tRaw;
+        this.x = startX + (targetX - startX) * t;
+        this.y = startY + (targetY - startY) * t;
+        try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(startScale + (targetScale - startScale) * t); } catch(e) {}
+        if (tRaw < 1) requestAnimationFrame(animate);
+        else if (cb) cb();
+      };
+      requestAnimationFrame(animate);
+    } catch (e) { if (cb) cb(); }
   }
 
   destroy(options?: any) {
