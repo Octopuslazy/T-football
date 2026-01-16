@@ -20,6 +20,7 @@ export default class GoalBackground extends PIXI.Container {
     const frameTex = PIXI.Texture.from('./arts/goal3.png');
     this.frameSprite = new PIXI.Sprite(frameTex);
     this.frameSprite.anchor.set(0.5, 0.5);
+    // keep frameSprite as a child initially, but it can be detached by caller
     this.addChild(this.frameSprite);
 
     this.guides = new PIXI.Graphics();
@@ -36,6 +37,17 @@ export default class GoalBackground extends PIXI.Container {
   public setFrameScale(s: number) {
     this.frameScale = Math.max(0.01, s || 1);
     this.resize();
+  }
+
+  // Remove the internal frame sprite from this container and return it
+  // so callers can re-parent it (for separate layering). If already detached,
+  // returns null.
+  public detachFrameSprite(): PIXI.Sprite | null {
+    if (!this.frameSprite || !this.frameSprite.parent) return null;
+    try {
+      this.removeChild(this.frameSprite);
+      return this.frameSprite;
+    } catch (e) { return null; }
   }
 
   private resize() {

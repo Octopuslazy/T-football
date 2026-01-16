@@ -6,6 +6,7 @@ export const Layer = {
   NET: 1,
   BALL: 3,
   GOAL_FRONT: 2,
+  OVERLAY: 4,
 };
 
 export function setLayer(obj: PIXI.Container, layer: number) {

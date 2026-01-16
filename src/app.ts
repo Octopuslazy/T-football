@@ -51,13 +51,23 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   const reversedGoal = new ReversedGoal();
   // Start hidden; show when user selects Other mode
   reversedGoal.visible = false;
-  addToLayer(container, reversedGoal, Layer.NET);
+  addToLayer(container, reversedGoal, Layer.GROUND);
+
+  // Detach the frame sprite from the reversed goal and add it as an overlay
+  try {
+    const frameSprite = (reversedGoal as any).detachFrameSprite?.();
+    if (frameSprite) {
+      const frameContainer = new Container();
+      frameContainer.addChild(frameSprite);
+      addToLayer(container, frameContainer, Layer.OVERLAY);
+    }
+  } catch (e) {}
 
   // Ball2 for Other mode (centered static ball)
   const ball2 = new Ball2();
   ball2.visible = false;
   // place Ball2 under the goalkeeper (NET layer) so it's not drawn on top of the keeper
-  addToLayer(container, ball2, Layer.NET);
+  addToLayer(container, ball2, Layer.BALL);
 
   // Goalkeeper2 for Other mode
   const goalkeeper2 = new Goalkeeper2();
@@ -121,11 +131,19 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       // Remove original ground/background so only the new background remains
       try { container.removeChild(ground); } catch (e) {}
       // Show reversed goal for Other mode: re-add to layer, refresh layout
-      try { addToLayer(container, reversedGoal, Layer.NET); } catch (e) {}
+      try { addToLayer(container, reversedGoal, Layer.GROUND); } catch (e) {}
+      try {
+        const frameSprite = (reversedGoal as any).detachFrameSprite?.();
+        if (frameSprite) {
+          const frameContainer = new Container();
+          frameContainer.addChild(frameSprite);
+          addToLayer(container, frameContainer, Layer.OVERLAY);
+        }
+      } catch (e) {}
       try { (reversedGoal as any).refresh?.(); } catch (e) {}
       try { reversedGoal.visible = true; } catch (e) {}
       // Show Ball2 centered (ensure it's beneath goalkeeper)
-      try { addToLayer(container, ball2, Layer.NET); } catch (e) {}
+      try { addToLayer(container, ball2, Layer.BALL); } catch (e) {}
       try { (ball2 as any).refresh?.(); } catch (e) {}
       try { ball2.visible = true; } catch (e) {}
         try { (ball2 as any).keeper = goalkeeper2; } catch (e) {}
