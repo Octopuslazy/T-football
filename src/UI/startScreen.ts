@@ -90,9 +90,9 @@ export default class StartScreen extends PIXI.Container {
     const c = new PIXI.Container();
     const g = new PIXI.Graphics();
     g.beginFill(color);
-    g.drawRoundedRect(-120, -28, 240, 56, 8);
+    g.drawRoundedRect(-250, -28, 500, 70, 8);
     g.endFill();
-    const t = new PIXI.Text(label, { fontFamily: 'Arial', fontSize: 20, fill: 0xffffff } as any);
+    const t = new PIXI.Text(label, { fontFamily: 'Roboto', fontSize: 50, fill: 0x000000 } as any);
     t.anchor.set(0.5);
     c.addChild(g);
     c.addChild(t);
@@ -111,10 +111,10 @@ export default class StartScreen extends PIXI.Container {
     this.title.y = 120;
 
     this.playBtn.x = window.innerWidth / 2;
-    this.playBtn.y = window.innerHeight / 2 - 24;
+    this.playBtn.y = 1.5*window.innerHeight / 2 - 24;
 
     this.otherBtn.x = window.innerWidth / 2;
-    this.otherBtn.y = window.innerHeight / 2 + 48;
+    this.otherBtn.y = 1.3*window.innerHeight / 2 + 48;
 
     // update hitArea size
     try { (this as any).hitArea.width = window.innerWidth; (this as any).hitArea.height = window.innerHeight; } catch (e) {}
