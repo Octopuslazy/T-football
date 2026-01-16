@@ -15,13 +15,13 @@ export default class Goalkeeper2 extends PIXI.Container {
   private _startPos: { x: number; y: number } = { x: 0, y: 0 };
 
   private _targets = [
-    { x: 0.228, y: 0.75 }, // bottom-left (1)
-    { x: 0.78, y: 0.75 },  // bottom-right (7)
-    { x: 0.228, y: 0.69 }, // mid-left (2)
-    { x: 0.78, y: 0.69 },  // mid-right (6)
-    { x: 0.228, y: 0.63 }, // upper-left (3)
-    { x: 0.5, y: 0.63 },   // upper-center (4) - jump only, no rotation
-    { x: 0.78, y: 0.63 },  // upper-right (5)
+          { x: 0.228, y: 0.75 },
+          { x: 0.78, y: 0.75 },
+          { x: 0.33, y: 0.69 },
+          { x: 0.66, y: 0.69 },
+          { x: 0.228, y: 0.63 },
+          { x: 0.50, y: 0.63 },
+          { x: 0.78, y: 0.63 },
   ];
 
   constructor() {

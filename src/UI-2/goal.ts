@@ -79,8 +79,8 @@ export default class GoalBackground extends PIXI.Container {
         const circles = [
           { x: 0.228, y: 0.75 },
           { x: 0.78, y: 0.75 },
-          { x: 0.228, y: 0.69 },
-          { x: 0.78, y: 0.69 },
+          { x: 0.33, y: 0.69 },
+          { x: 0.66, y: 0.69 },
           { x: 0.228, y: 0.63 },
           { x: 0.50, y: 0.63 },
           { x: 0.78, y: 0.63 },

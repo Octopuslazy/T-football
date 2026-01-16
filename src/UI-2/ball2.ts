@@ -20,13 +20,13 @@ export default class Ball2 extends PIXI.Container {
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
-    { x: 0.228, y: 0.75 }, // bottom-left (1)
-    { x: 0.78, y: 0.75 },  // bottom-right (7)
-    { x: 0.228, y: 0.69 }, // mid-left (2)
-    { x: 0.78, y: 0.69 },  // mid-right (6)
-    { x: 0.228, y: 0.63 }, // upper-left (3)
-    { x: 0.50, y: 0.63 },  // upper-center (4)
-    { x: 0.78, y: 0.63 },  // upper-right (5)
+    { x: 0.228, y: 0.75 },
+    { x: 0.78, y: 0.75 },
+    { x: 0.33, y: 0.69 },
+    { x: 0.66, y: 0.69 },
+    { x: 0.228, y: 0.63 },
+    { x: 0.50, y: 0.63 },
+    { x: 0.78, y: 0.63 },
   ];
 
   constructor() {
@@ -102,24 +102,22 @@ export default class Ball2 extends PIXI.Container {
         this._finishShoot();
         return;
       }
-      // tween to target, then either deflect, pass-through, or return home
+      // tween to target, then either deflect or play goal fall animation
       this._tweenTo(screen.x, screen.y, 700, () => {
-        setTimeout(() => {
-          if (this._hasDeflected) {
-            // deflected path already started; do nothing here
-          } else if (this._suppressArrival) {
-            // suppressed by external callback — just return home
-            this._suppressArrival = false;
-            this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot(), false);
-          } else {
-            // keeper didn't stop the ball — play pass-through animation
-            this._passThrough(screen.x, screen.y, () => {
-              this._tweenTo(this._homeX, this._homeY, 220, () => this._finishShoot(), false);
-            });
-          }
-        }, 300);
+        if (this._hasDeflected) {
+          // deflected path already started; do nothing here
+        } else if (this._suppressArrival) {
+          // suppressed by external callback — just return home
+          this._suppressArrival = false;
+          this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false);
+        } else {
+          // Goal scored: fall to the goal frame bottom (ground) with physics-like motion
+          this._fallToGoalGround(screen.x, screen.y, () => {
+            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false);
+          });
+        }
       }, true);
-    }, 300);
+    }, 0);
   }
 
   private _finishShoot() {
@@ -247,39 +245,89 @@ export default class Ball2 extends PIXI.Container {
     requestAnimationFrame(animate);
   }
 
-  // pass-through: move from arrival point into the goal center and slightly scale down/up to 1.1
-  private _passThrough(fromX: number, fromY: number, cb?: () => void) {
+  // Compute the bottom Y coordinate (ground) of the displayed `goal3` frame.
+  // Mirrors the layout used by GoalBackground: frame center at y = 1.4 * h / 2
+  private _computeGoalFrameBottomY(): number | null {
     try {
-      const center = this._normalizedToScreen(0.5, 0.5);
-      if (!center) { if (cb) cb(); return; }
-      // choose an off-screen target: lower-right for right-side shots, lower-left for left-side
-      const screenW = window.innerWidth;
-      const screenH = window.innerHeight;
-      const side = (fromX >= screenW / 2) ? 'right' : 'left';
-      const offExtra = Math.max(300, Math.round(screenW * 0.25));
-      let targetX: number;
-      let targetY: number = screenH + offExtra; // drive below the bottom of the screen
-      if (side === 'right') targetX = screenW + offExtra;
-      else targetX = -offExtra;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const bgTex = PIXI.Texture.from('./arts/bg2.png');
+      const frameTex = PIXI.Texture.from('./arts/goal3.png');
+      if (!bgTex || !bgTex.width || !bgTex.height) return null;
+      if (!frameTex || !frameTex.width || !frameTex.height) return null;
+      const sx = w / bgTex.width;
+      const sy = h / bgTex.height;
+      const s = Math.max(sx, sy);
+      const frameSx = (bgTex.width * s) / frameTex.width;
+      const frameSy = (bgTex.height * s) / frameTex.height;
+      const fs = Math.min(frameSx, frameSy) * 0.75; // match GoalBackground.frameScale default
+      const frameDisplayH = frameTex.height * fs;
+      const frameCenterY = 1.4 * h / 2;
+      return frameCenterY + frameDisplayH / 2;
+    } catch (e) { return null; }
+  }
 
+  // Physics-like fall to the computed ground Y with simple gravity + restitution bounce.
+  private _fallToGoalGround(fromX: number, fromY: number, cb?: () => void) {
+    try {
+      const groundYBase = this._computeGoalFrameBottomY();
+      if (groundYBase == null) { if (cb) cb(); return; }
+      // ground factor controls how far above the absolute frame bottom the ball lands.
+      // Increase this factor to lower the ground (larger Y). Default tuned to 0.95.
+      const groundY = groundYBase * this._groundFactor;
+
+      // physics params
+      const gravity = 2200; // px / s^2 (tuned)
+      let vy = 0; // initial vertical speed
+      let vx = 0; // we'll nudge x toward fromX
+      const restitution = 0.45; // bounce energy retained
+      const minBounceV = 80; // when vy after bounce is below this, stop
+
+      let last = performance.now();
       const startX = this.x;
       const startY = this.y;
-      const startScale = (this.sprite && this.sprite.scale) ? this.sprite.scale.x : this._homeScale;
-      const targetScale = 1.05;
-      const duration = 700;
-      const start = performance.now();
-      const animate = (now: number) => {
-        const tRaw = Math.min(1, (now - start) / duration);
-        const t = tRaw < 0.5 ? 2 * tRaw * tRaw : -1 + (4 - 2 * tRaw) * tRaw;
-        this.x = startX + (targetX - startX) * t;
-        this.y = startY + (targetY - startY) * t;
-        try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(startScale + (targetScale - startScale) * t); } catch(e) {}
-        if (tRaw < 1) requestAnimationFrame(animate);
-        else if (cb) cb();
+
+      const step = (now: number) => {
+        const dt = Math.min(0.04, (now - last) / 1000); // clamp dt
+        last = now;
+
+        // apply gravity
+        vy += gravity * dt;
+        this.y += vy * dt;
+
+        // nudge x toward fromX smoothly
+        vx = (fromX - this.x) * 6 * dt; // proportional control
+        this.x += vx;
+
+        if (this.y >= groundY) {
+          // hit ground
+          this.y = groundY;
+          vy = -vy * restitution;
+          // if very small bounce velocity, finish
+          if (Math.abs(vy) < minBounceV) {
+            this.y = groundY;
+            if (cb) cb();
+            return;
+          }
+        }
+
+        requestAnimationFrame(step);
       };
-      requestAnimationFrame(animate);
+
+      requestAnimationFrame(step);
     } catch (e) { if (cb) cb(); }
   }
+
+  // Factor used to compute landing Y relative to computed frame bottom.
+  // 1.0 = exactly the frame bottom; <1.0 = slightly above. Default 0.95.
+  private _groundFactor: number = 0.95;
+
+  public setGroundFactor(f: number) {
+    if (typeof f !== 'number') return;
+    this._groundFactor = Math.max(0.7, Math.min(1.05, f));
+  }
+
+  // pass-through removed
 
   destroy(options?: any) {
     window.removeEventListener('resize', this._onResize);
