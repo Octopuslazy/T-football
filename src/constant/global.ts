@@ -6,3 +6,11 @@ export const GAME_CONFIG = {
   GOAL_RESPAWN_DELAY_2: 800, // 0.8 seconds for level-2
 
 };
+
+// Base design resolution (we target portrait layout)
+// Restore the original base design resolution used by the game art/layout
+export const BASE_WIDTH = 1080; // target mobile portrait width
+export const BASE_HEIGHT = 2400; // target mobile portrait height
+
+// Preferred orientation
+export const PREFERRED_ORIENTATION: 'portrait' | 'landscape' = 'portrait';

@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 export default class Goalkeeper extends PIXI.Container {
   private goalkeeperSprite: PIXI.Sprite;
@@ -70,7 +71,7 @@ export default class Goalkeeper extends PIXI.Container {
       const goalScale = (sx + sy) / 2;
       baseScale = goalScale * 0.6 * screenFactor;
     } else {
-      const goalLikeScale = Math.min(screenWidth / 1920, screenHeight / 1080) * 0.8;
+      const goalLikeScale = Math.min(screenWidth /  BASE_WIDTH, screenHeight / BASE_HEIGHT) * 0.8;
       baseScale = goalLikeScale * 0.6 * screenFactor;
     }
 
@@ -563,5 +564,8 @@ export default class Goalkeeper extends PIXI.Container {
   destroy(options?: any) {
     window.removeEventListener('resize', this._onResize);
     super.destroy(options);
+  }
+  public refresh(): void {
+    this.updateScale();
   }
 }

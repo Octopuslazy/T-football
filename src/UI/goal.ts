@@ -91,6 +91,11 @@ export default class Goal extends PIXI.Container {
     // These are used by `Ball.getInteractionZoneAt()` to detect collisions.
     try { this.setupInteractionZones(); } catch (e) { /* silent */ }
   }
+
+  // Public refresh API used by app layout manager to reflow on resize/scale changes
+  public refresh(): void {
+    this.updateScale();
+  }
   
     // Prepare interaction zones (used for collision behavior). Visuals are drawn centrally
     // in `drawZoneVisualization()` to avoid creating multiple Graphics children.

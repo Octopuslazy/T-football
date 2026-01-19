@@ -92,13 +92,18 @@ export default class ScoreDisplay2 extends PIXI.Container {
 			saves: this.goalkeeperSaves,
 			outs: this.outs,
 			shots: this.ballsUsed,
-			accuracy: this.ballsUsed > 0 ? (this.goalsScored / this.ballsUsed * 100).toFixed(1) : '0.0'
+			accuracy: this.ballsUsed > 0 ?((1 - (this.goalsScored / this.ballsUsed)) * 100).toFixed(1) : '0.0'
 		};
 	}
 
 	destroy(options?: any) {
 		window.removeEventListener('resize', this._onResize);
 		super.destroy(options);
+	}
+
+	// Public refresh so app can request repositioning after layout changes
+	public refresh() {
+		try { this.updatePosition(); } catch (e) {}
 	}
 }
 

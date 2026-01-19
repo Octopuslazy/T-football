@@ -119,6 +119,7 @@ export default class GoalBackground extends PIXI.Container {
   }
 
   public refresh() {
+    
     this.resize();
   }
 
@@ -128,5 +129,5 @@ export default class GoalBackground extends PIXI.Container {
     try { this.frameSprite.destroy(); } catch (e) {}
     try { this.guides.destroy(); } catch (e) {}
     super.destroy(options);
-  }
-}
+  }}
+ 

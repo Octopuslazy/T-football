@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 export default class Ground extends PIXI.Container {
   private groundSprite: PIXI.Graphics;
@@ -24,35 +25,34 @@ export default class Ground extends PIXI.Container {
   }
 
   updateScale() {
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-    
-    // Sky takes 1/4 from top
-    const skyHeight = screenHeight / 4;
+    // Use base design resolution so the ground aligns with world coordinates
+    const screenWidth = BASE_WIDTH;
+    const screenHeight = BASE_HEIGHT;
+
+    // Sky takes 1/4 from top (in base coords)
+    const skyHeight = Math.round(screenHeight / 4);
     // Ground takes 3/4 from bottom  
-    const groundHeight = (screenHeight * 3) / 4;
-    
+    const groundHeight = screenHeight - skyHeight;
+
     // Clear previous drawings
     this.skySprite.clear();
     this.groundSprite.clear();
-    
-    // Draw sky (gradient from light blue to darker blue)
+
+    // Draw sky and ground using base resolution units
     this.drawSky(screenWidth, skyHeight);
-    
-    // Draw ground (gradient green field with perspective lines)
     this.drawGround(screenWidth, groundHeight, skyHeight);
-    
-    // Set container position - anchor mid bottom
-    this.x = screenWidth / 2;
-    this.y = screenHeight;
+
+    // Set container position in world coords (anchor mid bottom)
+    this.x = Math.round(screenWidth / 2);
+    this.y = Math.round(screenHeight);
   }
   
   private drawSky(width: number, height: number) {
     // Draw sky background (simple solid fill)
     this.skySprite.clear();
     this.skySprite.beginFill(0x87CEEB);
-    // Container is positioned at (screenWidth/2, screenHeight), so top-left is (-width/2, -window.innerHeight)
-    this.skySprite.drawRect(-width / 2, -window.innerHeight, width, height);
+    // Container is positioned at (BASE_WIDTH/2, BASE_HEIGHT), so draw sky above the field
+    this.skySprite.drawRect(-width / 2, - (height + (BASE_HEIGHT - height)), width, height);
     this.skySprite.endFill();
   }
   
@@ -63,7 +63,7 @@ export default class Ground extends PIXI.Container {
     // Draw ground base
     this.groundSprite.clear();
     this.groundSprite.beginFill(fieldColor);
-    // Ground should occupy the bottom portion; container is at y=screenHeight so draw from -height to 0
+    // Ground should occupy the bottom portion; container is at y=BASE_HEIGHT so draw from -height to 0
     this.groundSprite.drawRect(-width / 2, -height, width, height);
     this.groundSprite.endFill();
   }
@@ -75,18 +75,24 @@ export default class Ground extends PIXI.Container {
   
   // Check if a point is on the field
   public isOnField(x: number, y: number) {
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-    const groundHeight = (screenHeight * 3) / 4;
-    
-    return x >= -screenWidth/2 && 
-           x <= screenWidth/2 && 
-           y >= -groundHeight && 
-           y <= 0;
+      const screenWidth = BASE_WIDTH;
+      const screenHeight = BASE_HEIGHT;
+      const skyHeight = Math.round(screenHeight / 4);
+      const groundHeight = screenHeight - skyHeight;
+
+      return x >= -screenWidth/2 && 
+        x <= screenWidth/2 && 
+        y >= -groundHeight && 
+        y <= 0;
   }
 
   destroy(options?: any) {
     window.removeEventListener('resize', this._onResize);
     super.destroy(options);
+  }
+
+  // Public refresh so callers can request a layout update
+  public refresh() {
+    try { this.updateScale(); } catch (e) {}
   }
 }

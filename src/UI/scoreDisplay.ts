@@ -117,4 +117,9 @@ export default class ScoreDisplay extends PIXI.Container {
     window.removeEventListener('resize', this._onResize);
     super.destroy(options);
   }
+
+  // Public refresh called by layout manager
+  public refresh() {
+    try { this.updatePosition(); } catch (e) {}
+  }
 }

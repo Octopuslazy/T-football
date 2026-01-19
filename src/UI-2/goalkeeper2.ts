@@ -250,24 +250,7 @@ export default class Goalkeeper2 extends PIXI.Container {
   }
 
   // compute head world position for a given container position and rotation
-  private _getHeadWorldPos(containerX: number, containerY: number, rotation?: number) {
-    const tex = this.sprite.texture;
-    const texH = (tex && tex.height) ? tex.height : (this.sprite.height || 100);
-    const anchorY = this.sprite.anchor.y || 1;
-    const topLocalY = -anchorY * texH;
-    const HEAD_FRACTION = 0.14;
-    const headLocalY = topLocalY + texH * HEAD_FRACTION;
-    const headLocalX = 0;
-
-    const sX = this.sprite.scale ? this.sprite.scale.x : 1;
-    const sY = this.sprite.scale ? this.sprite.scale.y : sX;
-
-    const theta = (typeof rotation === 'number') ? rotation : (this.sprite.rotation || 0);
-    const rx = headLocalX * sX * Math.cos(theta) - headLocalY * sY * Math.sin(theta);
-    const ry = headLocalX * sX * Math.sin(theta) + headLocalY * sY * Math.cos(theta);
-
-    return { x: containerX + rx, y: containerY + ry };
-  }
+  
 
   private _nearestTargetToPoint(screenX: number, screenY: number): { x: number; y: number } | null {
     try {

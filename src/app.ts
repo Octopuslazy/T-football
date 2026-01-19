@@ -11,7 +11,7 @@ import ReversedGoal from './UI-2/goal.js';
 import Ball2 from './UI-2/ball2.js';
 import Goalkeeper2 from './UI-2/goalkeeper2.js';
 import ScoreDisplay2 from './UI-2/scoreDisplay2.js';
-import { GAME_CONFIG } from './constant/global.js';
+import { GAME_CONFIG, BASE_WIDTH, BASE_HEIGHT, PREFERRED_ORIENTATION } from './constant/global.js';
 import { Layer, addToLayer } from './ControllUI/layers.js';
 
 (async () => {
@@ -25,9 +25,39 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   const mount = document.getElementById('app') || document.body;
   mount.appendChild(app.view as HTMLCanvasElement);
 
+  // Ensure the canvas element uses CSS to fill the mount container and
+  // keep the renderer size in sync with the window so CSS scaling doesn't
+  // create unexpected letterboxing or tiny canvas appearance.
+  try {
+    const cvs = app.view as HTMLCanvasElement;
+    cvs.style.width = '100%';
+    cvs.style.height = '100%';
+    cvs.style.display = 'block';
+    // Explicitly resize renderer to current window dimensions to ensure
+    // the drawing buffer matches the displayed size.
+    try { app.renderer.resize(window.innerWidth, window.innerHeight); } catch (e) {}
+  } catch (e) {}
+
   // Create and add a container to the stage
   const container = new Container();
   app.stage.addChild(container);
+
+  // Overlay blocker for wrong orientation (landscape) - sits above stage
+  const orientationBlocker = new Container();
+  const orientationGfx = new PIXI.Graphics();
+  orientationGfx.beginFill(0x000000, 0.6);
+  orientationGfx.drawRect(0, 0, window.innerWidth, window.innerHeight);
+  orientationGfx.endFill();
+  orientationGfx.interactive = true; // blocks pointer events
+  orientationGfx.cursor = 'default';
+  orientationBlocker.addChild(orientationGfx);
+  const orientText = new PIXI.Text('Please rotate your device to portrait', { fontFamily: 'Arial', fontSize: 28, fill: 0xFFFFFF, align: 'center' } as any);
+  orientText.anchor.set(0.5);
+  orientText.x = window.innerWidth / 2;
+  orientText.y = window.innerHeight / 2;
+  orientationBlocker.addChild(orientText);
+  orientationBlocker.visible = false;
+  app.stage.addChild(orientationBlocker);
 
   // Load assets
   try {
@@ -93,8 +123,73 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     } catch (e) {}
   }
 
+  // Responsive scaling: scale the main world `container` to fit BASE resolution and center it.
+  function applyResponsiveScale() {
+    try {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const baseW = BASE_WIDTH || 720;
+      const baseH = BASE_HEIGHT || 1280;
+      const scale = Math.min(w / baseW, h / baseH) || 1;
+      container.scale.set(scale, scale);
+
+      // center the world inside the viewport (letterbox/pillarbox)
+      const worldDisplayW = baseW * scale;
+      const worldDisplayH = baseH * scale;
+      const offsetX = Math.round((w - worldDisplayW) / 2);
+      const offsetY = Math.round((h - worldDisplayH) / 2);
+      container.position.set(offsetX, offsetY);
+
+      // resize orientation blocker graphics and text
+      try {
+        if (orientationGfx) {
+          orientationGfx.clear();
+          orientationGfx.beginFill(0x000000, 0.6);
+          orientationGfx.drawRect(0, 0, window.innerWidth, window.innerHeight);
+          orientationGfx.endFill();
+        }
+        if (orientText) {
+          orientText.x = window.innerWidth / 2;
+          orientText.y = window.innerHeight / 2;
+        }
+      } catch (e) {}
+
+      // show/hide orientation blocker when in wrong orientation
+      try {
+        if (PREFERRED_ORIENTATION === 'portrait') {
+          const isLandscape = window.innerWidth > window.innerHeight;
+          orientationBlocker.visible = isLandscape;
+        } else {
+          const isPortrait = window.innerHeight > window.innerWidth;
+          orientationBlocker.visible = isPortrait;
+        }
+      } catch (e) { orientationBlocker.visible = false; }
+
+      // ensure blocker is rendered above everything when visible
+      try {
+        if (orientationBlocker.visible) app.stage.setChildIndex(orientationBlocker, app.stage.children.length - 1);
+      } catch (e) {}
+
+      // refresh a few known components so they re-layout with new sizes
+      try { ground?.refresh?.(); } catch (e) {}
+      try { goal?.refresh?.(); } catch (e) {}
+      try { goalkeeper?.refresh?.(); } catch (e) {}
+      try { goalkeeper2?.refresh?.(); } catch (e) {}
+      try { ball2?.refresh?.(); } catch (e) {}
+      try { scoreDisplay?.refresh?.(); } catch (e) {}
+      try { scoreDisplay2?.refresh?.(); } catch (e) {}
+    } catch (e) {}
+  }
+
+  // Initialize scale and listen for resize
+  applyResponsiveScale();
+  window.addEventListener('resize', applyResponsiveScale);
+
   
-  addToLayer(container, startScreen, Layer.BALL);
+  // Start screen should be screen-space (not affected by world scaling). Add to stage overlay.
+  addToLayer(app.stage as any, startScreen, Layer.OVERLAY);
+  // Ensure any DOM Home button is hidden while the start screen is visible
+  try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.style.display = 'none'; hb.disabled = true; } } catch (e) {}
   // Disable DOM reset button while start screen is visible
   try {
     const rb = document.getElementById('reset-btn') as HTMLButtonElement | null;
@@ -103,7 +198,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
       
   startScreen.onSelect = (mode: 'play' | 'other') => {
-    try { container.removeChild(startScreen); } catch (e) {}
+    try { app.stage.removeChild(startScreen); } catch (e) {}
     startScreenVisible = false;
     try { ensureHomeButton(); } catch (e) {}
     if (mode === 'play') {
@@ -387,7 +482,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     try { container.removeChildren(); } catch (e) {}
     try { gameState.gameOver = true; gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
     try { currentBall = null; } catch (e) {}
-    try { addToLayer(container, startScreen, Layer.BALL); } catch (e) {}
+    try { addToLayer(app.stage as any, startScreen, Layer.OVERLAY); } catch (e) {}
     // Cancel camera follow loop (if running) and reset transforms
     try { if (cameraLoopId != null) { cancelAnimationFrame(cameraLoopId); cameraLoopId = null; } } catch (e) {}
     try { container.scale.set(1, 1); } catch (e) {}

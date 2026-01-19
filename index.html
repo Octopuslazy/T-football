@@ -14,7 +14,11 @@
   </script>
   <style>
     html,body{height:100%;margin:0}
-    #app{height:100%;}
+    /* Ensure app container fills viewport and centers the canvas if its intrinsic
+       drawing area doesn't use the full width (helps avoid visible letterboxing). */
+    #app{height:100%;display:flex;justify-content:center;align-items:center;}
+    /* Make the canvas fill the parent and remove inline gaps */
+    canvas{display:block;width:100%;height:100%;}
     #reset-btn {
       position: fixed;
       top: 20px;

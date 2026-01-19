@@ -90,9 +90,9 @@ export default class StartScreen extends PIXI.Container {
     const c = new PIXI.Container();
     const g = new PIXI.Graphics();
     g.beginFill(color);
-    g.drawRoundedRect(-250, -28, 500, 70, 8);
+    g.drawRoundedRect(-200, -28, 400, 70, 8);
     g.endFill();
-    const t = new PIXI.Text(label, { fontFamily: 'Roboto', fontSize: 50, fill: 0x000000 } as any);
+    const t = new PIXI.Text(label, { fontFamily: 'Roboto', fontSize: 40, fill: 0x000000 } as any);
     t.anchor.set(0.5);
     c.addChild(g);
     c.addChild(t);
@@ -111,10 +111,13 @@ export default class StartScreen extends PIXI.Container {
     this.title.y = 120;
 
     this.playBtn.x = window.innerWidth / 2;
-    this.playBtn.y = 1.5*window.innerHeight / 2 - 24;
+    // Use a stable base Y and fixed gap so buttons don't overlap on small screens
+    const baseButtonY = Math.round(window.innerHeight * 0.60);
+    const buttonGap = 24 + 70; // visual gap + approx button height (70)
+    this.playBtn.y = baseButtonY;
 
     this.otherBtn.x = window.innerWidth / 2;
-    this.otherBtn.y = 1.3*window.innerHeight / 2 + 48;
+    this.otherBtn.y = baseButtonY + buttonGap;
 
     // update hitArea size
     try { (this as any).hitArea.width = window.innerWidth; (this as any).hitArea.height = window.innerHeight; } catch (e) {}

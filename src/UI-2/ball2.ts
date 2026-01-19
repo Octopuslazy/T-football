@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { setLayer, applyLayerOrder, Layer } from '../ControllUI/layers';
 
 export default class Ball2 extends PIXI.Container {
   private sprite: PIXI.Sprite;
@@ -16,7 +17,8 @@ export default class Ball2 extends PIXI.Container {
   private _suppressArrival: boolean = false;
   private _tweenCancelled: boolean = false;
   private _hasDeflected: boolean = false;
-  private _collideScaleThreshold = 1.4; // scale multiplier to enable collision deflection (slightly reduced)
+  private _collideScaleThreshold = 1.41; // scale multiplier to enable collision deflection (slightly reduced)
+  private _layerScaleThreshold = 1.4;
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
@@ -41,8 +43,11 @@ export default class Ball2 extends PIXI.Container {
     this._onResize = this.resize.bind(this);
     window.addEventListener('resize', this._onResize);
     this.resize();
-    this._createButton();
-  }
+    // initial layer application
+    this._applyLayerForCurrentScale();
+    // start monitoring ancestor scale changes so layering updates during zoom animations
+    this._startLayerMonitor();
+    }
 
   // Called by external controller to know when a full shot sequence finished
   public onShotComplete?: () => void;
@@ -50,22 +55,7 @@ export default class Ball2 extends PIXI.Container {
   public onGoal?: () => void;
   public onSave?: () => void;
 
-  private _createButton() {
-    const btn = new PIXI.Container();
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0x0055ff);
-    bg.drawRoundedRect(-50, -18, 100, 36, 6);
-    bg.endFill();
-    const txt = new PIXI.Text('Shoot', { fill: 0xffffff, fontSize: 14 });
-    txt.anchor.set(0.5);
-    btn.addChild(bg, txt);
-    btn.interactive = true;
-    (btn as any).buttonMode = true;
-    btn.on('pointerdown', () => this._onShootPress());
-    this._button = btn;
-    this.addChild(btn);
-    this._layoutButton();
-  }
+
 
   private _layoutButton() {
     if (!this._button) return;
@@ -90,6 +80,35 @@ export default class Ball2 extends PIXI.Container {
     this._homeX = this.x;
     this._homeY = this.y;
     this._layoutButton();
+    // ensure layer is correct on layout/scale changes
+    this._applyLayerForCurrentScale();
+  }
+
+  // compute accumulated scale by walking ancestors
+  private _getAccumulatedScale(): number {
+    try {
+      let ancestor: any = this.parent;
+      let accumulated = 1;
+      while (ancestor) {
+        if (ancestor.scale && typeof ancestor.scale.x === 'number') accumulated *= ancestor.scale.x;
+        ancestor = ancestor.parent;
+      }
+      return accumulated;
+    } catch (e) { return 1; }
+  }
+
+  // apply layering: when accumulated scale >= threshold keep ball under keeper
+  private _applyLayerForCurrentScale() {
+    try {
+      const acc = this._getAccumulatedScale();
+      // choose a layer lower than goalkeeper's Layer.GOAL_FRONT while zoomed out
+      const belowLayer = Layer.NET;
+      // when acc >= threshold, ball should be above keeper (use Layer.BALL);
+      // otherwise keep it below (use belowLayer)
+      const desired = (acc >= this._layerScaleThreshold) ? Layer.BALL : belowLayer;
+      try { setLayer(this as any, desired); } catch (e) {}
+      try { if (this.parent) applyLayerOrder(this.parent as any); } catch (e) {}
+    } catch (e) {}
   }
 
   public refresh() {
@@ -109,18 +128,18 @@ export default class Ball2 extends PIXI.Container {
         return;
       }
       // tween to target, then either deflect or play goal fall animation
-      this._tweenTo(screen.x, screen.y, 1000, () => {
+      this._tweenTo(screen.x, screen.y, 900, () => {
         if (this._hasDeflected) {
           // deflected path already started; do nothing here
         } else if (this._suppressArrival) {
           // suppressed by external callback — just return home
           this._suppressArrival = false;
-          this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false);
+          this._tweenTo(this._homeX, this._homeY, 300, () => this._finishShoot(), false);
         } else {
           // Goal scored: fall to the goal frame bottom (ground) with physics-like motion
           this._fallToGoalGround(screen.x, screen.y, () => {
             try { if (typeof this.onGoal === 'function') this.onGoal(); } catch (e) {}
-            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false);
+            this._tweenTo(this._homeX, this._homeY, 300, () => this._finishShoot(), false);
           });
         }
       }, true);
@@ -131,7 +150,19 @@ export default class Ball2 extends PIXI.Container {
     this._isShooting = false;
     if (this._button) this._button.alpha = 1;
     this._currentTargetIndex = null;
+    // when a shot sequence finishes we should restore the ball layer to default
+    try { this.resetLayer(); } catch (e) {}
     try { if (typeof this.onShotComplete === 'function') this.onShotComplete(); } catch (e) {}
+  }
+
+  // Public: restore the ball's layer to the default (front) and re-apply ordering
+  public resetLayer() {
+    try {
+      const desired = Layer.BALL;
+      try { setLayer(this as any, desired); } catch (e) {}
+      this._lastAppliedLayer = desired;
+      try { if (this.parent) applyLayerOrder(this.parent as any); } catch (e) {}
+    } catch (e) {}
   }
 
   // convert normalized goal coordinates (0..1) into screen coordinates using goal2.png placement
@@ -287,7 +318,7 @@ export default class Ball2 extends PIXI.Container {
 
       // physics params
       const gravity = 2200; // px / s^2 (tuned)
-      let vy = 0; // initial vertical speed
+      let vy = 2; // initial vertical speed
       let vx = 0; // we'll nudge x toward fromX
       const restitution = 0.45; // bounce energy retained
       const minBounceV = 80; // when vy after bounce is below this, stop
@@ -341,6 +372,36 @@ export default class Ball2 extends PIXI.Container {
   destroy(options?: any) {
     window.removeEventListener('resize', this._onResize);
     try { this.sprite.destroy(); } catch (e) {}
+    this._stopLayerMonitor();
     super.destroy(options);
+  }
+
+  private _layerMonitorId: number | null = null;
+  private _lastAppliedLayer: number | null = null;
+
+  private _startLayerMonitor() {
+    try {
+      if (this._layerMonitorId != null) return;
+      const loop = () => {
+        try {
+          const acc = this._getAccumulatedScale();
+          const desired = (acc >= this._layerScaleThreshold) ? Layer.BALL : Layer.NET;
+          if (this._lastAppliedLayer !== desired) {
+            this._lastAppliedLayer = desired;
+            try { setLayer(this as any, desired); } catch (e) {}
+            try { if (this.parent) applyLayerOrder(this.parent as any); } catch (e) {}
+          }
+        } catch (e) {}
+        this._layerMonitorId = requestAnimationFrame(loop);
+      };
+      this._layerMonitorId = requestAnimationFrame(loop);
+    } catch (e) {}
+  }
+
+  private _stopLayerMonitor() {
+    try {
+      if (this._layerMonitorId != null) cancelAnimationFrame(this._layerMonitorId);
+      this._layerMonitorId = null;
+    } catch (e) {}
   }
 }
