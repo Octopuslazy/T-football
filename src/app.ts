@@ -158,6 +158,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
         if (!goal) {
           goal = new Goal();
+          try { goal.setCircleAlpha?.(0.22); } catch (e) {}
+          try { goal.setGridVisible?.(false); } catch (e) {}
           addToLayer(container, goal, Layer.NET);
           goalFrontLayer = goal.getFrontLayer();
           addToLayer(container, goalFrontLayer, Layer.GOAL_FRONT);
@@ -237,6 +239,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       // Create reversed goal background if needed
       try {
         if (!reversedGoal) reversedGoal = new ReversedGoal();
+        try { (reversedGoal as any).setCircleAlpha?.(0); } catch (e) {}
+        try { (reversedGoal as any).setGridVisible?.(false); } catch (e) {}
         addToLayer(container, reversedGoal, Layer.GROUND);
         frameSprite = (reversedGoal as any).detachFrameSprite?.() ?? null;
         if (frameSprite) {

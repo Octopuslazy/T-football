@@ -9,6 +9,8 @@ export default class GoalBackground extends PIXI.Container {
   private frameSprite: PIXI.Sprite;
   private guides: PIXI.Graphics;
   private frameScale: number = 0.75;
+  private _circleAlpha: number = 0.06;
+  private _showGrid: boolean = false;
   private _onResize: () => void;
 
   constructor() {
@@ -107,11 +109,13 @@ export default class GoalBackground extends PIXI.Container {
         for (const c of circles) {
           const cx2 = imgLeft + c.x * imgW;
           const cy2 = imgTop + c.y * imgH;
-          this.guides.beginFill(0xff0000, 0.06);
-          this.guides.drawCircle(cx2, cy2, circRadius);
-          this.guides.endFill();
-          this.guides.lineStyle(Math.max(2, Math.round(stroke * 0.7)), 0xff0000, 1);
-          this.guides.drawCircle(cx2, cy2, circRadius);
+          if (this._showGrid) {
+            this.guides.beginFill(0xff0000, this._circleAlpha);
+            this.guides.drawCircle(cx2, cy2, circRadius);
+            this.guides.endFill();
+            this.guides.lineStyle(Math.max(2, Math.round(stroke * 0.7)), 0xff0000, 1);
+            this.guides.drawCircle(cx2, cy2, circRadius);
+          }
         }
       } catch (e) {
         // ignore drawing errors
@@ -123,6 +127,19 @@ export default class GoalBackground extends PIXI.Container {
   }
 
   public refresh() {
+    this.resize();
+  }
+
+  // Public API to show/hide the circle outlines/grid
+  public setGridVisible(show: boolean) {
+    this._showGrid = !!show;
+    this.resize();
+  }
+
+  // Public API: set fill alpha for the red guide circles (0..1)
+  public setCircleAlpha(a: number) {
+    const v = typeof a === 'number' && isFinite(a) ? a : this._circleAlpha;
+    this._circleAlpha = Math.max(0, Math.min(1, v));
     this.resize();
   }
 

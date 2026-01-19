@@ -9,7 +9,9 @@ export default class Goal extends PIXI.Container {
   private rightPost: PIXI.Graphics;
   private crossbar: PIXI.Graphics;
   private zoneVisualization: PIXI.Graphics;
+  private _circleAlpha: number = 0.22;
   private _onResize: () => void;
+  private _showGrid: boolean = false;
   private showZones: boolean = true; // Toggle zone visualization
 
   constructor() {
@@ -153,7 +155,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw left post (anchor: top-left)
     this.leftPost.clear();
-    this.leftPost.fill(postColor, 1); // Alpha = 0 to make transparent
+    this.leftPost.fill(postColor, 0); // Alpha = 0 to make transparent
     this.leftPost.rect(0, 0, postWidth, postHeight);
     this.leftPost.fill();
     this.leftPost.pivot.set(0, 0); // anchor top-left
@@ -162,7 +164,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw right post (anchor: top-right)
     this.rightPost.clear();
-    this.rightPost.fill(postColor, 1); // Alpha = 0 to make transparent
+    this.rightPost.fill(postColor, 0); // Alpha = 0 to make transparent
     this.rightPost.rect(0, 0, postWidth, postHeight);
     this.rightPost.fill();
     this.rightPost.pivot.set(postWidth, 0); // anchor top-right
@@ -171,7 +173,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw crossbar (anchor: mid-top)
     this.crossbar.clear();
-    this.crossbar.fill(postColor, 1); // Alpha = 0 to make transparent
+    this.crossbar.fill(postColor, 0); // Alpha = 0 to make transparent
     this.crossbar.rect(0, 0, goalBounds.width, crossbarHeight);
     this.crossbar.fill();
     this.crossbar.pivot.set(goalBounds.width / 2, 0); // anchor mid-top
@@ -290,16 +292,20 @@ export default class Goal extends PIXI.Container {
       const localW = tr.x - tl.x;
       const localH = bl.y - tl.y;
 
-      this.zoneVisualization.lineStyle(2, 0x880000, 0.5);
-      this.zoneVisualization.rect(localX, localY, localW, localH);
+      if (this._showGrid) {
+        this.zoneVisualization.lineStyle(2, 0x880000, 0);
+        this.zoneVisualization.rect(localX, localY, localW, localH);
+      }
 
       // center marker (red circle) — make visible with modest alpha
-      const centerLocalX = localX + localW / 2;
-      const centerLocalY = localY + localH / 2;
-      const circleRadiusLocal = (localH / 4) / 2;
-      this.zoneVisualization.beginFill(0xFF0000, 0.22);
-      this.zoneVisualization.drawCircle(centerLocalX, centerLocalY, Math.max(4, circleRadiusLocal));
-      this.zoneVisualization.endFill();
+      if (this._showGrid) {
+        const centerLocalX = localX + localW / 2;
+        const centerLocalY = localY + localH / 2;
+        const circleRadiusLocal = (localH / 4) / 2;
+        this.zoneVisualization.beginFill(0xFF0000, this._circleAlpha);
+        this.zoneVisualization.drawCircle(centerLocalX, centerLocalY, Math.max(4, circleRadiusLocal));
+        this.zoneVisualization.endFill();
+      }
     }
 
     // Also draw the interaction rectangles (green / red / yellow) explicitly so they match
@@ -350,6 +356,19 @@ export default class Goal extends PIXI.Container {
     } else {
       this.zoneVisualization.clear();
     }
+  }
+
+  // Public API: set the fill alpha for the red zone center circles (0..1)
+  public setCircleAlpha(a: number) {
+    const v = typeof a === 'number' && isFinite(a) ? a : this._circleAlpha;
+    this._circleAlpha = Math.max(0, Math.min(1, v));
+    if (this.showZones) this.drawZoneVisualization();
+  }
+
+  // Public API to show/hide the grid lines (rect outlines)
+  public setGridVisible(show: boolean) {
+    this._showGrid = !!show;
+    if (this.showZones) this.drawZoneVisualization();
   }
 
   destroy(options?: any) {
