@@ -4,7 +4,7 @@ import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 export default class Ball2 extends PIXI.Container {
   private sprite: PIXI.Sprite;
   private _onResize: () => void;
-  private _button: PIXI.Container | null = null;
+  // shoot button removed
   private _isShooting: boolean = false;
   private _homeX: number = 0;
   private _homeY: number = 0;
@@ -42,7 +42,6 @@ export default class Ball2 extends PIXI.Container {
     this._onResize = this.resize.bind(this);
     window.addEventListener('resize', this._onResize);
     this.resize();
-    this._createButton();
   }
 
   // Called by external controller to know when a full shot sequence finished
@@ -51,37 +50,7 @@ export default class Ball2 extends PIXI.Container {
   public onGoal?: () => void;
   public onSave?: () => void;
 
-  private _createButton() {
-    const btn = new PIXI.Container();
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0x0055ff);
-    bg.drawRoundedRect(-50, -18, 100, 36, 6);
-    bg.endFill();
-    const txt = new PIXI.Text('Shoot', { fill: 0xffffff, fontSize: 14 });
-    txt.anchor.set(0.5);
-    btn.addChild(bg, txt);
-    btn.interactive = true;
-    (btn as any).buttonMode = true;
-    btn.on('pointerdown', () => this._onShootPress());
-    this._button = btn;
-    this.addChild(btn);
-    this._layoutButton();
-  }
-
-  private _layoutButton() {
-    if (!this._button) return;
-    // Button is a child of this container — set local coords relative to the ball sprite
-    // place button near the ball lower-left area (local coordinates)
-    this._button.x = -60;
-    this._button.y = 60;
-  }
-
-  private _onShootPress() {
-    if (this._isShooting) return;
-    this._isShooting = true;
-    if (this._button) this._button.alpha = 0.6;
-    this.shoot();
-  }
+  // Shoot button removed — UI triggers shots programmatically now
 
   private resize() {
     const w = BASE_WIDTH;
@@ -91,7 +60,6 @@ export default class Ball2 extends PIXI.Container {
     this.y = 1.05 * h / 2;
     this._homeX = this.x;
     this._homeY = this.y;
-    this._layoutButton();
   }
 
   public refresh() {
