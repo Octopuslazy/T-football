@@ -1,4 +1,6 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
+
 
 export default class Goal extends PIXI.Container {
   private goalSprite: PIXI.Sprite;
@@ -67,19 +69,20 @@ export default class Goal extends PIXI.Container {
 
   updateScale() {
     if (!this.goalSprite.texture || !this.goalSprite.texture.width) return;
-    
-    const targetWidth = (window.innerWidth / 2) * 1.55; // Full half-screen width
+
+    // Use base design resolution so goal aligns with world container coordinates
+    const targetWidth = (BASE_WIDTH / 2) * 1.55; // Full half-base width
     const s = targetWidth / this.goalSprite.texture.width;
-    this.goalSprite.scale.set(s, s);    
-    // Scale and position net to match goal
+    this.goalSprite.scale.set(s, s);
+    // Scale and position net to match goal (base coords)
     if (this.netSprite.texture && this.netSprite.texture.width) {
       this.netSprite.scale.set(s, s);
-      this.netSprite.x = window.innerWidth / 2;
-      this.netSprite.y = window.innerHeight*1/6;
+      this.netSprite.x = Math.round(BASE_WIDTH / 2);
+      this.netSprite.y = Math.round(BASE_HEIGHT * 1 / 6);
     }
-    // Center horizontally, place near top of screen but visible
-    this.goalSprite.x = window.innerWidth / 2;
-    this.goalSprite.y = window.innerHeight*1/6;
+    // Center horizontally, place near top of screen (base coords)
+    this.goalSprite.x = Math.round(BASE_WIDTH / 2);
+    this.goalSprite.y = Math.round(BASE_HEIGHT * 1 / 6);
     
     // Update goal posts to match scaled goal
     this.updateGoalPosts(s);
@@ -150,7 +153,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw left post (anchor: top-left)
     this.leftPost.clear();
-    this.leftPost.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.leftPost.fill(postColor, 1); // Alpha = 0 to make transparent
     this.leftPost.rect(0, 0, postWidth, postHeight);
     this.leftPost.fill();
     this.leftPost.pivot.set(0, 0); // anchor top-left
@@ -159,7 +162,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw right post (anchor: top-right)
     this.rightPost.clear();
-    this.rightPost.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.rightPost.fill(postColor, 1); // Alpha = 0 to make transparent
     this.rightPost.rect(0, 0, postWidth, postHeight);
     this.rightPost.fill();
     this.rightPost.pivot.set(postWidth, 0); // anchor top-right
@@ -168,7 +171,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw crossbar (anchor: mid-top)
     this.crossbar.clear();
-    this.crossbar.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.crossbar.fill(postColor, 1); // Alpha = 0 to make transparent
     this.crossbar.rect(0, 0, goalBounds.width, crossbarHeight);
     this.crossbar.fill();
     this.crossbar.pivot.set(goalBounds.width / 2, 0); // anchor mid-top
@@ -178,12 +181,37 @@ export default class Goal extends PIXI.Container {
   
   // Get goal area for scoring (inside the goal)
   public getGoalArea() {
-    return {
-      x: this.leftPost.x + this.leftPost.width,
-      y: this.leftPost.y + this.crossbar.height,
-      width: this.rightPost.x - (this.leftPost.x + this.leftPost.width),
-      height: this.leftPost.height - this.crossbar.height
-    };
+    try {
+      // getBounds() returns world/global coordinates; convert them to this
+      // container's local coordinates so callers (Ball, Goalkeeper) receive
+      // coordinates in the same space as other world objects (container-local).
+      const leftBounds = this.leftPost.getBounds();
+      const rightBounds = this.rightPost.getBounds();
+      const crossbarBounds = this.crossbar.getBounds();
+
+      const worldLeftInnerX = leftBounds.x + leftBounds.width;
+      const worldTopInnerY = crossbarBounds.y + crossbarBounds.height;
+      const worldRightInnerX = rightBounds.x;
+      const worldBottomInnerY = leftBounds.y + leftBounds.height;
+
+      const topLeftLocal = this.toLocal(new PIXI.Point(worldLeftInnerX, worldTopInnerY));
+      const bottomRightLocal = this.toLocal(new PIXI.Point(worldRightInnerX, worldBottomInnerY));
+
+      const x = topLeftLocal.x;
+      const y = topLeftLocal.y;
+      const width = Math.max(0, bottomRightLocal.x - topLeftLocal.x);
+      const height = Math.max(0, bottomRightLocal.y - topLeftLocal.y);
+
+      return { x, y, width, height };
+    } catch (e) {
+      // Fallback to conservative estimate based on sprite positioning (already local)
+      return {
+        x: this.leftPost.x + (this.leftPost.width || 0),
+        y: this.leftPost.y + (this.crossbar.height || 0),
+        width: (this.rightPost.x || 0) - (this.leftPost.x + (this.leftPost.width || 0)),
+        height: (this.leftPost.height || 0) - (this.crossbar.height || 0)
+      };
+    }
   }
 
   // Get 12 goal zones (3 rows x 4 columns)
@@ -241,26 +269,37 @@ export default class Goal extends PIXI.Container {
     if (!this.showZones) return;
     
     this.zoneVisualization.clear();
-    
+
     const zones = this.getGoalZones();
     const goalArea = this.getGoalArea();
-    
-    // Calculate circle diameter as 1/4 of goal area height
-    const circleRadius = (goalArea.height / 4) / 2;
-    
-    // Draw scoring grid (optional) using light outlines and center markers
+
+    // Draw scoring grid (optional) using light outlines and center markers.
+    // Zones and goalArea are returned in world coordinates; convert each
+    // rect into this container's local space before drawing so visuals
+    // align with other global/world-based calculations (keeper, ball).
     for (let i = 0; i < zones.length; i++) {
       const zone = zones[i];
-      const localX = zone.x; // zones are already world coords relative to stage
-      const localY = zone.y;
+
+      // Convert world corner points into local coordinates
+      const tl = this.toLocal(new PIXI.Point(zone.x, zone.y));
+      const tr = this.toLocal(new PIXI.Point(zone.x + zone.width, zone.y));
+      const bl = this.toLocal(new PIXI.Point(zone.x, zone.y + zone.height));
+
+      const localX = tl.x;
+      const localY = tl.y;
+      const localW = tr.x - tl.x;
+      const localH = bl.y - tl.y;
+
       this.zoneVisualization.lineStyle(2, 0x880000, 0.5);
-      this.zoneVisualization.rect(localX, localY, zone.width, zone.height);
-      // center marker
-      const centerX = zone.x + zone.width / 2;
-      const centerY = zone.y + zone.height / 2;
-      this.zoneVisualization.fill(0xFF0000, 0); // Alpha = 0 to hide red rectangles
-      this.zoneVisualization.circle(centerX, centerY, circleRadius);
-      this.zoneVisualization.fill();
+      this.zoneVisualization.rect(localX, localY, localW, localH);
+
+      // center marker (red circle) — make visible with modest alpha
+      const centerLocalX = localX + localW / 2;
+      const centerLocalY = localY + localH / 2;
+      const circleRadiusLocal = (localH / 4) / 2;
+      this.zoneVisualization.beginFill(0xFF0000, 0.22);
+      this.zoneVisualization.drawCircle(centerLocalX, centerLocalY, Math.max(4, circleRadiusLocal));
+      this.zoneVisualization.endFill();
     }
 
     // Also draw the interaction rectangles (green / red / yellow) explicitly so they match

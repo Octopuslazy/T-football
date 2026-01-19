@@ -11,7 +11,7 @@ import ReversedGoal from './UI-2/goal.js';
 import Ball2 from './UI-2/ball2.js';
 import Goalkeeper2 from './UI-2/goalkeeper2.js';
 import ScoreDisplay2 from './UI-2/scoreDisplay2.js';
-import { GAME_CONFIG } from './constant/global.js';
+import { GAME_CONFIG, BASE_HEIGHT, BASE_WIDTH } from './constant/global.js';
 import { Layer, addToLayer } from './ControllUI/layers.js';
 
 (async () => {
@@ -28,6 +28,37 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   // Create and add a container to the stage
   const container = new Container();
   app.stage.addChild(container);
+
+  // Apply portrait-oriented uniform scaling to the game container so UI
+  // elements maintain consistent relative sizes across mobile devices.
+  const applyPortraitScale = () => {
+    try {
+      // Use base design resolution from constants
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
+      const sw = window.innerWidth / w;
+      const sh = window.innerHeight / h;
+      // Choose scale to fit inside window while preserving aspect ratio
+      const scale = Math.min(sw, sh);
+
+      // Apply uniform scale to the main game container (world). Overlays
+      // like StartScreen are added to `app.stage` and are not affected.
+      container.scale.set(scale, scale);
+
+      // Center the container within the viewport (letterbox on sides or top/bottom)
+      const dispW = w * scale;
+      const dispH = h * scale;
+      container.x = Math.round((window.innerWidth - dispW) / 2);
+      container.y = Math.round((window.innerHeight - dispH) / 2);
+
+      // Ensure pivot remains at (0,0) unless other code changes it intentionally
+      try { container.pivot.set(0, 0); } catch (e) {}
+    } catch (e) {}
+  };
+
+  // Call initially and on window resize so layout remains consistent
+  applyPortraitScale();
+  window.addEventListener('resize', () => applyPortraitScale());
 
   // Load assets
   try {
@@ -94,7 +125,9 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   }
 
   
-  addToLayer(container, startScreen, Layer.BALL);
+  // Start screen should be an overlay on the stage so it is not affected
+  // by world/container transforms (scale/pivot). Add it to `app.stage`.
+  addToLayer(app.stage, startScreen, Layer.OVERLAY);
   // Disable DOM reset button while start screen is visible
   try {
     const rb = document.getElementById('reset-btn') as HTMLButtonElement | null;
@@ -103,7 +136,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
       
   startScreen.onSelect = (mode: 'play' | 'other') => {
-    try { container.removeChild(startScreen); } catch (e) {}
+    try { app.stage.removeChild(startScreen); } catch (e) {}
     startScreenVisible = false;
     try { ensureHomeButton(); } catch (e) {}
     if (mode === 'play') {
@@ -387,7 +420,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     try { container.removeChildren(); } catch (e) {}
     try { gameState.gameOver = true; gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
     try { currentBall = null; } catch (e) {}
-    try { addToLayer(container, startScreen, Layer.BALL); } catch (e) {}
+    try { addToLayer(app.stage, startScreen, Layer.OVERLAY); } catch (e) {}
     // Cancel camera follow loop (if running) and reset transforms
     try { if (cameraLoopId != null) { cancelAnimationFrame(cameraLoopId); cameraLoopId = null; } } catch (e) {}
     try { container.scale.set(1, 1); } catch (e) {}

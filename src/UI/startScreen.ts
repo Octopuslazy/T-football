@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH } from '../constant/global';
 
 export default class StartScreen extends PIXI.Container {
   public onSelect?: (mode: 'play' | 'other') => void;
@@ -89,13 +90,17 @@ export default class StartScreen extends PIXI.Container {
   private createButton(label: string, color: number) {
     const c = new PIXI.Container();
     const g = new PIXI.Graphics();
+    // initial placeholder size; real sizing happens in resize()
     g.beginFill(color);
-    g.drawRoundedRect(-250, -28, 500, 70, 8);
+    g.drawRoundedRect(-100, -24, 200, 48, 8);
     g.endFill();
-    const t = new PIXI.Text(label, { fontFamily: 'Roboto', fontSize: 50, fill: 0x000000 } as any);
+    const t = new PIXI.Text(label, { fontFamily: 'Roboto', fontSize: 24, fill: 0x000000 } as any);
     t.anchor.set(0.5);
     c.addChild(g);
     c.addChild(t);
+    // store references for dynamic resizing
+    (c as any).__bg = g;
+    (c as any).__label = t;
     c.interactive = true;
     c.cursor = 'pointer';
     c.on('pointerdown', () => {
@@ -110,11 +115,43 @@ export default class StartScreen extends PIXI.Container {
     this.title.x = window.innerWidth / 2;
     this.title.y = 120;
 
-    this.playBtn.x = window.innerWidth / 2;
-    this.playBtn.y = 1.5*window.innerHeight / 2 - 24;
+    // Responsive button sizing: scale relative to design width so layout
+    // remains consistent across mobile portrait devices.
+    const maxBtnWidth = Math.min(window.innerWidth * 0.85, BASE_WIDTH * 0.85);
+    const btnWidth = Math.max(180, Math.round(maxBtnWidth));
+    const btnHeight = Math.max(44, Math.round(btnWidth * 0.12));
+    const fontSize = Math.max(14, Math.round(btnHeight * 0.5));
 
-    this.otherBtn.x = window.innerWidth / 2;
-    this.otherBtn.y = 1.3*window.innerHeight / 2 + 48;
+    const layoutCenterX = window.innerWidth / 2;
+    const firstY = Math.round(window.innerHeight * 0.66);
+
+    // Update play button visuals
+    try {
+      const g = (this.playBtn as any).__bg as PIXI.Graphics;
+      const t = (this.playBtn as any).__label as PIXI.Text;
+      g.clear();
+      g.beginFill(0x2ecc71);
+      g.drawRoundedRect(-btnWidth/2, -btnHeight/2, btnWidth, btnHeight, Math.max(6, Math.round(btnHeight*0.15)));
+      g.endFill();
+      t.style = { ...(t.style as any), fontSize } as any;
+      t.anchor.set(0.5);
+      t.x = 0; t.y = 0;
+      this.playBtn.x = layoutCenterX; this.playBtn.y = firstY;
+    } catch (e) {}
+
+    // Update other button visuals
+    try {
+      const g2 = (this.otherBtn as any).__bg as PIXI.Graphics;
+      const t2 = (this.otherBtn as any).__label as PIXI.Text;
+      g2.clear();
+      g2.beginFill(0x3498db);
+      g2.drawRoundedRect(-btnWidth/2, -btnHeight/2, btnWidth, btnHeight, Math.max(6, Math.round(btnHeight*0.15)));
+      g2.endFill();
+      t2.style = { ...(t2.style as any), fontSize } as any;
+      t2.anchor.set(0.5);
+      t2.x = 0; t2.y = 0;
+      this.otherBtn.x = layoutCenterX; this.otherBtn.y = firstY + btnHeight + 18;
+    } catch (e) {}
 
     // update hitArea size
     try { (this as any).hitArea.width = window.innerWidth; (this as any).hitArea.height = window.innerHeight; } catch (e) {}
