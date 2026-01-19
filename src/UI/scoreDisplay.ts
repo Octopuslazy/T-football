@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 export default class ScoreDisplay extends PIXI.Container {
   private scoreText: PIXI.Text;
@@ -33,12 +34,12 @@ export default class ScoreDisplay extends PIXI.Container {
   
   // Update position based on screen size
   private updatePosition() {
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-    
-    // Position at top center of screen
+    const screenWidth = BASE_WIDTH;
+    const screenHeight = BASE_HEIGHT;
+
+    // Position at top center of design area (these coords are in design space)
     this.x = screenWidth / 2;
-    this.y = screenHeight/11; // 20px from top
+    this.y = screenHeight / 11; // ~9% from top
     
     // Neutralize ancestor scaling so score display stays constant relative to screen
     let ancestor: any = this.parent;

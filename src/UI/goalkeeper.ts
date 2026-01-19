@@ -7,10 +7,10 @@ export default class Goalkeeper extends PIXI.Container {
   private _initialRotation: number = 0;
   private _isActive: boolean = true;
   private _isAnimating: boolean = false;
-  private _catchProbability: number = 0.8; // Tỉ lệ bắt bóng
+  private _catchProbability: number = 1.0;
   private _goal: any = null;
-  private _lastActionTime: number = 0; // Biến lưu thời gian thực hiện hành động cuối
-  private _actionCooldown: number = 3000; // Thời gian hồi chiêu (ms) để tránh nhảy 2 lần
+  private _lastActionTime: number = 0; 
+  private _actionCooldown: number = 3000; 
   
   constructor() {
     super();
@@ -74,7 +74,28 @@ export default class Goalkeeper extends PIXI.Container {
       baseScale = goalLikeScale * 0.6 * screenFactor;
     }
 
-    this.scale.set(baseScale);
+    // Cap goalkeeper visual height so it never exceeds 2/3 of the goal area height
+    let finalScale = baseScale;
+    try {
+      if (this._goal && this._goal.getGoalArea) {
+        const goalArea = this._goal.getGoalArea();
+        if (goalArea && goalArea.height > 0) {
+          const tex = this.goalkeeperSprite.texture;
+          let spriteH = 0;
+          if (tex && tex.height) spriteH = tex.height;
+          else if (tex && (tex.orig as any) && (tex.orig as any).height) spriteH = (tex.orig as any).height;
+          else spriteH = this.goalkeeperSprite.height || 1;
+
+          if (spriteH > 0) {
+            const maxScale = (goalArea.height * (2 / 3)) / spriteH;
+            finalScale = Math.min(finalScale, maxScale);
+          }
+        }
+      }
+    } catch (e) {}
+
+    finalScale = Math.max(0.05, finalScale);
+    this.scale.set(finalScale);
     
     if (this._goal && this._goal.getGoalArea) {
       const goalArea = this._goal.getGoalArea();
@@ -98,8 +119,8 @@ export default class Goalkeeper extends PIXI.Container {
     const baseX = this._initialPosition.x;
     const baseY = this._initialPosition.y;
     
-    // Tăng khoảng cách nhảy để fallback (khi không bắt trúng bóng) trông xa hơn
-    const diveDistance = 220; 
+    // Tăng khoảng cách nhảy (giảm để giảm bán kính quay khi xoay)
+      const diveDistance = 90; 
     
     let targetX = baseX;
     let targetY = baseY;
@@ -130,18 +151,18 @@ export default class Goalkeeper extends PIXI.Container {
   private getRotationForZone(zoneId: number): number {
     let rotation = 0;
     switch(zoneId) {
-      case 1: rotation = -0.4; break;
-      case 2: rotation = -0.2; break;
-      case 3: rotation = 0.2; break;
-      case 4: rotation = 0.4; break;
-      case 5: rotation = -0.5; break;
-      case 6: rotation = -0.2; break;
-      case 7: rotation = 0.2; break;
-      case 8: rotation = 0.5; break;
-      case 9: rotation = -0.3; break;
-      case 10: rotation = -0.1; break;
-      case 11: rotation = 0.1; break;
-      case 12: rotation = 0.3; break;
+      case 1: rotation = -0.2; break;
+      case 2: rotation = -0.1; break;
+      case 3: rotation = 0.1; break;
+      case 4: rotation = 0.2; break;
+      case 5: rotation = -0.25; break;
+      case 6: rotation = -0.1; break;
+      case 7: rotation = 0.1; break;
+      case 8: rotation = 0.25; break;
+      case 9: rotation = -0.15; break;
+      case 10: rotation = -0.05; break;
+      case 11: rotation = 0.05; break;
+      case 12: rotation = 0.15; break;
       default: rotation = 0; break;
     }
     return rotation;
@@ -166,8 +187,10 @@ export default class Goalkeeper extends PIXI.Container {
       }
       
       const willAttemptCatch = Math.random() < this._catchProbability;
+      console.log(`Goalkeeper catch attempt: probability=${this._catchProbability}, willAttemptCatch=${willAttemptCatch}`);
       
       if (!willAttemptCatch) {
+        console.log('Goalkeeper decided to MISS - performing miss animation');
         // Even if roll fails, perform a random miss-dive so keeper appears to attempt elsewhere
         this._lastActionTime = now;
         this._isAnimating = true;
@@ -192,22 +215,22 @@ export default class Goalkeeper extends PIXI.Container {
       
       let catchZone = targetZone;
       if (!targetZone || !this.isValidTargetZone(ballX, ballY, targetZone)) {
+        console.log('Target zone invalid, using random zone');
         catchZone = this.getRandomZone();
       }
       
-      const canReach = this.canReachZone(catchZone, ballX, ballY);
-      
-      if (!canReach) {
-        this.performFailedCatchAnimation(catchZone, { x: ballX, y: ballY }).then((pos) => {
-          resolve({ caught: false, catchZone, catchPos: pos });
-        }).catch(() => { resolve({ caught: false }); });
-        return;
-      }
+      // Khi willAttemptCatch đã thành công, luôn thực hiện catch animation
+      // không cần kiểm tra canReachZone nữa để tránh animation sai
+      console.log(`Goalkeeper decided to CATCH - performing catch animation for zone ${catchZone?.id}`);
       
       // Truyền tọa độ bóng chính xác để thủ môn bay tới
       this.performCatchAnimation(catchZone, { x: ballX, y: ballY }).then((pos) => {
+        console.log('Catch animation completed successfully, resolving caught=true');
         resolve({ caught: true, catchZone, catchPos: pos });
-      }).catch(() => { resolve({ caught: false }); });
+      }).catch((error) => { 
+        console.error('Catch animation failed:', error);
+        resolve({ caught: false }); 
+      });
     });
   }
   
@@ -218,8 +241,9 @@ export default class Goalkeeper extends PIXI.Container {
     const ballToGoalCenterX = Math.abs(ballX - (goalArea.x + goalArea.width / 2));
     const ballToGoalCenterY = Math.abs(ballY - (goalArea.y + goalArea.height / 2));
     
-    const maxDistanceX = goalArea.width * 1.5;
-    const maxDistanceY = goalArea.height * 1.5;
+    // Làm cho canReachZone khoan dung hơn vì giờ chỉ dùng để validation
+    const maxDistanceX = goalArea.width * 2.5;
+    const maxDistanceY = goalArea.height * 2.5;
     
     return ballToGoalCenterX <= maxDistanceX && ballToGoalCenterY <= maxDistanceY;
   }
@@ -250,13 +274,30 @@ export default class Goalkeeper extends PIXI.Container {
       const catchTexture = PIXI.Texture.from('./arts/gkeeper2.png');
       this.goalkeeperSprite.texture = catchTexture;
 
-      const startRotation = this.rotation;
+      // Use sprite rotation as the animated rotation target (avoid rotating the whole container)
+      const startRotation = this.goalkeeperSprite.rotation || 0;
       const startX = this.x;
       const startY = this.y;
 
       const rotationDiff = targetRotation - startRotation;
-      const positionDiffX = (targetPosition.x - startX) * 0.7;
-      const positionDiffY = (targetPosition.y - startY) * 0.7;
+      // Giảm hệ số di chuyển để hạn chế bán kính quay
+        let positionDiffX = (targetPosition.x - startX) * 0.25;
+        let positionDiffY = (targetPosition.y - startY) * 0.25;
+        // Clamp per-animation movement relative to goal size so keeper can traverse the whole goal
+        try {
+          const scale = this.scale?.x || 1;
+          let maxMove = 100 * scale;
+          try {
+            const ga = this._goal?.getGoalArea?.();
+            if (ga && typeof ga.width === 'number' && typeof ga.height === 'number') {
+              const goalMax = Math.max(ga.width, ga.height);
+              // allow movement up to ~70% of goal width (clamped to reasonable min/max)
+              maxMove = Math.max(60, Math.min(goalMax * 0.7, 400)) * scale;
+            }
+          } catch (e) {}
+          positionDiffX = Math.sign(positionDiffX) * Math.min(Math.abs(positionDiffX), maxMove);
+          positionDiffY = Math.sign(positionDiffY) * Math.min(Math.abs(positionDiffY), maxMove);
+        } catch (e) {}
 
       const animationDuration = 300;
       const startTime = Date.now();
@@ -267,46 +308,25 @@ export default class Goalkeeper extends PIXI.Container {
         const progress = Math.min(elapsed / animationDuration, 1);
         const easedProgress = this.easeOutCubic(progress);
 
-        this.rotation = startRotation + (rotationDiff * easedProgress);
+        // Rotate sprite only, move container position for dive
+        // Clamp sprite rotation to avoid large orbital appearance
+        const maxSpriteRotation = 0.5;
+        const desiredRot = startRotation + (rotationDiff * easedProgress);
+        this.goalkeeperSprite.rotation = Math.max(-maxSpriteRotation, Math.min(maxSpriteRotation, desiredRot));
         this.x = startX + (positionDiffX * easedProgress);
         this.y = startY + (positionDiffY * easedProgress);
 
         // Resolve a deflect position at mid-dive so ball deflects visually on keeper body
         if (!resolved && progress >= 0.45) {
           resolved = true;
-          // approximate hand world point
-          const tex = this.goalkeeperSprite.texture;
-          const texH = tex ? tex.height : (this.goalkeeperSprite.height || 100);
-          const texW = tex ? tex.width : (this.goalkeeperSprite.width || 100);
-          const anchorY = this.goalkeeperSprite.anchor.y || 0.8;
-          const topLocalY = -anchorY * texH;
-          const handLocalY = topLocalY + texH * 0.14;
-          const handLocalX = rotationDiff < 0 ? -texW * 0.12 : texW * 0.12;
-
-          const sX = this.scale?.x || 1;
-          const sY = this.scale?.y || sX;
-          const theta = this.rotation;
-          const rx = handLocalX * sX * Math.cos(theta) - handLocalY * sY * Math.sin(theta);
-          const ry = handLocalX * sX * Math.sin(theta) + handLocalY * sY * Math.cos(theta);
-          const handWorld = { x: this.x + rx, y: this.y + ry };
-
-          let deflectPos = this.getRandomDeflectPosition(avoidWorldPos);
+          // For failed catch, return position near ball if provided
           if (avoidWorldPos) {
-            const dx = handWorld.x - avoidWorldPos.x;
-            const dy = handWorld.y - avoidWorldPos.y;
-            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-            deflectPos = {
-              x: handWorld.x + (dx / len) * 60,
-              y: handWorld.y + (dy / len) * 40
-            };
+            console.log(`Failed catch - returning near ball position: ${avoidWorldPos.x}, ${avoidWorldPos.y}`);
+            resolve({ x: avoidWorldPos.x, y: avoidWorldPos.y });
           } else {
-            deflectPos = {
-              x: handWorld.x + (Math.random() < 0.5 ? -1 : 1) * 60,
-              y: handWorld.y + (Math.random() - 0.5) * 40
-            };
+            console.log(`Failed catch - returning keeper position: ${this.x}, ${this.y}`);
+            resolve({ x: this.x, y: this.y });
           }
-
-          resolve(deflectPos);
         }
 
         if (progress < 1) {
@@ -382,34 +402,33 @@ export default class Goalkeeper extends PIXI.Container {
       let targetY = 0;
 
       if (catchWorldPos) {
-        let localPoint = { x: catchWorldPos.x, y: catchWorldPos.y };
-        if (this.parent && (this.parent as any).toLocal) {
-            const p = (this.parent as any).toLocal(new PIXI.Point(catchWorldPos.x, catchWorldPos.y));
-            localPoint = { x: p.x, y: p.y };
-        }
-        targetX = localPoint.x;
-        targetY = localPoint.y;
+        // Sử dụng trực tiếp world coordinates vì thủ môn và bóng đang ở cùng coordinate system
+        targetX = catchWorldPos.x;
+        targetY = catchWorldPos.y;
+        console.log(`Target ball position: ${targetX}, ${targetY}`);
+        console.log(`Current keeper position: ${this.x}, ${this.y}`);
       } else {
-        const defaultPosition = this.getPositionForZone(zone.id);
-        targetX = this.x + (defaultPosition.x - this.x) * 2.5; 
+          const defaultPosition = this.getPositionForZone(zone.id);
+          // giảm multiplier để thủ môn không bay quá xa khi bắt mặc định
+          targetX = this.x + (defaultPosition.x - this.x) * 1.1; 
         targetY = defaultPosition.y;
       }
 
       // 2. Tính toán vị trí cơ thể dựa trên Độ Dài Tay (Arm Length)
-      // TĂNG GIẢM SỐ NÀY để chỉnh khoảng cách tiếp xúc
-      const armLength = 80 * (this.scale.x || 1); 
+      // Giảm arm length để thủ môn bay gần hơn đến bóng
+      const armLength = 20 * (this.scale.x || 1); 
 
       const dx = targetX - this.x;
       const dy = targetY - this.y;
       const angle = Math.atan2(dy, dx);
 
-      // Cơ thể bay tới gần bóng, trừ đi độ dài tay
+      // Cơ thể bay tới gần bóng, trừ đi độ dài tay (nhưng giữ khoảng cách nhỏ)
       const finalBodyX = targetX - Math.cos(angle) * armLength;
       const finalBodyY = targetY - Math.sin(angle) * armLength;
 
       const startX = this.x;
       const startY = this.y;
-      const startRotation = this.rotation;
+      const startRotation = this.goalkeeperSprite.rotation || 0;
 
       // Góc xoay hướng về bóng
       let targetRotation = angle; 
@@ -418,15 +437,30 @@ export default class Goalkeeper extends PIXI.Container {
       else targetRotation = angle * 0.5;
 
       const rotationDiff = targetRotation - startRotation;
-      const distBodyX = finalBodyX - startX;
-      const distBodyY = finalBodyY - startY;
+      let distBodyX = finalBodyX - startX;
+      let distBodyY = finalBodyY - startY;
+      // Clamp body travel distance per animation relative to goal size to allow full-goal movement
+      try {
+        const scale = this.scale?.x || 1;
+        let maxBodyMove = 120 * scale;
+        try {
+          const ga = this._goal?.getGoalArea?.();
+          if (ga && typeof ga.width === 'number' && typeof ga.height === 'number') {
+            const goalMax = Math.max(ga.width, ga.height);
+            // allow body travel up to ~90% of goal width (clamped)
+            maxBodyMove = Math.max(80, Math.min(goalMax * 0.9, 800)) * scale;
+          }
+        } catch (e) {}
+        distBodyX = Math.sign(distBodyX) * Math.min(Math.abs(distBodyX), maxBodyMove);
+        distBodyY = Math.sign(distBodyY) * Math.min(Math.abs(distBodyY), maxBodyMove);
+      } catch (e) {}
 
       const animationDuration = 450;
       const startTime = Date.now();
       let resolved = false;
 
-      // Độ cao nhảy tạo đường cong
-      const jumpHeight = 120 * (this.scale.x || 1); 
+      // Tăng chiều cao nhảy để thủ môn nhảy cao hơn
+      const jumpHeight = 60 * (this.scale.x || 1); 
 
       const animateDive = () => {
         const elapsed = Date.now() - startTime;
@@ -440,11 +474,22 @@ export default class Goalkeeper extends PIXI.Container {
         const arc = Math.sin(progress * Math.PI) * jumpHeight; 
         this.y = linearY - arc; 
 
-        this.goalkeeperSprite.rotation = startRotation + (rotationDiff * easedProgress);
+        // Clamp sprite rotation to avoid large orbital appearance
+        const maxSpriteRotation = 0.5;
+        const desiredRot = startRotation + (rotationDiff * easedProgress);
+        this.goalkeeperSprite.rotation = Math.max(-maxSpriteRotation, Math.min(maxSpriteRotation, desiredRot));
 
         if (!resolved && progress >= 0.5) {
           resolved = true;
-          resolve({ x: this.x, y: this.y });
+          // Always return ball position when provided for proximity validation
+          // Don't return keeper position as it may have moved during animation
+          if (catchWorldPos) {
+            console.log(`Returning ball position for catch: ${catchWorldPos.x}, ${catchWorldPos.y}`);
+            resolve({ x: catchWorldPos.x, y: catchWorldPos.y });
+          } else {
+            console.log(`No ball pos provided, returning keeper position: ${this.x}, ${this.y}`);
+            resolve({ x: this.x, y: this.y });
+          }
         }
 
         if (progress < 1) {
@@ -466,12 +511,13 @@ export default class Goalkeeper extends PIXI.Container {
       
       // Lúc bay ta xoay Sprite, nhưng lúc ngã ta xoay cả Container nên cần lấy góc hiện tại
       // Tuy nhiên để đơn giản, ta sẽ animate Container về 0, và quan trọng nhất là reset Sprite ở cuối
-      const currentRotation = this.rotation; 
+      const currentRotation = this.goalkeeperSprite.rotation || 0; 
       
       // Target position: back to initial position (ground level)
       const targetX = this._initialPosition.x;
       const targetY = this._initialPosition.y;
-      const targetRotation = this._initialRotation;
+      // target sprite rotation is zero (upright)
+      const targetRotation = 0;
       
       // Calculate differences
       const diffX = targetX - currentX;
@@ -488,18 +534,18 @@ export default class Goalkeeper extends PIXI.Container {
         // Use gravity-like easing (faster falling)
         const easedProgress = this.easeInQuad(progress);
         
-        // Animate back to ground position
+        // Animate back to ground position and reset sprite rotation only
         this.x = currentX + (diffX * easedProgress);
         this.y = currentY + (diffY * easedProgress);
-        this.rotation = currentRotation + (diffRotation * easedProgress);
+        this.goalkeeperSprite.rotation = currentRotation + (diffRotation * easedProgress);
         
         if (progress < 1) {
           requestAnimationFrame(animateFall);
         } else {
-          // Ensure exact final position
+          // Ensure exact final position (container) and reset sprite rotation
           this.x = targetX;
           this.y = targetY;
-          this.rotation = targetRotation;
+          // do not modify container.rotation here
           
           // Reset goalkeeper to normal state after falling
           const normalTexture = PIXI.Texture.from('./arts/gkeeper.png');

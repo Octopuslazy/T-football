@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 export default class Ground extends PIXI.Container {
   private groundSprite: PIXI.Graphics;
@@ -24,8 +25,8 @@ export default class Ground extends PIXI.Container {
   }
 
   updateScale() {
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
+    const screenWidth = BASE_WIDTH;
+    const screenHeight = BASE_HEIGHT;
     
     // Sky takes 1/4 from top
     const skyHeight = screenHeight / 4;
@@ -42,7 +43,7 @@ export default class Ground extends PIXI.Container {
     // Draw ground (gradient green field with perspective lines)
     this.drawGround(screenWidth, groundHeight, skyHeight);
     
-    // Set container position - anchor mid bottom
+    // Set container position - anchor mid bottom (in design coords)
     this.x = screenWidth / 2;
     this.y = screenHeight;
   }
@@ -51,8 +52,8 @@ export default class Ground extends PIXI.Container {
     // Draw sky background (simple solid fill)
     this.skySprite.clear();
     this.skySprite.beginFill(0x87CEEB);
-    // Container is positioned at (screenWidth/2, screenHeight), so top-left is (-width/2, -window.innerHeight)
-    this.skySprite.drawRect(-width / 2, -window.innerHeight, width, height);
+    // Container is positioned at (screenWidth/2, screenHeight), so top-left is (-width/2, -BASE_HEIGHT)
+    this.skySprite.drawRect(-width / 2, -BASE_HEIGHT, width, height);
     this.skySprite.endFill();
   }
   
@@ -75,8 +76,8 @@ export default class Ground extends PIXI.Container {
   
   // Check if a point is on the field
   public isOnField(x: number, y: number) {
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
+    const screenWidth = BASE_WIDTH;
+    const screenHeight = BASE_HEIGHT;
     const groundHeight = (screenHeight * 3) / 4;
     
     return x >= -screenWidth/2 && 

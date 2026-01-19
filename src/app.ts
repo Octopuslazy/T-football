@@ -73,6 +73,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   let goal: Goal | null = null;
   let goalFrontLayer: any = null;
   let reversedGoal: ReversedGoal | null = null;
+  let frameSprite: PIXI.Sprite | null = null;
   let ball2: Ball2 | null = null;
   let goalkeeper2: Goalkeeper2 | null = null;
   let goalkeeper: Goalkeeper | null = null;
@@ -231,7 +232,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       try {
         if (!reversedGoal) reversedGoal = new ReversedGoal();
         addToLayer(container, reversedGoal, Layer.GROUND);
-        const frameSprite = (reversedGoal as any).detachFrameSprite?.();
+        frameSprite = (reversedGoal as any).detachFrameSprite?.() ?? null;
         if (frameSprite) {
           const frameContainer = new Container();
           frameContainer.addChild(frameSprite);
@@ -252,6 +253,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         addToLayer(container, goalkeeper2, Layer.GOAL_FRONT);
         (goalkeeper2 as any).refresh?.();
         goalkeeper2.visible = true;
+        // If we detached a frame sprite earlier, tell goalkeeper2 so it can size itself
+        try { if (frameSprite && (goalkeeper2 as any).setFrameSprite) (goalkeeper2 as any).setFrameSprite(frameSprite); } catch (e) {}
         // create and show ScoreDisplay2 for goalkeeper mode
         try {
           if (!scoreDisplay2) {
@@ -445,16 +448,16 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       hb.id = id;
       hb.textContent = 'Home';
       hb.style.position = 'fixed';
-      hb.style.left = '12px';
-      hb.style.top = '12px';
+      hb.style.left = '8px';
+      hb.style.top = '8px';
       hb.style.zIndex = '10000';
       hb.style.pointerEvents = 'auto';
       hb.style.cursor = 'pointer';
       // Larger, more prominent style
       hb.style.padding = '40px 50px';
-      hb.style.fontSize = '30px';
-      hb.style.borderRadius = '10px';
-      hb.style.minWidth = '100px';
+      hb.style.fontSize = '15px';
+      hb.style.borderRadius = '5px';
+      hb.style.minWidth = '30px';
       hb.style.background = '#ffffff';
       hb.style.color = '#333333';
       hb.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';

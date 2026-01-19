@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { GAME_CONFIG } from '../constant/global.js';
+import { GAME_CONFIG, BASE_WIDTH, BASE_HEIGHT } from '../constant/global.js';
 
 export default class Ball extends PIXI.Container {
   private ballSprite: PIXI.Sprite;
@@ -172,18 +172,18 @@ export default class Ball extends PIXI.Container {
   private updateScale() {
     if (!this.ballSprite.texture || !this.ballSprite.texture.width) return;
     
-    // Scale ball to be 1/20 of screen width
-    const targetWidth = window.innerWidth / 5;
+    // Scale ball to be 1/5 of design width
+    const targetWidth = BASE_WIDTH / 5;
     const s = targetWidth / this.ballSprite.texture.width;
     this._baseScale = s;
     this.ballSprite.scale.set(s, s);
     
-    // Position ball on ground level (3/4 down from top)
-    const groundLevel = (window.innerHeight * 3) / 4;
+    // Position ball on ground level (3/4 down from design height)
+    const groundLevel = (BASE_HEIGHT * 3) / 4;
     // Elevate the drop point by 0.005 * goal.y
     const goalY = this.goal?.goalSprite?.y || 0;
     const elevationOffset = 0.005 * goalY;
-    this.x = window.innerWidth / 2;
+    this.x = BASE_WIDTH / 2;
     this.y = groundLevel - elevationOffset; // Position at elevated ground level
     
     // Update shadow
@@ -252,13 +252,24 @@ export default class Ball extends PIXI.Container {
     
     this._isDragging = true;
     this._dragTime = Date.now();
-    this._startPos = { x: event.global.x, y: event.global.y };
+    try {
+      const parent = this.parent as PIXI.Container;
+      const p = parent.toLocal(new PIXI.Point(event.global.x, event.global.y));
+      this._startPos = { x: p.x, y: p.y };
+    } catch (e) {
+      this._startPos = { x: event.global.x, y: event.global.y };
+    }
   }
 
   private onDragMove(event: PIXI.FederatedPointerEvent) {
     if (!this._isDragging || this._ballUsed || this._isMoving || this._goalScored || this.gameState.gameOver) return;
     
-    const currentPos = { x: event.global.x, y: event.global.y };
+    let currentPos = { x: event.global.x, y: event.global.y };
+    try {
+      const parent = this.parent as PIXI.Container;
+      const p = parent.toLocal(new PIXI.Point(event.global.x, event.global.y));
+      currentPos = { x: p.x, y: p.y };
+    } catch (e) {}
     const deltaX = currentPos.x - this._startPos.x;
     const deltaY = currentPos.y - this._startPos.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
@@ -281,7 +292,12 @@ export default class Ball extends PIXI.Container {
     if (!this._isDragging || this._ballUsed || this._isMoving || this._goalScored || this.gameState.gameOver) return;
     
     this._isDragging = false;
-    const endPos = { x: event.global.x, y: event.global.y };
+    let endPos = { x: event.global.x, y: event.global.y };
+    try {
+      const parent = this.parent as PIXI.Container;
+      const p = parent.toLocal(new PIXI.Point(event.global.x, event.global.y));
+      endPos = { x: p.x, y: p.y };
+    } catch (e) {}
 
     // Calculate swipe vector (from start to end)
     const deltaX = endPos.x - this._startPos.x;
@@ -321,10 +337,10 @@ export default class Ball extends PIXI.Container {
       y: this.y + dirY * range
     };
 
-    // Clamp target to screen bounds (leave margin) - only for initial target calculation
+    // Clamp target to design bounds (leave margin) - only for initial target calculation
     const margin = 10;
-    target.x = Math.max(margin, Math.min(window.innerWidth - margin, target.x));
-    target.y = Math.max(margin, Math.min(window.innerHeight - margin, target.y));
+    target.x = Math.max(margin, Math.min(BASE_WIDTH - margin, target.x));
+    target.y = Math.max(margin, Math.min(BASE_HEIGHT - margin, target.y));
 
     // store last shot power for post-goal animation
     this._lastShotPower = powerPercent;
@@ -358,7 +374,7 @@ export default class Ball extends PIXI.Container {
         
       case 'above_crossbar':
         // Fly upward and outward
-        const aboveOutwardX = this.x < (window.innerWidth / 2) ? -0.8 : 0.8;
+        const aboveOutwardX = this.x < (BASE_WIDTH / 2) ? -0.8 : 0.8;
         target = {
           x: this.x + aboveOutwardX * range * 1.5,
           y: this.y - range * 1.8 // Strong upward
@@ -931,10 +947,37 @@ export default class Ball extends PIXI.Container {
       this._goalScored = true; // Prevent multiple attempts
 
       const ballRadius = this.ballSprite.width / 2;
+      const ballPosAtCall = { x: curveEnd.x, y: curveEnd.y }; // Store position at call time
       this.goalkeeper.attemptCatch(curveEnd.x, curveEnd.y, predictedZone, ballRadius).then((result: any) => {
         if (result.caught) {
+          const catchPos = result.catchPos || ballPosAtCall;
+          // Check goalkeeper catch probability - if 100%, skip proximity validation entirely
+          let skipProximityCheck = false;
+          try {
+            const keeperProb = this.goalkeeper && (this.goalkeeper as any).getCatchProbability ? (this.goalkeeper as any).getCatchProbability() : 0;
+            skipProximityCheck = keeperProb >= 1.0;
+          } catch (e) {}
+          
+          if (!skipProximityCheck) {
+            // Verify proximity using position at call time, not current moving position
+            try {
+              const dx = ballPosAtCall.x - (catchPos.x || 0);
+              const dy = ballPosAtCall.y - (catchPos.y || 0);
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              const keeperRadius = (this.goalkeeper && (this.goalkeeper as any).getCollisionRadius) ? (this.goalkeeper as any).getCollisionRadius() : 40;
+              const ballRadiusNow = ballRadius || (this.ballSprite.width / 2) || 20;
+              // Make validation MUCH more lenient - 5x more tolerance
+              const maxCatchDist = Math.max(200, (keeperRadius + ballRadiusNow) * 5);
+              if (dist > maxCatchDist) {
+                console.log('Keeper reported catch but catchPos too far — treating as miss', {dist, maxCatchDist, ballPosAtCall, catchPos});
+                this._goalScored = false;
+                return;
+              }
+            } catch (e) {}
+          } else {
+            console.log('100% catch probability - skipping proximity validation');
+          }
           console.log(`🥅 Perfect timing! Goalkeeper saved in zone ${result.catchZone.id}!`);
-          const catchPos = result.catchPos || { x: curveEnd.x, y: curveEnd.y };
           const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.7);
           this.setVelocity(def.x, def.y);
           // Clear outbound flag to avoid later double-counting as 'out'
@@ -1109,10 +1152,35 @@ export default class Ball extends PIXI.Container {
           this._goalScored = true; // Mark as processed to prevent duplicate calls
           
           const ballRadius = this.ballSprite.width / 2;
+          const ballPosAtCall = { x: ballPosition.x, y: ballPosition.y }; // Store position at call time
           this.goalkeeper.attemptCatch(ballPosition.x, ballPosition.y, zone, ballRadius).then((result: any) => {
               if (result.caught) {
+                const catchPos = result.catchPos || ballPosAtCall;
+                // Check goalkeeper catch probability - if 100%, skip proximity validation
+                let skipProximityCheck = false;
+                try {
+                  const keeperProb = this.goalkeeper && (this.goalkeeper as any).getCatchProbability ? (this.goalkeeper as any).getCatchProbability() : 0;
+                  skipProximityCheck = keeperProb >= 1.0;
+                } catch (e) {}
+                
+                if (!skipProximityCheck) {
+                  try {
+                    const dx = ballPosAtCall.x - (catchPos.x || 0);
+                    const dy = ballPosAtCall.y - (catchPos.y || 0);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const keeperRadius = (this.goalkeeper && (this.goalkeeper as any).getCollisionRadius) ? (this.goalkeeper as any).getCollisionRadius() : 40;
+                    const ballRadiusNow = ballRadius || (this.ballSprite.width / 2) || 20;
+                    const maxCatchDist = Math.max(200, (keeperRadius + ballRadiusNow) * 5);
+                    if (dist > maxCatchDist) {
+                      console.log('Keeper reported catch but catchPos too far — treating as miss', {dist, maxCatchDist, ballPosAtCall, catchPos});
+                      this._goalScored = false;
+                      return;
+                    }
+                  } catch (e) {}
+                } else {
+                  console.log('100% catch probability - skipping proximity validation');
+                }
                 console.log(`🥅 Goalkeeper saved! Deflecting ball from zone ${result.catchZone.id}!`);
-                const catchPos = result.catchPos || { x: ballPosition.x, y: ballPosition.y };
                 const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.7);
                 this.setVelocity(def.x, def.y);
                 // Prevent marking this later as an 'out'
@@ -1195,10 +1263,34 @@ export default class Ball extends PIXI.Container {
         if (ballToGoalDistance <= maxCatchDistance) {
           // Random chance for goalkeeper to catch missed shots
           const ballRadius = this.ballSprite.width / 2;
+          const ballPosAtCall = { x: this.x, y: this.y }; // Store current position at call time
           this.goalkeeper.attemptCatch(this.x, this.y, null, ballRadius).then((result: any) => {
             if (result.caught) {
+                const catchPos = result.catchPos || ballPosAtCall;
+                // Check goalkeeper catch probability - if 100%, skip proximity validation
+                let skipProximityCheck = false;
+                try {
+                  const keeperProb = this.goalkeeper && (this.goalkeeper as any).getCatchProbability ? (this.goalkeeper as any).getCatchProbability() : 0;
+                  skipProximityCheck = keeperProb >= 1.0;
+                } catch (e) {}
+                
+                if (!skipProximityCheck) {
+                  try {
+                    const dx = ballPosAtCall.x - (catchPos.x || 0);
+                    const dy = ballPosAtCall.y - (catchPos.y || 0);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const keeperRadius = (this.goalkeeper && (this.goalkeeper as any).getCollisionRadius) ? (this.goalkeeper as any).getCollisionRadius() : 40;
+                    const ballRadiusNow = ballRadius || (this.ballSprite.width / 2) || 20;
+                    const maxCatchDist = Math.max(200, (keeperRadius + ballRadiusNow) * 5);
+                    if (dist > maxCatchDist) {
+                      console.log('Keeper reported catch but catchPos too far — treating as miss', {dist, maxCatchDist, ballPosAtCall, catchPos});
+                      return;
+                    }
+                  } catch (e) {}
+                } else {
+                  console.log('100% catch probability - skipping proximity validation');
+                }
                 console.log(`Goalkeeper saved a missed shot in zone ${result.catchZone.id}! Deflecting outward.`);
-                const catchPos = result.catchPos || { x: this.x, y: this.y };
                 const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.6);
                 this.setVelocity(def.x, def.y);
 

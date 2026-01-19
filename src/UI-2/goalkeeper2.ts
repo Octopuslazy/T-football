@@ -4,6 +4,7 @@ import { GAME_CONFIG } from '../constant/global';
 // Simple static goalkeeper sprite for Other mode.
 export default class Goalkeeper2 extends PIXI.Container {
   private sprite: PIXI.Sprite;
+  private _frameSprite?: PIXI.Sprite | null = null;
   private _onResize: () => void;
   private _pointerDownPos: { x: number; y: number } | null = null;
   private _isAnimating: boolean = false;
@@ -42,6 +43,13 @@ export default class Goalkeeper2 extends PIXI.Container {
     this._onResize = this.resize.bind(this);
     window.addEventListener('resize', this._onResize);
 
+    this.resize();
+  }
+
+  // Allow external code to provide the goal frame sprite so we can size
+  // the goalkeeper relative to the visible goal frame (keep keeper <= 2/3 frame height)
+  public setFrameSprite(frame: PIXI.Sprite | null) {
+    this._frameSprite = frame || null;
     this.resize();
   }
 
@@ -96,13 +104,24 @@ export default class Goalkeeper2 extends PIXI.Container {
     // scale sprite relative to screen width (make goalkeeper look proportionate)
     const desiredWidth = Math.max(120, Math.round(w * 0.22));
     const tex = this.sprite.texture;
+    let s = 0.5 * this._scaleMultiplier;
     if (tex && tex.width) {
-      const s = 1*desiredWidth / tex.width * this._scaleMultiplier;
-      this.sprite.scale.set(s, s);
-    } else {
-      const s = 0.5 * this._scaleMultiplier;
-      this.sprite.scale.set(s, s);
+      s = (desiredWidth / tex.width) * this._scaleMultiplier;
     }
+
+    // If we have a frame sprite available, cap keeper height to 2/3 of frame height
+    try {
+      if (this._frameSprite && this._frameSprite.texture) {
+        const frameDisplayedH = (this._frameSprite.height && this._frameSprite.height > 0) ? this._frameSprite.height : ((this._frameSprite.texture as any).height || 1) * (this._frameSprite.scale?.y || 1);
+        const texH = (tex && tex.height) ? tex.height : (this.sprite.height || 100);
+        if (frameDisplayedH > 0 && texH > 0) {
+          const maxScale = (frameDisplayedH * (2 / 3)) / texH;
+          s = Math.min(s, maxScale * 0.95);
+        }
+      }
+    } catch (e) {}
+
+    this.sprite.scale.set(s, s);
   }
 
   public refresh() {

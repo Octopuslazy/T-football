@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH } from '../constant/global';
 
 export default class BallCountDisplay extends PIXI.Container {
   private icons: PIXI.Sprite[] = [];
@@ -35,7 +36,7 @@ export default class BallCountDisplay extends PIXI.Container {
     if (this._count <= 0) return;
 
     // compute icon size to fit and scale relative to goal if available
-    const screenW = window.innerWidth;
+    const screenW = BASE_WIDTH;
     const maxWidth = Math.min(400, screenW * 0.6);
     const paddingBase = 8;
     const baseSizeBase = 56;
@@ -81,10 +82,10 @@ export default class BallCountDisplay extends PIXI.Container {
       // place slightly above the top of the goal
       this.y = ga.y - size - marginY;
       // clamp to screen bounds
-      this.x = Math.max(8, Math.min(this.x, window.innerWidth - fullWidth - 8));
+      this.x = Math.max(8, Math.min(this.x, BASE_WIDTH - fullWidth - 8));
       this.y = Math.max(8, this.y);
     } else {
-      this.x = Math.max(20, (window.innerWidth * 0.8));
+      this.x = Math.max(20, (BASE_WIDTH * 0.8));
       this.y = 40;
     }
 
