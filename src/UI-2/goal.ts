@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 // Use bg2 as the background image and goal3 as an overlay/frame.
 // Both sprites are centered and scaled responsively so they keep
@@ -51,15 +52,19 @@ export default class GoalBackground extends PIXI.Container {
   }
 
   private resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Use base design resolution so this background lives in the same
+    // logical coordinate space as the rest of the world container. That
+    // allows the root `container` transforms (scale/pivot/position) to
+    // affect Other/Goalkeeper mode consistently.
+    const w = BASE_WIDTH;
+    const h = BASE_HEIGHT;
 
     this.bgSprite.x = w / 2;
     this.bgSprite.y = h / 2;
     this.frameSprite.x = w / 2;
-    this.frameSprite.y = 1.4*h / 2;
+    this.frameSprite.y = 1.4 * h / 2; // preserve previous relative offset (0.7 * h)
 
-    // Scale background to cover the screen (cover behavior)
+    // Scale background to cover the logical design area (cover behavior)
     const bgTex = this.bgSprite.texture;
     if (bgTex && bgTex.width && bgTex.height) {
       const sx = w / bgTex.width;
@@ -67,10 +72,9 @@ export default class GoalBackground extends PIXI.Container {
       const s = Math.max(sx, sy);
       this.bgSprite.scale.set(s, s);
 
-      // Scale frame relative to the displayed background area
+      // Scale frame relative to the displayed background area (in logical coords)
       const frameTex = this.frameSprite.texture;
       if (frameTex && frameTex.width && frameTex.height) {
-        // Fit the frame inside the background display area while preserving aspect ratio
         const frameSx = (bgTex.width * s) / frameTex.width;
         const frameSy = (bgTex.height * s) / frameTex.height;
         const fs = Math.min(frameSx, frameSy) * this.frameScale;

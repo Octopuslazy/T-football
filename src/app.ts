@@ -143,6 +143,12 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     if (mode === 'play') {
       // Begin normal gameplay: create UI on demand
       try {
+        // Ensure container transforms are reset and portrait scaling is applied
+        // (fixes cases where previous camera/pivot changes left the world mis-scaled)
+        try { container.pivot.set(0, 0); } catch (e) {}
+        try { container.position.set(0, 0); } catch (e) {}
+        try { container.scale.set(1, 1); } catch (e) {}
+        try { applyPortraitScale(); } catch (e) {}
         if (!ground) {
           ground = new Ground();
           addToLayer(container, ground, Layer.GROUND);

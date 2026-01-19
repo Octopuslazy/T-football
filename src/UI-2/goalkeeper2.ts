@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { GAME_CONFIG } from '../constant/global';
+import { GAME_CONFIG, BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 // Simple static goalkeeper sprite for Other mode.
 export default class Goalkeeper2 extends PIXI.Container {
@@ -90,10 +90,10 @@ export default class Goalkeeper2 extends PIXI.Container {
   }
 
   private resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = BASE_WIDTH;
+    const h = BASE_HEIGHT;
 
-    // place horizontally centered, vertically around 66% down the screen
+    // place horizontally centered, vertically using logical design fraction
     this.x = w / 2;
     this.y = h * this._verticalOffset;
 
@@ -194,8 +194,8 @@ export default class Goalkeeper2 extends PIXI.Container {
   // find the index of the nearest normalized target for a screen coord
   private _indexForScreenTarget(screenX: number, screenY: number): number | null {
     try {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
       const tex = PIXI.Texture.from('./arts/bg2.png');
       if (!tex || !tex.width || !tex.height) return null;
       const sx = w / tex.width;
@@ -229,8 +229,8 @@ export default class Goalkeeper2 extends PIXI.Container {
     let nx = t.x;
     let ny = t.y;
     try {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
       const tex = PIXI.Texture.from('./arts/bg2.png');
       if (tex && tex.width && tex.height) {
         const sx = w / tex.width;
@@ -246,10 +246,10 @@ export default class Goalkeeper2 extends PIXI.Container {
           ny = (t.y - imgTop) / imgH;
         }
       } else {
-        // fallback: if values >1 treat them as pixels relative to window
+        // fallback: if values >1 treat them as pixels relative to logical width/height
         if (t.x > 1 || t.y > 1) {
-          nx = t.x / window.innerWidth;
-          ny = t.y / window.innerHeight;
+          nx = t.x / BASE_WIDTH;
+          ny = t.y / BASE_HEIGHT;
         }
       }
     } catch (e) {
@@ -290,8 +290,8 @@ export default class Goalkeeper2 extends PIXI.Container {
 
   private _nearestTargetToPoint(screenX: number, screenY: number): { x: number; y: number } | null {
     try {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
       const tex = PIXI.Texture.from('./arts/bg2.png');
       if (!tex || !tex.width || !tex.height) return null;
       const sx = w / tex.width;
@@ -323,8 +323,8 @@ export default class Goalkeeper2 extends PIXI.Container {
     const sx = swipeX / dist;
     const sy = swipeY / dist;
     try {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
       const tex = PIXI.Texture.from('./arts/bg2.png');
       if (!tex || !tex.width || !tex.height) return null;
       const scaleX = w / tex.width;

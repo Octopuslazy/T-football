@@ -1,4 +1,5 @@
 import * as PIXI from 'pixi.js';
+import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 export default class Ball2 extends PIXI.Container {
   private sprite: PIXI.Sprite;
@@ -83,10 +84,11 @@ export default class Ball2 extends PIXI.Container {
   }
 
   private resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = BASE_WIDTH;
+    const h = BASE_HEIGHT;
+    // position ball in logical coordinates so container transforms apply
     this.x = w / 1.4;
-    this.y = 1.05*h / 2;
+    this.y = 1.05 * h / 2;
     this._homeX = this.x;
     this._homeY = this.y;
     this._layoutButton();
@@ -137,8 +139,8 @@ export default class Ball2 extends PIXI.Container {
   // convert normalized goal coordinates (0..1) into screen coordinates using goal2.png placement
   private _normalizedToScreen(nx: number, ny: number): { x: number; y: number } | null {
     try {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
       const tex = PIXI.Texture.from('./arts/bg2.png');
       if (!tex || !tex.width || !tex.height) return null;
       const sx = w / tex.width;
@@ -258,8 +260,8 @@ export default class Ball2 extends PIXI.Container {
   // Mirrors the layout used by GoalBackground: frame center at y = 1.4 * h / 2
   private _computeGoalFrameBottomY(): number | null {
     try {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
       const bgTex = PIXI.Texture.from('./arts/bg2.png');
       const frameTex = PIXI.Texture.from('./arts/goal3.png');
       if (!bgTex || !bgTex.width || !bgTex.height) return null;
