@@ -439,6 +439,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     try { container.scale.set(1, 1); } catch (e) {}
     try { container.pivot.set(0, 0); } catch (e) {}
     try { container.position.set(0, 0); } catch (e) {}
+    try { applyPortraitScale(); } catch (e) {}
     try { stopKeeperAutoShoot(); } catch (e) {}
     // reset and destroy keeper-mode score display so re-entering creates a fresh instance
     try { if (scoreDisplay2) { try { scoreDisplay2.destroy(); } catch (e) {} scoreDisplay2 = null; } } catch (e) {}
