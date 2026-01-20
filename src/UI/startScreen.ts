@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js';
 import { BASE_WIDTH } from '../constant/global';
+import SoundController from '../ControllUI/SoundController';
 
 export default class StartScreen extends PIXI.Container {
   public onSelect?: (mode: 'play' | 'other') => void;
@@ -104,6 +105,7 @@ export default class StartScreen extends PIXI.Container {
     c.interactive = true;
     c.cursor = 'pointer';
     c.on('pointerdown', () => {
+      try { SoundController.playSfx?.(); } catch (e) {}
       if (label === 'Penalty Kick Mode') this.onSelect?.('play'); else this.onSelect?.('other');
     });
     return c;

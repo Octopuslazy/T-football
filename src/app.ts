@@ -64,7 +64,7 @@ import SoundController from './ControllUI/SoundController.js';
 
   // Load assets
   try {
-    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png', './sound/game-loop.mp3']);
+    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png', './sound/game-loop.mp3', './sound/click.mp3']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update
@@ -511,7 +511,7 @@ import SoundController from './ControllUI/SoundController.js';
       hb.style.color = '#333333';
       hb.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
       document.body.appendChild(hb);
-      hb.addEventListener('click', () => goHome());
+      hb.addEventListener('click', () => { try { SoundController.playSfx?.(); } catch (e) {} ; goHome(); });
     }
     try { hb.disabled = !!startScreenVisible; hb.style.display = startScreenVisible ? 'none' : 'block'; } catch (e) {}
   }
@@ -729,6 +729,7 @@ import SoundController from './ControllUI/SoundController.js';
     const btn = document.getElementById('game-end-restart');
     if (btn) {
       btn.addEventListener('click', () => {
+        try { SoundController.playSfx?.(); } catch (e) {}
         try { popup.remove(); } catch (e) {}
         try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         // Reset scores and state
@@ -745,6 +746,7 @@ import SoundController from './ControllUI/SoundController.js';
     const hb = document.getElementById('game-end-home');
     if (hb) {
       hb.addEventListener('click', () => {
+        try { SoundController.playSfx?.(); } catch (e) {}
         try { popup.remove(); } catch (e) {}
         try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         try { goHome(); } catch (e) {}
@@ -805,6 +807,7 @@ import SoundController from './ControllUI/SoundController.js';
     const btn = document.getElementById('keeper-playagain');
     if (btn) {
       btn.addEventListener('click', () => {
+        try { SoundController.playSfx?.(); } catch (e) {}
         try { popup.remove(); } catch (e) {}
         try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
@@ -818,6 +821,7 @@ import SoundController from './ControllUI/SoundController.js';
     const hb = document.getElementById('keeper-home');
     if (hb) {
       hb.addEventListener('click', () => {
+        try { SoundController.playSfx?.(); } catch (e) {}
         try { popup.remove(); } catch (e) {}
         try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         try { goHome(); } catch (e) {}

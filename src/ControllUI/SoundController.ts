@@ -36,6 +36,16 @@ export class SoundController {
   public toggleMute() {
     try { if (!this.audio) this.init(); if (this.audio) this.audio.muted = !this.audio.muted; } catch (e) {}
   }
+
+  // Play a one-shot sound effect. `src` can be a path to the sound file.
+  public playSfx(src: string = './sound/click.mp3') {
+    try {
+      const s = new Audio(src);
+      s.preload = 'auto';
+      s.volume = this._volume;
+      s.play().catch(() => {});
+    } catch (e) {}
+  }
 }
 
 // export singleton
