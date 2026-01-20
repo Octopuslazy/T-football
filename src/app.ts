@@ -490,10 +490,8 @@ import SoundController from './ControllUI/SoundController.js';
     if (!(window as any)[key]) {
       (window as any)[key] = setInterval(() => {
         try {
-          const s = container?.scale?.x ?? null;
-          const px = container?.pivot?.x ?? null;
-          const py = container?.pivot?.y ?? null;
-          console.log('DEBUG: world scale=', s, 'pivot=', px, py);
+          
+          
         } catch (e) {}
       }, 5000);
     }

@@ -8,7 +8,7 @@ export default class Ball2 extends PIXI.Container {
   private _isShooting: boolean = false;
   private _homeX: number = 0;
   private _homeY: number = 0;
-  private _homeScale: number = 1;
+  private _homeScale: number = 0.45;
   private _currentTargetIndex: number | null = null;
   // optional reference to goalkeeper container (set by game code)
   public keeper: PIXI.Container | null = null;
@@ -17,7 +17,7 @@ export default class Ball2 extends PIXI.Container {
   private _suppressArrival: boolean = false;
   private _tweenCancelled: boolean = false;
   private _hasDeflected: boolean = false;
-  private _collideScaleThreshold = 1.14; // scale multiplier to enable collision deflection (slightly reduced)
+  private _collideScaleThreshold = 1.3; // scale multiplier to enable collision deflection (larger so snap is more visible)
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
@@ -74,6 +74,14 @@ export default class Ball2 extends PIXI.Container {
       this._currentTargetIndex = idx;
       const t = this._targets[idx];
       const screen = this._normalizedToScreen(t.x, t.y);
+      // Decide arc side: left targets curve left, right targets curve right, middle random
+      let arcSide = 0;
+      try {
+        // Inverted mapping: left targets should curve RIGHT (+1), right targets should curve LEFT (-1)
+        if (t.x < 0.4) arcSide = 1;
+        else if (t.x > 0.6) arcSide = -1;
+        else arcSide = Math.random() < 0.5 ? -1 : 1;
+      } catch (e) { arcSide = 0; }
       if (!screen) {
         this._finishShoot();
         return;
@@ -85,15 +93,15 @@ export default class Ball2 extends PIXI.Container {
         } else if (this._suppressArrival) {
           // suppressed by external callback — just return home
           this._suppressArrival = false;
-          this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false);
+            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false, 1.8, arcSide);
         } else {
           // Goal scored: fall to the goal frame bottom (ground) with physics-like motion
           this._fallToGoalGround(screen.x, screen.y, () => {
             try { if (typeof this.onGoal === 'function') this.onGoal(); } catch (e) {}
-            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false);
+            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false, 1.8, arcSide);
           });
         }
-      }, true);
+      }, true, 1.8, arcSide);
     }, 0);
   }
 
@@ -124,7 +132,7 @@ export default class Ball2 extends PIXI.Container {
     } catch (e) { return null; }
   }
 
-  private _tweenTo(destX: number, destY: number, duration: number, cb?: () => void, scaleUp?: boolean, arcFactor: number = 0.25) {
+  private _tweenTo(destX: number, destY: number, duration: number, cb?: () => void, scaleUp?: boolean, arcFactor: number = 1.8, arcSide: number = 0) {
     // Quadratic Bezier arc from current (start) to dest with a single control point.
     const startX = this.x;
     const startY = this.y;
@@ -137,12 +145,18 @@ export default class Ball2 extends PIXI.Container {
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
     const nx = -dy / len; // normalized perp x
     const ny = dx / len;  // normalized perp y
-    // arc magnitude proportional to distance, clamped
-    const arcMagBase = Math.min(250, Math.max(40, len * 0.25));
-    const arcMag = arcMagBase * Math.max(0, Math.min(1, arcFactor));
+    // arc magnitude proportional to distance, clamped (increased so curves are more pronounced)
+    const arcMagBase = Math.min(500, Math.max(80, len * 0.6));
+    const arcMag = arcMagBase * Math.max(0, Math.min(2, arcFactor));
     // bias upward (smaller y) a bit so arc looks natural
-    const controlX = midX + nx * arcMag;
+    // Choose horizontal side of arc: caller may provide arcSide (-1 left, 1 right, 0 auto)
+    let sideSign = 0;
+    if (arcSide === -1 || arcSide === 1) sideSign = arcSide;
+    else sideSign = (dx === 0) ? -1 : (dx > 0 ? -1 : 1);
+    const controlX = midX + nx * arcMag * sideSign;
     const controlY = midY + ny * arcMag - Math.abs(len) * 0.02;
+    // Debug: log arc parameters to verify curvature and chosen side
+    try { console.log('[Ball2] _tweenTo params', { startX, startY, destX, destY, len, arcFactor, arcMag, arcSide, sideSign, controlX, controlY }); } catch (e) {}
 
     this._tweenCancelled = false;
     const start = performance.now();
@@ -171,7 +185,7 @@ export default class Ball2 extends PIXI.Container {
       // collision detection: if keeper provided and ball is scaled beyond threshold
       try {
         const keeperObj = this.keeper as any;
-        if (!this._hasDeflected && keeperObj && keeperObj.isAnimating && this._currentTargetIndex != null && keeperObj.currentTargetIndex != null && keeperObj.currentTargetIndex === this._currentTargetIndex && (this.sprite.scale.x === this._homeScale * this._collideScaleThreshold)) {
+        if (!this._hasDeflected && keeperObj && keeperObj.isAnimating && this._currentTargetIndex != null && keeperObj.currentTargetIndex != null && keeperObj.currentTargetIndex === this._currentTargetIndex && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
           const ballB = this.getBounds();
           const keeperB = keeperObj.getBounds();
           const overlap = ballB.x < keeperB.x + keeperB.width && ballB.x + ballB.width > keeperB.x &&
@@ -211,7 +225,7 @@ export default class Ball2 extends PIXI.Container {
                 this._currentTargetIndex = null;
                 try { if (typeof this.onSave === 'function') this.onSave(); } catch (e) {}
                 if (cb) cb();
-              }, false);
+              }, false, 0);
             }, false, 0);
             // reduce deflect arc curvature (use smaller arcFactor)
             // (note: arcFactor is the 6th parameter of _tweenTo)

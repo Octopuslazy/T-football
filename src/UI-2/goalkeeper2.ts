@@ -156,7 +156,8 @@ export default class Goalkeeper2 extends PIXI.Container {
     const minSwipeSpeed = 40;
     const powerPercent = Math.max(0, Math.min(100, ((swipePps - minSwipeSpeed) / (maxSwipeSpeed - minSwipeSpeed)) * 100));
 
-    if (distance < 10 || powerPercent < 5) return; // ignore tiny/weak gestures
+    // Allow even small/weak gestures to produce movement — comment out guard
+    // if (distance < 10 || powerPercent < 5) return; // ignore tiny/weak gestures
 
     // choose a target based on swipe direction / power
     const target = this._nearestTargetForSwipe(dx, dy) || this._nearestTargetToPoint(endPos.x, endPos.y);

@@ -315,7 +315,8 @@ export default class Ball extends PIXI.Container {
       ((swipePps - minSwipeSpeed) / (maxSwipeSpeed - minSwipeSpeed)) * 100
     ));
     
-    if (distance < 10 || powerPercent < 5) return; // ignore tiny or weak gestures
+    // Allow even small/weak gestures to produce a shot — comment out guard
+    // if (distance < 10 || powerPercent < 5) return; // ignore tiny or weak gestures
     
     // Mark ball as used and disable all future interactions
     this._ballUsed = true;
@@ -400,17 +401,25 @@ export default class Ball extends PIXI.Container {
           try {
             const zones = this.goal.getGoalZones();
             if (zones && zones.length) {
-              let bestZone = zones[0];
-              let bestDist = Infinity;
-              for (const z of zones) {
-                const cx = z.x + z.width / 2;
-                const cy = z.y + z.height / 2;
-                const d = Math.hypot(target.x - cx, target.y - cy);
-                if (d < bestDist) { bestDist = d; bestZone = z; }
-              }
-              target.x = bestZone.x + bestZone.width / 2;
-              target.y = bestZone.y + bestZone.height / 2;
-              shouldSnap = true;
+              // Debug: list zone centers and find nearest zone
+              try {
+                let bestZone = zones[0];
+                let bestDist = Infinity;
+                const zoneCenters: any[] = [];
+                for (const z of zones) {
+                  const cx = z.x + z.width / 2;
+                  const cy = z.y + z.height / 2;
+                  zoneCenters.push({ id: z.id, cx, cy });
+                  const d = Math.hypot(target.x - cx, target.y - cy);
+                  if (d < bestDist) { bestDist = d; bestZone = z; }
+                }
+                console.log('[Ball] Zone centers:', zoneCenters);
+                console.log('[Ball] Pre-snap target:', { x: target.x, y: target.y, bestZoneId: bestZone.id, bestDist });
+                target.x = bestZone.x + bestZone.width / 2;
+                target.y = bestZone.y + bestZone.height / 2;
+                console.log('[Ball] Snapped to zone:', bestZone.id, { x: target.x, y: target.y });
+                shouldSnap = true;
+              } catch (e) { /* ignore debug errors */ }
             }
           } catch (e) {}
         }
