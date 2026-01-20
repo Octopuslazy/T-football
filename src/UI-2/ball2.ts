@@ -124,7 +124,7 @@ export default class Ball2 extends PIXI.Container {
     } catch (e) { return null; }
   }
 
-  private _tweenTo(destX: number, destY: number, duration: number, cb?: () => void, scaleUp?: boolean) {
+  private _tweenTo(destX: number, destY: number, duration: number, cb?: () => void, scaleUp?: boolean, arcFactor: number = 0.25) {
     // Quadratic Bezier arc from current (start) to dest with a single control point.
     const startX = this.x;
     const startY = this.y;
@@ -138,7 +138,8 @@ export default class Ball2 extends PIXI.Container {
     const nx = -dy / len; // normalized perp x
     const ny = dx / len;  // normalized perp y
     // arc magnitude proportional to distance, clamped
-    const arcMag = Math.min(250, Math.max(40, len * 0.25));
+    const arcMagBase = Math.min(250, Math.max(40, len * 0.25));
+    const arcMag = arcMagBase * Math.max(0, Math.min(1, arcFactor));
     // bias upward (smaller y) a bit so arc looks natural
     const controlX = midX + nx * arcMag;
     const controlY = midY + ny * arcMag - Math.abs(len) * 0.02;
@@ -191,18 +192,17 @@ export default class Ball2 extends PIXI.Container {
             // suppress any arrival/pass-through animation and notify listener
             this._suppressArrival = true;
             try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
-            const kcx = keeperB.x + keeperB.width / 2;
-            const kcy = keeperB.y + keeperB.height / 2;
-            const vx = this.x - kcx;
-            const vy = this.y - kcy;
-            const vlen = Math.sqrt(vx * vx + vy * vy) || 1;
-            const nxv = vx / vlen;
-            const nyv = vy / vlen;
-            // deflect distance and duration
-            const deflectDist = Math.max(160, vlen * 1.2);
-            const deflectTargetX = this.x + nxv * deflectDist;
-            const deflectTargetY = this.y + nyv * deflectDist;
-            // short deflect tween, then return home
+            // compute reverse of incoming trajectory (start->dest) and send ball back along that line
+            const inVx = destX - startX;
+            const inVy = destY - startY;
+            const inLen = Math.sqrt(inVx * inVx + inVy * inVy) || 1;
+            const revNx = -inVx / inLen;
+            const revNy = -inVy / inLen;
+            // deflect distance and duration (send back a moderate distance)
+            const deflectDist = Math.max(120, inLen * 0.5);
+            const deflectTargetX = this.x + revNx * deflectDist;
+            const deflectTargetY = this.y + revNy * deflectDist;
+            // short deflect tween (straight), then return home
             this._tweenTo(deflectTargetX, deflectTargetY, 300, () => {
               this._tweenTo(this._homeX, this._homeY, 400, () => {
                 // reset scale and flags
@@ -212,7 +212,10 @@ export default class Ball2 extends PIXI.Container {
                 try { if (typeof this.onSave === 'function') this.onSave(); } catch (e) {}
                 if (cb) cb();
               }, false);
-            }, false);
+            }, false, 0);
+            // reduce deflect arc curvature (use smaller arcFactor)
+            // (note: arcFactor is the 6th parameter of _tweenTo)
+            // replaced above call to include arcFactor=0.25
             return;
           }
         }
