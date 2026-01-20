@@ -119,6 +119,9 @@ import SoundController from './ControllUI/SoundController.js';
           }
           try { (ball2 as any).refresh?.(); } catch (e) {}
           shotCount++;
+          // decrement global remaining balls and update keeper-mode display
+          try { gameState.ballsRemaining = Math.max(0, (gameState.ballsRemaining || 0) - 1); } catch (e) {}
+          try { if (ballCountDisplay2) ballCountDisplay2.setCount(Math.max(0, gameState.ballsRemaining)); } catch (e) {}
           try { (ball2 as any).shoot?.(); } catch (e) {}
         } catch (e) {}
       };
@@ -232,6 +235,8 @@ import SoundController from './ControllUI/SoundController.js';
       createNewBall();
     } else {
       // Other mode: create Other-mode visuals on demand and remove gameplay UI
+      // initialize keeper-mode remaining balls
+      try { gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
       try { removeAllBalls(); } catch (e) {}
       try { if (goalkeeper && container.children.includes(goalkeeper)) container.removeChild(goalkeeper); } catch (e) {}
       try { if (scoreDisplay && container.children.includes(scoreDisplay)) container.removeChild(scoreDisplay); } catch (e) {}
@@ -388,8 +393,9 @@ import SoundController from './ControllUI/SoundController.js';
                                         addToLayer(app.stage, ballCountDisplay2, Layer.OVERLAY);
                                       }
                                       ballCountDisplay2.visible = true;
-                                      try { ballCountDisplay2.setGoal?.(reversedGoal); } catch (e) {}
-                                      try { ballCountDisplay2.setCount(Math.max(0, gameState.ballsRemaining)); } catch (e) {}
+                                      // Do not bind to world `goal` here (positions are overlay/screen-based).
+                                      try { /* ballCountDisplay2.setGoal?.(reversedGoal); */ } catch (e) {}
+                                      try { console.log('[UI] ballCountDisplay2 created, count=', gameState.ballsRemaining, 'visible=', !!ballCountDisplay2.visible); } catch (e) {}
                                       } catch (e) {}
                                       // Position ballCountDisplay2 below scoreDisplay2 (overlay coordinates)
                                       try {
@@ -399,6 +405,8 @@ import SoundController from './ControllUI/SoundController.js';
                                           // place ballCountDisplay2 under scoreDisplay2 with small gap
                                           ballCountDisplay2.x = scoreDisplay2.x;
                                           ballCountDisplay2.y = scoreDisplay2.y + sdBounds.height + 8;
+                                          try { ballCountDisplay2.setCount(Math.max(0, gameState.ballsRemaining)); } catch (e) {}
+                                          try { const b = ballCountDisplay2.getBounds(); console.log('[UI] ballCountDisplay2 bounds after position', b); } catch (e) {}
                                         }
                                       } catch (e) {}
                                   } catch (e) {}
@@ -470,6 +478,8 @@ import SoundController from './ControllUI/SoundController.js';
     try { stopKeeperAutoShoot(); } catch (e) {}
     // reset and destroy keeper-mode score display so re-entering creates a fresh instance
     try { if (scoreDisplay2) { try { scoreDisplay2.destroy(); } catch (e) {} scoreDisplay2 = null; } } catch (e) {}
+    // reset and destroy keeper-mode ball count overlay
+    try { if (ballCountDisplay2) { try { if (app.stage && app.stage.children.includes(ballCountDisplay2)) app.stage.removeChild(ballCountDisplay2); } catch (e) {} try { ballCountDisplay2.destroy(); } catch (e) {} ballCountDisplay2 = null; } } catch (e) {}
     // Hide home and reset while on start screen
     try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = true; hb.style.display = 'none'; } } catch (e) {}
     try { const rb = document.getElementById('reset-btn') as HTMLButtonElement | null; if (rb) rb.disabled = true; } catch (e) {}
@@ -727,6 +737,8 @@ import SoundController from './ControllUI/SoundController.js';
         gameState.gameOver = false;
         // Update ball count display
         try { ballCountDisplay?.setCount(Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0))); } catch (e) {}
+        // Also reset keeper overlay counter if present
+        try { if (ballCountDisplay2) ballCountDisplay2.setCount(Math.max(0, GAME_CONFIG.MAX_BALLS)); } catch (e) {}
         createNewBall();
       });
     }
@@ -797,6 +809,9 @@ import SoundController from './ControllUI/SoundController.js';
         try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
         try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
         try { scoreDisplay2?.reset?.(); } catch (e) {}
+        // Reset keeper shot count and UI before starting again
+        try { gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
+        try { if (ballCountDisplay2) ballCountDisplay2.setCount(Math.max(0, gameState.ballsRemaining)); } catch (e) {}
         try { shotTimeoutId = setTimeout(() => { try { startKeeperAutoShoot(); } catch (e) {} ; shotTimeoutId = null; }, 2000); } catch (e) {}
       });
     }

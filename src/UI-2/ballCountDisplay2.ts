@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { BASE_WIDTH } from '../constant/global';
+import { BASE_WIDTH, GAME_CONFIG } from '../constant/global';
 
 export default class BallCountDisplay2 extends PIXI.Container {
   private icons: PIXI.Sprite[] = [];
@@ -42,11 +42,13 @@ export default class BallCountDisplay2 extends PIXI.Container {
     const padding = Math.max(5, Math.round(paddingBase * goalScale));
     const baseSize = Math.max(20, Math.round(baseSizeBase * goalScale));
 
-    const totalBase = this._count * baseSize + (this._count - 1) * padding;
-    let size = baseSize;
+    // Determine a stable maximum icon size based on the configured max balls
+    const maxAllowedSize = Math.max(16, Math.floor((maxWidth - (GAME_CONFIG.MAX_BALLS - 1) * padding) / GAME_CONFIG.MAX_BALLS));
+    let size = Math.min(baseSize, maxAllowedSize);
+    // If current count still doesn't fit, reduce to fit exactly for this count
+    const totalBase = this._count * size + (this._count - 1) * padding;
     if (totalBase > maxWidth) {
-      const scale = maxWidth / totalBase;
-      size = Math.max(16, Math.floor(baseSize * scale));
+      size = Math.max(16, Math.floor((maxWidth - (this._count - 1) * padding) / Math.max(1, this._count)));
     }
 
     for (let i = 0; i < this._count; i++) {
@@ -72,8 +74,11 @@ export default class BallCountDisplay2 extends PIXI.Container {
       this.x = Math.max(8, Math.min(this.x, BASE_WIDTH - fullWidth - 8));
       this.y = Math.max(8, this.y);
     } else {
-      this.x = Math.max(20, (BASE_WIDTH * 0.8));
-      this.y = 40;
+      // If caller has already positioned this overlay (non-zero x/y), do not override.
+      if ((!this.x || this.x === 0) && (!this.y || this.y === 0)) {
+        this.x = Math.max(20, (BASE_WIDTH * 0.8));
+        this.y = 40;
+      }
     }
 
     if (this._bg) {

@@ -156,7 +156,7 @@ export default class Ball2 extends PIXI.Container {
     const controlX = midX + nx * arcMag * sideSign;
     const controlY = midY + ny * arcMag - Math.abs(len) * 0.02;
     // Debug: log arc parameters to verify curvature and chosen side
-    try { console.log('[Ball2] _tweenTo params', { startX, startY, destX, destY, len, arcFactor, arcMag, arcSide, sideSign, controlX, controlY }); } catch (e) {}
+    
 
     this._tweenCancelled = false;
     const start = performance.now();
