@@ -357,10 +357,11 @@ import SoundController from './ControllUI/SoundController.js';
                           container.pivot.set(clampedX, clampedY);
                         } catch (e) {}
                       };
+                                  // Camera follow disabled (temporarily commented out)
                                   // register to rAF loop and keep id so we can cancel when returning Home
-                                  const loop = (now: number) => { tickerFn(now); cameraLoopId = requestAnimationFrame(loop); };
-                                  cameraLoopId = requestAnimationFrame(loop);
-                                  followTicker = tickerFn;
+                                  // const loop = (now: number) => { tickerFn(now); cameraLoopId = requestAnimationFrame(loop); };
+                                  // cameraLoopId = requestAnimationFrame(loop);
+                                  // followTicker = tickerFn;
                                   // Re-enable Home button now that zoom+follow setup finished
                                   try { const hb = document.getElementById('home-btn') as HTMLButtonElement | null; if (hb) { hb.disabled = false; hb.style.display = startScreenVisible ? 'none' : 'block'; } } catch (e) {}
                                   // Show score display now that zoom+pivot finished
