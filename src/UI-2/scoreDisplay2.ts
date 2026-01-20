@@ -15,11 +15,11 @@ export default class ScoreDisplay2 extends PIXI.Container {
 
 		this.scoreText = new PIXI.Text(this.getScoreText(), {
 			fontFamily: 'Arial',
-			fontSize: 28,
+			fontSize: 14,
 			fill: 0xFFFFFF,
 			fontWeight: 'bold',
 			stroke: 0x000000,
-			strokeThickness: 3
+			strokeThickness: 2
 		} as any);
 
 		this.scoreText.anchor.set(0, 0);
@@ -34,9 +34,11 @@ export default class ScoreDisplay2 extends PIXI.Container {
 		if (this._worldAttached) return; // world-attached displays are positioned in world coords by the caller
 		const screenWidth = window.innerWidth;
 		const screenHeight = window.innerHeight;
-		// place at top-left with some margin
-		this.x = screenWidth/3.3;
-		this.y = screenHeight/5;
+		// place at top-right near the Home button (which is a fixed DOM button at top-right)
+		const margin = 8;
+		// inset from right edge and slightly below Home button
+		this.x = Math.max(16, screenWidth - 220);
+		this.y = margin + 40;
 
 		// neutralize ancestor scaling so text stays constant on screen
 		let ancestor: any = this.parent;
@@ -50,6 +52,11 @@ export default class ScoreDisplay2 extends PIXI.Container {
 		}
 		const inv = accumulatedScale && accumulatedScale !== 0 ? 1 / accumulatedScale : 1;
 		this.scale.set(inv);
+	}
+
+	// Public helper to refresh computed position (useful when added to overlay)
+	public refreshPosition() {
+		try { this.updatePosition(); } catch (e) {}
 	}
 
 	private getScoreText(): string {
@@ -92,7 +99,8 @@ export default class ScoreDisplay2 extends PIXI.Container {
 			saves: this.goalkeeperSaves,
 			outs: this.outs,
 			shots: this.ballsUsed,
-			accuracy: this.ballsUsed > 0 ? (this.goalsScored / this.ballsUsed * 100).toFixed(1) : '0.0'
+			// In keeper mode, accuracy should be based on saves (keeper performance)
+			accuracy: this.ballsUsed > 0 ? (this.goalkeeperSaves / this.ballsUsed * 100).toFixed(1) : '0.0'
 		};
 	}
 

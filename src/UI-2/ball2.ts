@@ -17,7 +17,7 @@ export default class Ball2 extends PIXI.Container {
   private _suppressArrival: boolean = false;
   private _tweenCancelled: boolean = false;
   private _hasDeflected: boolean = false;
-  private _collideScaleThreshold = 1.4; // scale multiplier to enable collision deflection (slightly reduced)
+  private _collideScaleThreshold = 1.14; // scale multiplier to enable collision deflection (slightly reduced)
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
@@ -56,7 +56,7 @@ export default class Ball2 extends PIXI.Container {
     const w = BASE_WIDTH;
     const h = BASE_HEIGHT;
     // position ball in logical coordinates so container transforms apply
-    this.x = w / 1.4;
+    this.x = w / 2;
     this.y = 1.05 * h / 2;
     this._homeX = this.x;
     this._homeY = this.y;
@@ -99,7 +99,7 @@ export default class Ball2 extends PIXI.Container {
 
   private _finishShoot() {
     this._isShooting = false;
-    if (this._button) this._button.alpha = 1;
+    // Button removed: ensure shooting flag reset only
     this._currentTargetIndex = null;
     try { if (typeof this.onShotComplete === 'function') this.onShotComplete(); } catch (e) {}
   }

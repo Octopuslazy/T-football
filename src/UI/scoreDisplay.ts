@@ -15,7 +15,7 @@ export default class ScoreDisplay extends PIXI.Container {
     // Create score text
     this.scoreText = new PIXI.Text(this.getScoreText(), {
       fontFamily: 'Arial',
-      fontSize: 40,
+      fontSize: 25,
       fill: 0xFFFFFF,
       fontWeight: 'bold',
       stroke: 0x000000,
@@ -39,7 +39,7 @@ export default class ScoreDisplay extends PIXI.Container {
 
     // Position at top center of design area (these coords are in design space)
     this.x = screenWidth / 2;
-    this.y = screenHeight / 11; // ~9% from top
+    this.y = screenHeight / 18; // ~9% from top
     
     // Neutralize ancestor scaling so score display stays constant relative to screen
     let ancestor: any = this.parent;

@@ -269,9 +269,9 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
         try {
           if (!scoreDisplay2) {
             scoreDisplay2 = new ScoreDisplay2();
-            addToLayer(container, scoreDisplay2, Layer.GOAL_FRONT);
-          } else if (!container.children.includes(scoreDisplay2)) {
-            addToLayer(container, scoreDisplay2, Layer.GOAL_FRONT);
+            addToLayer(app.stage, scoreDisplay2, Layer.OVERLAY);
+          } else if (!app.stage.children.includes(scoreDisplay2)) {
+            addToLayer(app.stage, scoreDisplay2, Layer.OVERLAY);
           }
           // keep score display hidden until zoom+pivot finishes for cinematic effect
           scoreDisplay2.visible = false;
@@ -308,7 +308,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
             if (goalkeeper2) {
               const zoomDelay = 1000;
               const zoomDuration = 2000;
-              const targetScale = 1.6;
+              const targetScale = 1.3;
               setTimeout(() => {
                 // tween container.scale.x/y from current to targetScale over zoomDuration
                 const start = performance.now();
@@ -362,17 +362,14 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
                                   try {
                                     if (!scoreDisplay2) {
                                       scoreDisplay2 = new ScoreDisplay2();
-                                      addToLayer(container, scoreDisplay2, Layer.GOAL_FRONT);
-                                    } else if (!container.children.includes(scoreDisplay2)) {
-                                      addToLayer(container, scoreDisplay2, Layer.GOAL_FRONT);
+                                      addToLayer(app.stage, scoreDisplay2, Layer.OVERLAY);
+                                    } else if (!app.stage.children.includes(scoreDisplay2)) {
+                                      addToLayer(app.stage, scoreDisplay2, Layer.OVERLAY);
                                     }
-                                    // place the score display in world coords near the goalkeeper
+                                    // place the score display in overlay (screen) coords near the Home button
                                     try {
                                       scoreDisplay2.visible = true;
-                                      if (goalkeeper2 && scoreDisplay2) {
-                                        try { scoreDisplay2.x = (goalkeeper2 as any).x*0.63 ; } catch (e) {}
-                                        try { scoreDisplay2.y = (goalkeeper2 as any).y*0.395 ; } catch (e) {}
-                                      }
+                                      try { scoreDisplay2.refreshPosition?.(); } catch (e) {}
                                     } catch (e) {}
                                   } catch (e) {}
                                   // remove input blocker and unlock input
@@ -459,16 +456,17 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
       hb.id = id;
       hb.textContent = 'Home';
       hb.style.position = 'fixed';
-      hb.style.left = '8px';
+      // place button at top-right
+      hb.style.right = '8px';
       hb.style.top = '8px';
       hb.style.zIndex = '10000';
       hb.style.pointerEvents = 'auto';
       hb.style.cursor = 'pointer';
-      // Larger, more prominent style
-      hb.style.padding = '40px 50px';
-      hb.style.fontSize = '15px';
-      hb.style.borderRadius = '5px';
-      hb.style.minWidth = '30px';
+      // Compact mobile-friendly style
+      hb.style.padding = '8px 12px';
+      hb.style.fontSize = '14px';
+      hb.style.borderRadius = '6px';
+      hb.style.minWidth = '40px';
       hb.style.background = '#ffffff';
       hb.style.color = '#333333';
       hb.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
@@ -658,8 +656,11 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     popup.style.fontSize = '20px';
     popup.style.borderRadius = '12px';
     popup.style.zIndex = '10002';
-    popup.style.transform = 'translate(-50%, -50%) scale(2)';
-    popup.style.minWidth = '360px';
+    // Responsive sizing for portrait mobile: use viewport width and remove fixed scale
+    popup.style.transform = 'translate(-50%, -50%) scale(1)';
+    popup.style.boxSizing = 'border-box';
+    popup.style.width = 'min(360px, 90vw)';
+    popup.style.padding = '24px';
     
 
     const stats = scoreDisplay2?.getStats?.() ?? scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0, outs: 0, shots: 0, accuracy: 0 };
@@ -729,9 +730,11 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
     popup.style.fontSize = '20px';
     popup.style.borderRadius = '12px';
       popup.style.zIndex = '10002';
-      // make keeper popup larger and more prominent (match game-end)
-      popup.style.transform = 'translate(-50%, -50%) scale(2)';
-      popup.style.minWidth = '360px';
+      // Responsive sizing for portrait mobile: remove fixed scale and use viewport width
+      popup.style.transform = 'translate(-50%, -50%) scale(1)';
+      popup.style.boxSizing = 'border-box';
+      popup.style.width = 'min(360px, 90vw)';
+      popup.style.padding = '24px';
 
     const stats = scoreDisplay2?.getStats?.() ?? scoreDisplay?.getStats?.() ?? { goals: 0, saves: 0,  shots: 0, accuracy: 0 };
     popup.innerHTML = `<div style="text-align:center;">
