@@ -6,6 +6,7 @@ import Ground from './UI/ground.js';
 import Goalkeeper from './UI/goalkeeper.js';
 import ScoreDisplay from './UI/scoreDisplay.js';
 import BallCountDisplay from './UI/ballCountDisplay.js';
+import BallCountDisplay2 from './UI-2/ballCountDisplay2.js';
 import StartScreen from './UI/startScreen.js';
 import ReversedGoal from './UI-2/goal.js';
 import Ball2 from './UI-2/ball2.js';
@@ -81,6 +82,7 @@ import SoundController from './ControllUI/SoundController.js';
   let scoreDisplay: ScoreDisplay | null = null;
   let scoreDisplay2: ScoreDisplay2 | null = null;
   let ballCountDisplay: BallCountDisplay | null = null;
+  let ballCountDisplay2: BallCountDisplay2 | null = null;
 
   // Show start screen to choose mode before spawning balls
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
@@ -377,6 +379,28 @@ import SoundController from './ControllUI/SoundController.js';
                                       scoreDisplay2.visible = true;
                                       try { scoreDisplay2.refreshPosition?.(); } catch (e) {}
                                     } catch (e) {}
+                                      // Create keeper-mode ball count display (overlay) and set initial count
+                                    try {
+                                      if (!ballCountDisplay2) {
+                                        ballCountDisplay2 = new BallCountDisplay2();
+                                        addToLayer(app.stage, ballCountDisplay2, Layer.OVERLAY);
+                                      } else if (!app.stage.children.includes(ballCountDisplay2)) {
+                                        addToLayer(app.stage, ballCountDisplay2, Layer.OVERLAY);
+                                      }
+                                      ballCountDisplay2.visible = true;
+                                      try { ballCountDisplay2.setGoal?.(reversedGoal); } catch (e) {}
+                                      try { ballCountDisplay2.setCount(Math.max(0, gameState.ballsRemaining)); } catch (e) {}
+                                      } catch (e) {}
+                                      // Position ballCountDisplay2 below scoreDisplay2 (overlay coordinates)
+                                      try {
+                                        if (scoreDisplay2 && ballCountDisplay2) {
+                                          try { scoreDisplay2.refreshPosition?.(); } catch (e) {}
+                                          const sdBounds = scoreDisplay2.getBounds();
+                                          // place ballCountDisplay2 under scoreDisplay2 with small gap
+                                          ballCountDisplay2.x = scoreDisplay2.x;
+                                          ballCountDisplay2.y = scoreDisplay2.y + sdBounds.height + 8;
+                                        }
+                                      } catch (e) {}
                                   } catch (e) {}
                                   // remove input blocker and unlock input
                                   try {
