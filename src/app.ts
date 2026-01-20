@@ -13,6 +13,7 @@ import Goalkeeper2 from './UI-2/goalkeeper2.js';
 import ScoreDisplay2 from './UI-2/scoreDisplay2.js';
 import { GAME_CONFIG, BASE_HEIGHT, BASE_WIDTH } from './constant/global.js';
 import { Layer, addToLayer } from './ControllUI/layers.js';
+import SoundController from './ControllUI/SoundController.js';
 
 (async () => {
   // Create a new application
@@ -62,7 +63,7 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
   // Load assets
   try {
-    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png']);
+    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png', './sound/game-loop.mp3']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update
@@ -139,6 +140,8 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
   startScreen.onSelect = (mode: 'play' | 'other') => {
     try { app.stage.removeChild(startScreen); } catch (e) {}
     startScreenVisible = false;
+      // Start background music on first user selection (satisfies autoplay gesture)
+      try { SoundController.playLoop?.(); } catch (e) {}
     try { ensureHomeButton(); } catch (e) {}
     if (mode === 'play') {
       // Begin normal gameplay: create UI on demand
@@ -308,7 +311,9 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
             if (goalkeeper2) {
               const zoomDelay = 1000;
               const zoomDuration = 2000;
-              const targetScale = 1.3;
+              // Use a small relative multiplier so zoom is relative to current portrait scale
+              const zoomMultiplier = 1.3; // ~15% zoom above current scale
+              const targetScale = (container.scale.x || 1) * zoomMultiplier;
               setTimeout(() => {
                 // tween container.scale.x/y from current to targetScale over zoomDuration
                 const start = performance.now();
@@ -478,6 +483,21 @@ import { Layer, addToLayer } from './ControllUI/layers.js';
 
   // Ensure Home button exists and is initialized
   try { ensureHomeButton(); } catch (e) {}
+
+  // Debug: periodically log current world scale and pivot to help diagnose zoom
+  try {
+    const key = '__zoomLoggerInterval';
+    if (!(window as any)[key]) {
+      (window as any)[key] = setInterval(() => {
+        try {
+          const s = container?.scale?.x ?? null;
+          const px = container?.pivot?.x ?? null;
+          const py = container?.pivot?.y ?? null;
+          console.log('DEBUG: world scale=', s, 'pivot=', px, py);
+        } catch (e) {}
+      }, 5000);
+    }
+  } catch (e) {}
 
   // Game state management
   const gameState = {
