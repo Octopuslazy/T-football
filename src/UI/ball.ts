@@ -413,11 +413,10 @@ export default class Ball extends PIXI.Container {
                   const d = Math.hypot(target.x - cx, target.y - cy);
                   if (d < bestDist) { bestDist = d; bestZone = z; }
                 }
-                console.log('[Ball] Zone centers:', zoneCenters);
-                console.log('[Ball] Pre-snap target:', { x: target.x, y: target.y, bestZoneId: bestZone.id, bestDist });
+                
                 target.x = bestZone.x + bestZone.width / 2;
                 target.y = bestZone.y + bestZone.height / 2;
-                console.log('[Ball] Snapped to zone:', bestZone.id, { x: target.x, y: target.y });
+                
                 shouldSnap = true;
               } catch (e) { /* ignore debug errors */ }
             }
@@ -1148,7 +1147,7 @@ export default class Ball extends PIXI.Container {
       // Mark as in goal
       if (!this._inGoal) {
         this._inGoal = true;
-        console.log("Ball entered goal area!");
+        
       }
       
       // Only score once and trigger goalkeeper at the right moment
@@ -1157,7 +1156,7 @@ export default class Ball extends PIXI.Container {
         
         // Goalkeeper attempts when ball actually enters goal area (not before)
         if (this.goalkeeper && zone) {
-          console.log(`Ball in goal area! Zone: ${zone.id}, triggering goalkeeper...`);
+          
           this._goalScored = true; // Mark as processed to prevent duplicate calls
           
           const ballRadius = this.ballSprite.width / 2;
@@ -1181,13 +1180,13 @@ export default class Ball extends PIXI.Container {
                     const ballRadiusNow = ballRadius || (this.ballSprite.width / 2) || 20;
                     const maxCatchDist = Math.max(200, (keeperRadius + ballRadiusNow) * 5);
                     if (dist > maxCatchDist) {
-                      console.log('Keeper reported catch but catchPos too far — treating as miss', {dist, maxCatchDist, ballPosAtCall, catchPos});
+                     
                       this._goalScored = false;
                       return;
                     }
                   } catch (e) {}
                 } else {
-                  console.log('100% catch probability - skipping proximity validation');
+                  
                 }
                 console.log(`🥅 Goalkeeper saved! Deflecting ball from zone ${result.catchZone.id}!`);
                 const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.7);
@@ -1292,14 +1291,14 @@ export default class Ball extends PIXI.Container {
                     const ballRadiusNow = ballRadius || (this.ballSprite.width / 2) || 20;
                     const maxCatchDist = Math.max(200, (keeperRadius + ballRadiusNow) * 5);
                     if (dist > maxCatchDist) {
-                      console.log('Keeper reported catch but catchPos too far — treating as miss', {dist, maxCatchDist, ballPosAtCall, catchPos});
+                     
                       return;
                     }
                   } catch (e) {}
                 } else {
-                  console.log('100% catch probability - skipping proximity validation');
+                 
                 }
-                console.log(`Goalkeeper saved a missed shot in zone ${result.catchZone.id}! Deflecting outward.`);
+                
                 const def = this.computeDeflectionVelocity({ x: this.x, y: this.y }, catchPos, Math.random() * 0.6 + 0.6);
                 this.setVelocity(def.x, def.y);
 
@@ -1315,7 +1314,7 @@ export default class Ball extends PIXI.Container {
 
   private handleZoneCollisionFromGoal(zone: any) {
     // Handle zone collision - can trigger special effects, scoring, etc.
-    console.log('Ball collided with zone:', zone);
+    
     
     // If this zone represents a scoring area and we haven't scored yet
     if (!this._goalScored && zone) {
@@ -1323,7 +1322,7 @@ export default class Ball extends PIXI.Container {
       this._pendingGoalZone = zone;
       this._finalGoalCounted = false;
       this._goalScored = true;
-      console.log('Pending goal through zone collision (will finalize on settle).');
+      
     }
   }
 

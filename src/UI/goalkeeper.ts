@@ -181,16 +181,16 @@ export default class Goalkeeper extends PIXI.Container {
       // Nếu vừa mới nhảy trong vòng 1.5 giây, không nhảy nữa
       const now = Date.now();
       if (now - this._lastActionTime < this._actionCooldown) {
-        console.log("Goalkeeper is in cooldown, skipping jump.");
+      
         resolve({ caught: false });
         return;
       }
       
       const willAttemptCatch = Math.random() < this._catchProbability;
-      console.log(`Goalkeeper catch attempt: probability=${this._catchProbability}, willAttemptCatch=${willAttemptCatch}`);
+      
       
       if (!willAttemptCatch) {
-        console.log('Goalkeeper decided to MISS - performing miss animation');
+        
         // Even if roll fails, perform a random miss-dive so keeper appears to attempt elsewhere
         this._lastActionTime = now;
         this._isAnimating = true;
@@ -215,20 +215,20 @@ export default class Goalkeeper extends PIXI.Container {
       
       let catchZone = targetZone;
       if (!targetZone || !this.isValidTargetZone(ballX, ballY, targetZone)) {
-        console.log('Target zone invalid, using random zone');
+        
         catchZone = this.getRandomZone();
       }
       
       // Khi willAttemptCatch đã thành công, luôn thực hiện catch animation
       // không cần kiểm tra canReachZone nữa để tránh animation sai
-      console.log(`Goalkeeper decided to CATCH - performing catch animation for zone ${catchZone?.id}`);
+      
       
       // Truyền tọa độ bóng chính xác để thủ môn bay tới
       this.performCatchAnimation(catchZone, { x: ballX, y: ballY }).then((pos) => {
-        console.log('Catch animation completed successfully, resolving caught=true');
+        
         resolve({ caught: true, catchZone, catchPos: pos });
       }).catch((error) => { 
-        console.error('Catch animation failed:', error);
+        
         resolve({ caught: false }); 
       });
     });
@@ -321,10 +321,10 @@ export default class Goalkeeper extends PIXI.Container {
           resolved = true;
           // For failed catch, return position near ball if provided
           if (avoidWorldPos) {
-            console.log(`Failed catch - returning near ball position: ${avoidWorldPos.x}, ${avoidWorldPos.y}`);
+            
             resolve({ x: avoidWorldPos.x, y: avoidWorldPos.y });
           } else {
-            console.log(`Failed catch - returning keeper position: ${this.x}, ${this.y}`);
+            
             resolve({ x: this.x, y: this.y });
           }
         }
@@ -405,8 +405,6 @@ export default class Goalkeeper extends PIXI.Container {
         // Sử dụng trực tiếp world coordinates vì thủ môn và bóng đang ở cùng coordinate system
         targetX = catchWorldPos.x;
         targetY = catchWorldPos.y;
-        console.log(`Target ball position: ${targetX}, ${targetY}`);
-        console.log(`Current keeper position: ${this.x}, ${this.y}`);
       } else {
           const defaultPosition = this.getPositionForZone(zone.id);
           // giảm multiplier để thủ môn không bay quá xa khi bắt mặc định
@@ -484,10 +482,10 @@ export default class Goalkeeper extends PIXI.Container {
           // Always return ball position when provided for proximity validation
           // Don't return keeper position as it may have moved during animation
           if (catchWorldPos) {
-            console.log(`Returning ball position for catch: ${catchWorldPos.x}, ${catchWorldPos.y}`);
+           
             resolve({ x: catchWorldPos.x, y: catchWorldPos.y });
           } else {
-            console.log(`No ball pos provided, returning keeper position: ${this.x}, ${this.y}`);
+           
             resolve({ x: this.x, y: this.y });
           }
         }
