@@ -58,6 +58,76 @@ export default class Ball2 extends PIXI.Container {
     this.resize();
   }
 
+  // Public API: fly the ball along a quadratic Bézier defined by start, control and end points.
+  // This allows the ball to follow a player-drawn arc instead of snapping to a preselected zone.
+  public shootAlongPath(startX: number, startY: number, controlX: number, controlY: number, endX: number, endY: number, duration: number = 1000, scaleUp: boolean = false) {
+    // cancel any existing tweens
+    this._tweenCancelled = true;
+    this._tweenCancelled = false;
+    const start = performance.now();
+    const startScale = (this.sprite && this.sprite.scale) ? this.sprite.scale.x : 1;
+    const targetScale = (scaleUp) ? (this._homeScale * this._collideScaleThreshold) : this._homeScale;
+    const animate = (now: number) => {
+      if (this._tweenCancelled) return;
+      const tRaw = Math.min(1, (now - start) / duration);
+      const t = tRaw < 0.5 ? 2 * tRaw * tRaw : -1 + (4 - 2 * tRaw) * tRaw; // ease
+      const u = 1 - t;
+      const u2 = u * u;
+      const t2 = t * t;
+      const twoUt = 2 * u * t;
+      const px = u2 * startX + twoUt * controlX + t2 * endX;
+      const py = u2 * startY + twoUt * controlY + t2 * endY;
+      this.x = px; this.y = py;
+      try {
+        const s = startScale + (targetScale - startScale) * t;
+        if (this.sprite && this.sprite.scale) this.sprite.scale.set(s, s);
+      } catch (e) {}
+
+      // keeper collision: spatial overlap triggers deflect
+      try {
+        const keeperObj = this.keeper as any;
+        if (!this._hasDeflected && keeperObj && keeperObj.isAnimating && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
+          const ballB = this.getBounds();
+          const keeperB = keeperObj.getBounds();
+          const overlap = ballB.x < keeperB.x + keeperB.width && ballB.x + ballB.width > keeperB.x &&
+                          ballB.y < keeperB.y + keeperB.height && ballB.y + ballB.height > keeperB.y;
+          if (overlap) {
+            this._tweenCancelled = true;
+            this._hasDeflected = true;
+            this._suppressArrival = true;
+            try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
+            const inVx = endX - startX;
+            const inVy = endY - startY;
+            const inLen = Math.sqrt(inVx * inVx + inVy * inVy) || 1;
+            const revNx = -inVx / inLen;
+            const revNy = -inVy / inLen;
+            const deflectDist = Math.max(120, inLen * 0.5);
+            const deflectTargetX = this.x + revNx * deflectDist;
+            const deflectTargetY = this.y + revNy * deflectDist;
+            // short deflect tween (straight), then return home
+            this._tweenTo(deflectTargetX, deflectTargetY, 300, () => {
+              this._tweenTo(this._homeX, this._homeY, 400, () => {
+                try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(this._homeScale, this._homeScale); } catch(e){}
+                this._hasDeflected = false;
+                this._currentTargetIndex = null;
+                try { if (typeof this.onSave === 'function') this.onSave(); } catch (e) {}
+              }, false, 0);
+            }, false, 0);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      if (t < 1) requestAnimationFrame(animate); else {
+        // finished
+        try { if (typeof this.onGoal === 'function') this.onGoal(); } catch (e) {}
+        // return home
+        this._tweenTo(this._homeX, this._homeY, 200, () => { try { if (typeof this.onShotComplete === 'function') this.onShotComplete(); } catch (e) {} }, false, 1.8, 0);
+      }
+    };
+    requestAnimationFrame(animate);
+  }
+
   // Called by external controller to know when a full shot sequence finished
   public onShotComplete?: () => void;
   // Keeper-mode callbacks
@@ -80,22 +150,20 @@ export default class Ball2 extends PIXI.Container {
     this.resize();
   }
 
-  // public API to shoot the ball: after 2s snap to a random target among 7
+  // public API to shoot the ball: choose a random target and arc, do NOT snap to zone centers
   public shoot() {
-    // delay 2s then snap
+    // schedule immediate shot (no snapping delay)
     setTimeout(() => {
       const idx = Math.floor(Math.random() * this._targets.length);
       const t = this._targets[idx];
       const screen = this._normalizedToScreen(t.x, t.y);
-        // choose a random target index but DO NOT snap exactly to its center
-        this._currentTargetIndex = idx;
-        // apply small random jitter so we don't land exactly on the zone center
-        if (screen) {
-          const jitterX = (Math.random() - 0.5) * 60; // +/-30px
-          const jitterY = (Math.random() - 0.5) * 40; // +/-20px
-          screen.x += jitterX;
-          screen.y += jitterY;
-        }
+      // apply small random jitter so we don't land exactly on the zone center
+      if (screen) {
+        const jitterX = (Math.random() - 0.5) * 60; // +/-30px
+        const jitterY = (Math.random() - 0.5) * 40; // +/-20px
+        screen.x += jitterX;
+        screen.y += jitterY;
+      }
       // Decide arc side: left targets curve left, right targets curve right, middle random
       let arcSide = 0;
       try {
@@ -208,7 +276,8 @@ export default class Ball2 extends PIXI.Container {
       // collision detection: if keeper provided and ball is scaled beyond threshold
       try {
         const keeperObj = this.keeper as any;
-        if (!this._hasDeflected && keeperObj && keeperObj.isAnimating && this._currentTargetIndex != null && keeperObj.currentTargetIndex != null && keeperObj.currentTargetIndex === this._currentTargetIndex && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
+        // Collision detection now relies on actual overlap (spatial), not on matching target indices.
+        if (!this._hasDeflected && keeperObj && keeperObj.isAnimating && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
           const ballB = this.getBounds();
           const keeperB = keeperObj.getBounds();
           const overlap = ballB.x < keeperB.x + keeperB.width && ballB.x + ballB.width > keeperB.x &&

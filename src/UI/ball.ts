@@ -1,21 +1,23 @@
 import * as PIXI from 'pixi.js';
 import { spawnImpactEffect } from './impact.js';
-import { GAME_CONFIG, BASE_WIDTH, BASE_HEIGHT } from '../constant/global.js';
+import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 export default class Ball extends PIXI.Container {
-  private ballSprite: PIXI.Sprite;
-  private shadowSprite: PIXI.Graphics;
-  // private powerIndicator: PIXI.Graphics;
-  // private powerText: PIXI.Text;
+  // Basic display objects
+  private ballSprite!: PIXI.Sprite;
+  private shadowSprite!: PIXI.Graphics;
   private _placeholder: PIXI.Graphics | null = null;
-  private _velocity = { x: 0, y: 0 }; // Simple 2D velocity
-  // Curve flight properties
+  private _velocity = { x: 0, y: 0 };
+
+  // Curve flight properties (kept for compatibility)
   private _curveStart: { x: number; y: number } | null = null;
   private _curveControl: { x: number; y: number } | null = null;
   private _curveEnd: { x: number; y: number } | null = null;
   private _moveStartTime = 0;
-  private _moveDuration = 800; // ms, will scale with power/distance
+  private _moveDuration = 800;
   private _pathGraphics: PIXI.Graphics | null = null;
+  private _previewGraphics: PIXI.Graphics | null = null;
+  private _dragPath: Array<{ x: number; y: number }> = [];
   private _isMoving = false;
   private _pendingGoalZone: any = null;
   private _finalGoalCounted: boolean = false;
@@ -23,10 +25,11 @@ export default class Ball extends PIXI.Container {
   private _pendingSaveZone: any = null;
   private _baseScale = 0.6;
   private _isDragging = false;
-  private _dragTime = 0; // Track drag duration for power
-  private _inGoal = false; // Track if ball is inside goal
-  private _snappedToZone = false; // whether last shot was snapped to a goal zone
-  private _lastShotPower = 0; // store last shot power percent for animations
+  private _dragTime = 0;
+  private _inGoal = false;
+
+  // Post-goal / animation state
+  private _lastShotPower = 0;
   private _postGoalAnimating = false;
   private _postGoalStartTime = 0;
   private _postGoalDuration = 800;
@@ -38,109 +41,199 @@ export default class Ball extends PIXI.Container {
   private _minSpeed = 15;
   private _maxSpeed = 55;
   private _zoneTriggered = false;
-  private _ballUsed = false; // Track if ball has been used (swiped once)
-  private _firstCollisionHandled = false; // Track if first collision has been handled
-  private _keeperCooldown = false; // Prevent repeated goalkeeper triggers after a deflection
-  private _wasOut = false; // mark if trajectory is outbound/low_power
-  private onEnterFrame: () => void;
-  private _onResize: () => void;
+  private _ballUsed = false;
+  private _firstCollisionHandled = false;
+  private _keeperCooldown = false;
+  private _wasOut = false;
+  private onEnterFrame!: () => void;
+  private _onResize!: () => void;
+  private _onPointerDown!: (e: any) => void;
+  private _onPointerMove!: (e: any) => void;
+  private _onPointerUp!: (e: any) => void;
   private _goalScored = false;
   public onBallDestroyed?: () => void;
   public goalScoredCallback?: (zone: any) => void;
-  public saveCallback?: () => void; // Callback for goalkeeper saves
-  public outCallback?: () => void; // Callback for outbound / insufficient power shots
-  public gameState: { ballsRemaining: number; gameOver: boolean };
+  public saveCallback?: () => void;
+  public outCallback?: () => void;
+  public gameState!: { ballsRemaining: number; gameOver: boolean };
   public goal: any;
-  public goalkeeper: any;  
-  constructor(gameState: { ballsRemaining: number; gameOver: boolean }, goal: any, goalkeeper?: any) {
+  public goalkeeper: any;
+
+  // 3D physics properties (depth/z, altitude, velocities, etc.)
+  private _z: number = 0; // Depth (0 = kick position, increases toward goal)
+  private _altitude: number = 0; // Height above ground
+  private _vx: number = 0; // Horizontal velocity (screen X)
+  private _vz: number = 0; // Depth velocity (toward goal)
+  private _vy: number = 0; // Vertical velocity (altitude)
+  private _curveFactor: number = 0; // Magnus/spin effect
+  private _gravity: number = 0.8; // Simulated gravity
+  private _friction: number = 0.99; // Air friction
+  private _groundLevelY: number = 0; // Y position on screen at ball placement
+  private _powerMultiplier: number = 2.5; // global shot power multiplier
+
+  constructor(gameState?: { ballsRemaining: number; gameOver: boolean }, goal?: any, goalkeeper?: any) {
     super();
-    
-    // Create ball sprite as a white circle (generate texture from an offscreen canvas)
-    const _baseRadius = 48; // base pixels for generated texture
-    const _diam = _baseRadius * 2;
-    const _canvas = document.createElement('canvas');
-    _canvas.width = _diam;
-    _canvas.height = _diam;
-    const _ctx = _canvas.getContext('2d');
-    if (_ctx) {
-      _ctx.fillStyle = '#ffffff';
-      _ctx.beginPath();
-      _ctx.arc(_baseRadius, _baseRadius, _baseRadius, 0, Math.PI * 2);
-      _ctx.fill();
-    }
-    const tex = PIXI.Texture.from(_canvas);
-    this.ballSprite = new PIXI.Sprite(tex);
-    this.ballSprite.anchor.set(0.5, 0.5); // Center anchor
-    
-    // Create shadow
-    this.shadowSprite = new PIXI.Graphics();
-    
-    // // Create power indicator
-    // this.powerIndicator = new PIXI.Graphics();
-    // this.powerText = new PIXI.Text({
-    //   text: 'Lực: 0%',
-    //   style: {
-    //     fontFamily: 'Arial',
-    //     fontSize: 20,
-    //     fill: 0xFFFFFF,
-    //     fontWeight: 'bold'
-    //   }
-    // });
-    // this.powerText.anchor.set(0.5);
-    
-    // Add children (shadow first, then ball)
-    this.addChild(this.shadowSprite);
-    this.addChild(this.ballSprite);
-    // this.addChild(this.powerIndicator);
-    // this.addChild(this.powerText);
-    
-    this.interactive = true;
-    this.cursor = 'pointer';
-    this.gameState = gameState;
+    // minimal constructor to avoid runtime crashes if not fully wired here
+    if (gameState) this.gameState = gameState;
     this.goal = goal;
     this.goalkeeper = goalkeeper;
-    
-    this._onResize = this.updateScale.bind(this);
-    window.addEventListener('resize', this._onResize);
-    
-    // Initial scale and position
-    if (this.ballSprite.texture && this.ballSprite.texture.width) {
-      this.updateScale();
-    } else {
-      // If texture isn't loaded yet, show placeholder and wait for update
-      this._placeholder = new PIXI.Graphics();
-      this._placeholder.fill(0xFFFFFF, 1);
-      this._placeholder.circle(0, 0, 24);
-      this._placeholder.fill();
-      this.addChildAt(this._placeholder, 0);
-      this.ballSprite.texture.on('update', () => {
-        try { if (this._placeholder) { this.removeChild(this._placeholder); this._placeholder.destroy(); this._placeholder = null; } } catch(e){}
-        this.updateScale();
-      });
+    // create visuals: white circle texture and shadow
+    const baseRadius = 38;
+    const diam = baseRadius * 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = diam;
+    canvas.height = diam;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(baseRadius, baseRadius, baseRadius, 0, Math.PI * 2);
+      ctx.fill();
     }
-    
-    this.setupInteraction();
-    
-    // Update loop
+    const tex = PIXI.Texture.from(canvas as any);
+    this.ballSprite = new PIXI.Sprite(tex);
+    this.ballSprite.anchor.set(0.5, 0.5);
+    this.shadowSprite = new PIXI.Graphics();
+    this.addChild(this.shadowSprite);
+    this.addChild(this.ballSprite);
+
+    this.interactive = true;
+    this.cursor = 'pointer';
+
+    // preview graphics for drag path
+    this._previewGraphics = new PIXI.Graphics();
+    this.addChild(this._previewGraphics);
+
+    // pointer handlers
+    this._onPointerDown = (e: any) => {
+      this._isDragging = true;
+      this._dragPath = [];
+      this._dragTime = performance.now();
+      const p = e.data.global;
+      this._startPos = { x: this.x, y: this.y };
+      this._dragPath.push({ x: p.x, y: p.y });
+      this._previewGraphics!.clear();
+    };
+
+    this._onPointerMove = (e: any) => {
+      if (!this._isDragging) return;
+      const p = e.data.global;
+      const last = this._dragPath[this._dragPath.length - 1];
+      // sample points to avoid overly dense arrays
+      if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 6) {
+        this._dragPath.push({ x: p.x, y: p.y });
+      }
+      // draw preview
+      try {
+        this._previewGraphics!.clear();
+        this._previewGraphics!.lineStyle(4, 0xffffff, 0.9);
+        for (let i = 0; i < this._dragPath.length - 1; i++) {
+          const a = this._dragPath[i];
+          const b = this._dragPath[i + 1];
+          this._previewGraphics!.moveTo(a.x - this.x, a.y - this.y);
+          this._previewGraphics!.lineTo(b.x - this.x, b.y - this.y);
+        }
+      } catch (e) {}
+    };
+
+    this._onPointerUp = (e: any) => {
+      if (!this._isDragging) return;
+      this._isDragging = false;
+      const now = performance.now();
+      const duration = Math.max(1, now - this._dragTime);
+      const first = this._dragPath[0];
+      const last = this._dragPath[this._dragPath.length - 1] || first;
+      if (!first || !last) {
+        this._previewGraphics!.clear();
+        this._dragPath = [];
+        return;
+      }
+
+      // compute swipe vector in screen space
+      const dx = last.x - first.x;
+      const dy = last.y - first.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+      // power scaled by distance and shorter time = more power
+      const speedFactor = Math.min(2.5, (dist / duration) * 20 + dist / 120);
+
+      // map swipe to initial velocities (scaled up by power multiplier)
+      this._vx = dx * 0.06 * speedFactor * this._powerMultiplier;
+      this._vz = Math.max(8, (Math.abs(dy) * 0.06 + Math.abs(dx) * 0.03) * speedFactor * this._powerMultiplier + 8);
+      this._vy = Math.max(10, Math.abs(dy) * 0.04 * speedFactor * this._powerMultiplier + 8);
+
+      // curve / spin from path
+      this._curveFactor = this.calculateCurveFactor({ x: first.x, y: first.y }, { x: last.x, y: last.y }, this._dragPath);
+
+      // reset physics state and start movement
+      this._z = 0;
+      this._altitude = 0;
+      this._isMoving = true;
+      this._firstCollisionHandled = false;
+      this._goalScored = false;
+      this._moveStartTime = performance.now();
+
+      // clear preview
+      try { this._previewGraphics!.clear(); } catch (e) {}
+      this._dragPath = [];
+    };
+
+    this.on('pointerdown', this._onPointerDown);
+    this.on('pointermove', this._onPointerMove);
+    this.on('pointerup', this._onPointerUp);
+    this.on('pointerupoutside', this._onPointerUp);
+
     this.onEnterFrame = this.update.bind(this);
     PIXI.Ticker.shared.add(this.onEnterFrame);
+    window.addEventListener('resize', () => this.updateScale());
+    // initial sizing
+    this.updateScale();
   }
 
+  private updateScale() {
+    if (!this.ballSprite || !this.ballSprite.texture) return;
+    const targetWidth = BASE_WIDTH / 5;
+    const s = targetWidth / this.ballSprite.texture.width;
+    this._baseScale = s;
+    this.ballSprite.scale.set(s, s);
+    const groundLevel = (BASE_HEIGHT * 3) / 4;
+    const goalY = this.goal?.goalSprite?.y || 0;
+    const elevationOffset = 0.005 * goalY;
+    this.x = Math.round(BASE_WIDTH / 2);
+    this.y = groundLevel - elevationOffset;
+    this._groundLevelY = this.y;
+    this.updateShadow();
+  }
+
+  private updateShadow() {
+    try {
+      if (!this.shadowSprite) return;
+      this.shadowSprite.clear();
+      const yOff = this._currentYOffset || 0;
+      const lift = Math.max(0, -yOff);
+      const texWidth = (this.ballSprite && this.ballSprite.texture && this.ballSprite.texture.width) ? this.ballSprite.texture.width : 48;
+      const baseRadius = (texWidth * this._baseScale) / 2 * 0.8;
+      const shrinkFactor = 1 - Math.min(0.75, lift / Math.max(1, this._postGoalAmplitude * 1.2));
+      const scaleFactor = (this.ballSprite && this._baseScale) ? (this.ballSprite.scale.x / this._baseScale) : 1;
+      const shadowRadius = baseRadius * shrinkFactor * scaleFactor;
+      const alpha = 0.35 * Math.max(0.25, shrinkFactor * scaleFactor);
+      this.shadowSprite.fill(0x000000, alpha);
+      const yPos = 10 + Math.max(0, lift * 0.2);
+      this.shadowSprite.ellipse(0, yPos, shadowRadius, shadowRadius * 0.5);
+      this.shadowSprite.fill();
+    } catch (e) {}
+  }
 
   private computeDeflectionVelocity(
     ballPos: { x: number; y: number },
     keeperPos: { x: number; y: number },
     power = 2
   ) {
-    // Basic deflection vector from keeper to ball
     let dx = ballPos.x - keeperPos.x;
     let dy = ballPos.y - keeperPos.y;
     let len = Math.sqrt(dx * dx + dy * dy) || 1;
     let vx = dx / len;
     let vy = dy / len;
-
-    // If a goal object exists, bias deflection away from the goal center
-    // so a keeper touch is less likely to send the ball inward into the net.
     try {
       const goalArea = this.goal?.getGoalArea && this.goal.getGoalArea();
       if (goalArea) {
@@ -149,15 +242,12 @@ export default class Ball extends PIXI.Container {
         const toGoalX = gx - keeperPos.x;
         const toGoalY = gy - keeperPos.y;
         const dot = vx * toGoalX + vy * toGoalY;
-        // If deflection is pointing toward the goal center (dot > 0), flip/adjust it
         if (dot > 0) {
-          // Prefer vector away from goal center
           let awayX = keeperPos.x - gx;
           let awayY = keeperPos.y - gy;
           const awayLen = Math.sqrt(awayX * awayX + awayY * awayY) || 1;
           vx = awayX / awayLen;
           vy = awayY / awayLen;
-          // add a small lateral random component to make deflections look natural
           const lateral = (Math.random() - 0.5) * 0.6;
           const latX = -vy * lateral;
           const latY = vx * lateral;
@@ -167,638 +257,208 @@ export default class Ball extends PIXI.Container {
         }
       }
     } catch (e) {}
-
     return {
       x: vx * 40 * power,
       y: vy * 45 * power - 4
     };
   }
 
- 
   public setVelocity(x: number, y: number) {
     this._velocity.x = x;
     this._velocity.y = y;
+    this._vx = x;
+    this._vy = y;
     this._isMoving = true;
     this.startBounceMovement();
   }
-  
-  private updateScale() {
-    if (!this.ballSprite.texture || !this.ballSprite.texture.width) return;
-    
-    // Scale ball to be 1/5 of design width
-    const targetWidth = BASE_WIDTH / 5;
-    const s = targetWidth / this.ballSprite.texture.width;
-    this._baseScale = s;
-    this.ballSprite.scale.set(s, s);
-    
-    // Position ball on ground level (3/4 down from design height)
-    const groundLevel = (BASE_HEIGHT * 3) / 4;
-    // Elevate the drop point by 0.005 * goal.y
-    const goalY = this.goal?.goalSprite?.y || 0;
-    const elevationOffset = 0.005 * goalY;
-    this.x = BASE_WIDTH / 2;
-    this.y = groundLevel - elevationOffset; // Position at elevated ground level
-    
-    // Update shadow
-    this.updateShadow();
-  }
-  
-  private updateShadow() {
-    this.shadowSprite.clear();
 
-    // Adjust shadow based on vertical offset (simulated lift)
-    const yOff = this._currentYOffset || 0; // positive means lower, negative means higher
-    const lift = Math.max(0, -yOff); // how high the ball is above base
-
-    // Base shadow size from sprite texture at base scale
-    const texWidth = (this.ballSprite.texture && this.ballSprite.texture.width) ? this.ballSprite.texture.width : this.ballSprite.width;
-    const baseRadius = (texWidth * this._baseScale) / 2 * 0.8; // unscaled base radius at _baseScale
-    // Shrink shadow when ball rises
-    const shrinkFactor = 1 - Math.min(0.75, lift / Math.max(1, this._postGoalAmplitude * 1.2));
-    // Factor to account for current sprite scale relative to base
-    const scaleFactor = (this.ballSprite.scale && this._baseScale) ? (this.ballSprite.scale.x / this._baseScale) : 1;
-    const shadowRadius = baseRadius * shrinkFactor * scaleFactor;
-    const alpha = 0.35 * Math.max(0.25, shrinkFactor * scaleFactor);
-
-    this.shadowSprite.fill(0x000000, alpha);
-    // place shadow slightly below the ball, adjust with lift
-    const yPos = 10 + Math.max(0, lift * 0.2);
-    this.shadowSprite.ellipse(0, yPos, shadowRadius, shadowRadius * 0.5);
-    this.shadowSprite.fill();
-  }
-
-  // private updatePowerIndicator(power: number) {
-  //   this.powerIndicator.clear();
-  //   this.powerText.text = `Lực: ${Math.round(power)}%`;
-  //   this.powerText.x = 0;
-  //   this.powerText.y = -this.ballSprite.height - 40;
-    
-  //   if (power > 0) {
-  //     // Draw power bar
-  //     const barWidth = 100;
-  //     const barHeight = 10;
-  //     const fillWidth = (barWidth * power) / 100;
-      
-  //     // Background bar
-  //     this.powerIndicator.fill(0x333333, 0.8);
-  //     this.powerIndicator.rect(-barWidth/2, -this.ballSprite.height - 60, barWidth, barHeight);
-  //     this.powerIndicator.fill();
-      
-  //     // Power fill (color changes based on power level)
-  //     const color = power < 33 ? 0x00FF00 : power < 66 ? 0xFFFF00 : 0xFF0000;
-  //     this.powerIndicator.fill(color, 0.9);
-  //     this.powerIndicator.rect(-barWidth/2, -this.ballSprite.height - 60, fillWidth, barHeight);
-  //     this.powerIndicator.fill();
-  //   }
-  // }
-  
-  private setupInteraction() {
-    this.on('pointerdown', (e: PIXI.FederatedPointerEvent) => this.onDragStart(e));
-    this.on('pointermove', (e: PIXI.FederatedPointerEvent) => this.onDragMove(e));
-    this.on('pointerup', (e: PIXI.FederatedPointerEvent) => this.onDragEnd(e));
-    this.on('pointerupoutside', (e: PIXI.FederatedPointerEvent) => this.onDragEnd(e));
-  }
-  
-  private onDragStart(event: PIXI.FederatedPointerEvent) {
-    // Prevent interaction if ball has been used, is moving, goal scored, or game over
-    if (this._ballUsed || this._isMoving || this._goalScored || this.gameState.gameOver) return;
-    
-    this._isDragging = true;
-    this._dragTime = Date.now();
-    try {
-      const parent = this.parent as PIXI.Container;
-      const p = parent.toLocal(new PIXI.Point(event.global.x, event.global.y));
-      this._startPos = { x: p.x, y: p.y };
-    } catch (e) {
-      this._startPos = { x: event.global.x, y: event.global.y };
-    }
-  }
-
-  private onDragMove(event: PIXI.FederatedPointerEvent) {
-    if (!this._isDragging || this._ballUsed || this._isMoving || this._goalScored || this.gameState.gameOver) return;
-    
-    let currentPos = { x: event.global.x, y: event.global.y };
-    try {
-      const parent = this.parent as PIXI.Container;
-      const p = parent.toLocal(new PIXI.Point(event.global.x, event.global.y));
-      currentPos = { x: p.x, y: p.y };
-    } catch (e) {}
-    const deltaX = currentPos.x - this._startPos.x;
-    const deltaY = currentPos.y - this._startPos.y;
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    
-    // Calculate current power based on swipe speed
-    const currentTime = Date.now();
-    const dragDuration = Math.max(1, currentTime - this._dragTime);
-    const swipeSpeed = distance * 1000 / dragDuration;
-    const maxSwipeSpeed = 2000;
-    const minSwipeSpeed = 100;
-    const powerPercent = Math.max(0, Math.min(100, 
-      ((swipeSpeed - minSwipeSpeed) / (maxSwipeSpeed - minSwipeSpeed)) * 100
-    ));
-    
-    // Update power indicator
-  //   this.updatePowerIndicator(powerPercent);
-  }
-
-  private onDragEnd(event: PIXI.FederatedPointerEvent) {
-    if (!this._isDragging || this._ballUsed || this._isMoving || this._goalScored || this.gameState.gameOver) return;
-    
-    this._isDragging = false;
-    let endPos = { x: event.global.x, y: event.global.y };
-    try {
-      const parent = this.parent as PIXI.Container;
-      const p = parent.toLocal(new PIXI.Point(event.global.x, event.global.y));
-      endPos = { x: p.x, y: p.y };
-    } catch (e) {}
-
-    // Calculate swipe vector (from start to end)
-    const deltaX = endPos.x - this._startPos.x;
-    const deltaY = endPos.y - this._startPos.y;
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    const dragDuration = Math.max(1, Date.now() - this._dragTime);
-    
-    // Compute swipe speed (pixels per second) - this is our power metric
-    const swipePps = distance * 1000 / dragDuration; // px/s
-    
-    // Calculate power based on swipe speed (0-100%)
-    const maxSwipeSpeed = 2000; // pixels per second for 100% power
-    const minSwipeSpeed = 100;  // minimum threshold
-    const powerPercent = Math.max(0, Math.min(100, 
-      ((swipePps - minSwipeSpeed) / (maxSwipeSpeed - minSwipeSpeed)) * 100
-    ));
-    
-    // Allow even small/weak gestures to produce a shot — comment out guard
-    // if (distance < 10 || powerPercent < 5) return; // ignore tiny or weak gestures
-    
-    // Mark ball as used and disable all future interactions
-    this._ballUsed = true;
-    this.interactive = false;
-    this.cursor = 'default';
-    const baselinePps = 1000; // tuning baseline (px/s)
-
-    // Determine intended range based on power, swipe distance and swipe speed
-    const rangeBoost = Math.max(0.8, Math.min(1.5, 1 + (swipePps - baselinePps) / (baselinePps * 2)));
-    let range = Math.min(this._maxSpeed * 20, Math.max(this._minSpeed * 10, distance * (0.8 + powerPercent / 150) * rangeBoost));
-    // Ensure minimum range reaches the goal center so weak swipes still get to the net
-    try {
-      if (this.goal && typeof this.goal.getGoalArea === 'function') {
-        const ga = this.goal.getGoalArea();
-        if (ga && typeof ga.x === 'number' && typeof ga.y === 'number') {
-          const goalCenterX = ga.x + ga.width / 2;
-          const goalCenterY = ga.y + ga.height / 2;
-          const distToGoalCenter = Math.hypot(goalCenterX - this.x, goalCenterY - this.y);
-          const minNeeded = Math.max(this._minSpeed * 10, Math.round(distToGoalCenter + 20));
-          range = Math.min(this._maxSpeed * 20, Math.max(range, minNeeded));
-        }
-      }
-    } catch (e) {}
-
-    // Direction normalized
-    const dirX = deltaX / distance;
-    const dirY = deltaY / distance;
-
-    // Compute target point in that direction
-    let target = {
-      x: this.x + dirX * range,
-      y: this.y + dirY * range
-    };
-
-    // Clamp target to design bounds (leave margin) - only for initial target calculation
-    const margin = 10;
-    target.x = Math.max(margin, Math.min(BASE_WIDTH - margin, target.x));
-    target.y = Math.max(margin, Math.min(BASE_HEIGHT - margin, target.y));
-
-    // store last shot power for post-goal animation
-    this._lastShotPower = powerPercent;
-
-    // Predict trajectory collision and set appropriate target based on swipe direction
-    const trajectoryResult = this.predictTrajectoryCollision(this.x, this.y, dirX, dirY, range);
-    target = trajectoryResult.finalTarget;
-    let shouldSnap = trajectoryResult.shouldSnap;
-
-    // Handle different collision types
-    switch (trajectoryResult.collisionType) {
-      case 'outbound_left':
-        // Fly left outward
-        target = {
-          x: this.x - range * 2.0,
-          y: this.y + (dirY > 0 ? 0.5 : -0.5) * range
-        };
-        shouldSnap = false;
-        this._wasOut = true;
-        break;
-        
-      case 'outbound_right':
-        // Fly right outward  
-        target = {
-          x: this.x + range * 2.0,
-          y: this.y + (dirY > 0 ? 0.5 : -0.5) * range
-        };
-        shouldSnap = false;
-        this._wasOut = true;
-        break;
-        
-      case 'above_crossbar':
-        // Fly upward and outward
-        const aboveOutwardX = this.x < (BASE_WIDTH / 2) ? -0.8 : 0.8;
-        target = {
-          x: this.x + aboveOutwardX * range * 1.5,
-          y: this.y - range * 1.8 // Strong upward
-        };
-        shouldSnap = false;
-        this._wasOut = true;
-        break;
-        
-      // 'low_power' behavior removed: weak shots now use normal flight so they reach the net
-        
-      case 'normal':
-      default:
-        // Normal behaviour: do not snap to goal zones. Keep target as computed.
-        // (Snapping to discrete goal zones removed to preserve free-flight behaviour.)
-        break;
-    }
-
-    // snapping disabled — ensure flag is false
-    this._snappedToZone = false;
-
-    // Recompute direction and range after potential snap
-    const finalDx = target.x - this.x;
-    const finalDy = target.y - this.y;
-    const finalDist = Math.sqrt(finalDx * finalDx + finalDy * finalDy) || 1;
-    const finalDirX = finalDx / finalDist;
-    const finalDirY = finalDy / finalDist;
-
-    // Control point: midpoint plus a perpendicular offset to create arc
-    const mid = { x: (this.x + target.x) / 2, y: (this.y + target.y) / 2 };
-    // Offset magnitude depends on powerPercent and swipe verticality; reduce when snapping to zone
-    const snapPenalty = (this.goal && typeof this.goal.getGoalZones === 'function') ? 0.6 : 1.0;
-    // make arc subtler: smaller base, weaker speed influence, lower caps
-    const speedBoost = 1 + Math.max(0, (swipePps - baselinePps) / baselinePps) * 0.25; // much smaller influence
-    const arcStrength = Math.min(220, ((30 + (powerPercent / 100) * 120 + Math.abs(deltaY) * 0.15) * snapPenalty * speedBoost));
-
-    // Determine curve side based on swipe direction: if swipe moves right -> curve right, left -> curve left.
-    // If mostly vertical, bias upward based on verticality and use small horizontal sign if present.
-    let dirSign = 1;
-    const horizVsVert = Math.abs(deltaX) / Math.max(1, Math.abs(deltaY));
-    if (Math.abs(deltaX) > Math.abs(deltaY) * 0.5) {
-      // clearly horizontal-leaning swipe: follow horizontal direction
-      dirSign = deltaX >= 0 ? 1 : -1;
-    } else {
-      // mostly vertical swipe: if there's any horizontal component use its sign, otherwise default to right
-      dirSign = deltaX === 0 ? 1 : (deltaX > 0 ? 1 : -1);
-    }
-
-    // Upward swipes (negative deltaY) should produce stronger upward bias
-    const upBiasFactor = 0.3 + Math.min(1, Math.max(0, -deltaY) / 300) * 0.7; // 0.3 .. 1.0
-
-    // Use the original swipe direction (dirX, dirY) to determine perpendicular vector
-    // so the arc side follows the swipe regardless of snapping to targets.
-    const perp = { x: -dirY * dirSign, y: dirX * dirSign };
-    const extraUp = Math.abs(deltaY) * upBiasFactor + (upBiasFactor > 0.5 ? arcStrength * 0.12 : 0);
-
-    // Bias control point slightly toward start but pull along swipe direction
-    // so the curve better follows the user's swipe. Reduce extreme lateral
-    // offsets and add a small forward pull along the swipe vector.
-    const startBias = 0.2; // smaller bias keeps control nearer the geometric midpoint
-    const arcStartBoost = 1 + Math.min(0.15, startBias * 0.1);
-    const arcUsed = arcStrength * arcStartBoost * 0.8; // slightly reduce overall arc magnitude
-    const controlAnchor = {
-      x: mid.x * (1 - startBias) + this.x * startBias,
-      y: mid.y * (1 - startBias) + this.y * startBias
-    };
-    // Pull control point along perpendicular for arc, reduce upward push,
-    // and add a modest forward pull in swipe direction so initial tangent matches swipe.
-    const forwardPull = 0.06 * finalDist; // small fraction of distance
-    const control = {
-      x: controlAnchor.x + perp.x * arcUsed + dirX * forwardPull,
-      y: controlAnchor.y + perp.y * arcUsed - extraUp * 0.7 + dirY * forwardPull
-    };
-
-    // Set curve properties
-    this._curveStart = { x: this.x, y: this.y };
-    this._curveControl = control;
-    this._curveEnd = target;
-
-    // Duration scales with final distance and swipe speed — faster swipe => shorter flight time
-    const baseDuration = (finalDist / (this._maxSpeed * 10)) * 500;
-    // speedFactor < 1 when swipe is faster than baseline (so duration shortens), >1 when slower
-    let speedFactor = baselinePps / Math.max(1, swipePps);
-    speedFactor = Math.max(0.5, Math.min(2.0, speedFactor));
-    this._moveDuration = Math.max(120, Math.min(1400, baseDuration * speedFactor));
-    this._moveStartTime = performance.now();
-    this._isMoving = true;
-    this._firstCollisionHandled = false; // Reset collision tracking for new flight
-
-    // Draw and keep flight path for 5s
-    this.drawFlightPath(this._curveStart, this._curveControl, this._curveEnd);
-
-    // Clear indicators
-  //   try { this.powerIndicator.clear(); } catch (e) {}
-  //   this.powerText.text = '';
-    
-  }
-  
   private update() {
     // continue if moving or post-goal animation is running
     if (!this._isMoving && !this._postGoalAnimating) return;
 
-    const now = performance.now();
-    const elapsed = now - this._moveStartTime;
-    const t = Math.min(1, elapsed / this._moveDuration);
+    if (this._isMoving) {
+        // --- 3D PHYSICS SIMULATION ---
 
-    if (this._curveStart && this._curveControl && this._curveEnd) {
-      // Quadratic Bézier curve: P(t) = (1-t)² P₀ + 2(1-t)t P₁ + t² P₂
-      const u = 1 - t; // (1-t)
-      const u2 = u * u; // (1-t)²
-      const t2 = t * t; // t²
-      const twoUt = 2 * u * t; // 2(1-t)t
-      
-      // Apply Bézier formula for both x and y coordinates
-      const nx = u2 * this._curveStart.x + twoUt * this._curveControl.x + t2 * this._curveEnd.x;
-      const ny = u2 * this._curveStart.y + twoUt * this._curveControl.y + t2 * this._curveEnd.y;
-      
-      this.x = nx;
-      this.y = ny;
-      
-      // Visual lift for shadow: compute deviation of curve from straight line
-      const lx = this._curveStart.x + (this._curveEnd.x - this._curveStart.x) * t; // linear interp
-      const ly = this._curveStart.y + (this._curveEnd.y - this._curveStart.y) * t;
-      const deviation = Math.hypot(nx - lx, ny - ly);
-      // Lift shadow when ball is 'higher' (negative y offset)
-      this._currentYOffset = -deviation * 0.6; // negative means up for updateShadow
+        // 1. Magnus / curve effect on horizontal velocity
+        this._vx += this._curveFactor * (this._vz / 20);
 
-      // --- Scale handling: interpolate scale gradually during flight ---
-      try {
-        if (this._inGoal) {
-          // Depth-based scaling when ball is inside goal area (settling)
-          // Important: do NOT increase the visible scale when entering goal.
-          // Only allow the ball to shrink toward the desired finalScale.
-          if (this.goal && typeof this.goal.getGoalArea === 'function') {
-            const goalArea = this.goal.getGoalArea();
-            if (goalArea && goalArea.height > 0) {
-              const depth = (this.y - goalArea.y) / goalArea.height; // 0..1 (may exceed)
-              const depthClamped = Math.max(0, Math.min(1, depth));
-              const depthScale = 1 - depthClamped * 0.5; // reduce up to ~50%
-              const desiredScale = this._baseScale * Math.max(0.6, depthScale);
-              // Only shrink toward desiredScale; never grow here
-              const current = (this.ballSprite.scale && this.ballSprite.scale.x) ? this.ballSprite.scale.x : this._baseScale;
-              if (desiredScale < current) {
-                // smooth shrink step to avoid sudden jump
-                const next = this.lerp(current, desiredScale, 0.25);
-                this.ballSprite.scale.set(next, next);
-              } else {
-                // keep current scale (do not increase)
-                this.ballSprite.scale.set(current, current);
-              }
+        // 2. Integrate positions
+        this.x += this._vx; // horizontal
+        this._z += this._vz; // depth
+        this._altitude += this._vy; // altitude
+
+        // 3. Gravity and friction
+        this._vy -= this._gravity;
+        this._vx *= this._friction;
+        this._vz *= this._friction;
+
+        // 4. Projection: map depth to screen Y (perspective)
+        const perspectiveY = this._groundLevelY - (this._z * 0.6);
+        this.y = perspectiveY - this._altitude;
+
+        // 5. Scale by depth
+        const depthScale = Math.max(0.4, 1 - (this._z / 2500));
+        const finalScale = this._baseScale * depthScale;
+        this.ballSprite.scale.set(finalScale, finalScale);
+
+        // 6. Shadow (on ground)
+        try {
+          this.shadowSprite.position.set(0, 0);
+          this.shadowSprite.clear();
+          this.shadowSprite.fill(0x000000, 0.3 * (1 - Math.min(1, this._altitude / 200)));
+          const shadowSize = (this.ballSprite.width / 2) * (1 - this._altitude / 400);
+          this.shadowSprite.ellipse(0, this._altitude + 10, shadowSize, shadowSize * 0.5);
+          this.shadowSprite.fill();
+        } catch (e) {}
+
+        // 7. Bounce on ground
+        if (this._altitude <= 0) {
+            this._altitude = 0;
+            if (Math.abs(this._vy) > 2) {
+                this._vy = -this._vy * 0.6;
+                this._vx *= 0.8;
+                this._vz *= 0.8;
             } else {
-              // fallback: do not increase above current
-              const cur = (this.ballSprite.scale && this.ballSprite.scale.x) ? this.ballSprite.scale.x : this._baseScale;
-              this.ballSprite.scale.set(cur, cur);
+                this._vy = 0;
             }
-          } else {
-            const cur = (this.ballSprite.scale && this.ballSprite.scale.x) ? this.ballSprite.scale.x : this._baseScale;
-            this.ballSprite.scale.set(cur, cur);
-          }
-        } else {
-          // Flight scaling: smoothly interpolate from 1.1*_baseScale down to 0.5*_baseScale over flight progress `t`.
-          const startS = this._baseScale * 1.1;
-          const endS = this._baseScale * 0.4;
-          const s = this.lerp(startS, endS, t);
-          this.ballSprite.scale.set(s, s);
         }
-      } catch (e) {}
 
-      // --- Scale-based Collision System DISABLED ---
-      // DISABLED: Scale-based collision causes multiple bounces
-      // Using only trajectory prediction to avoid code overlap
-      /*
-      if (!this._zoneTriggered && !this._firstCollisionHandled) {
-        try {
-          const goalArea = this.goal?.getGoalArea();
-          if (goalArea && this.ballSprite.texture && this.ballSprite.texture.width) {
-            // Calculate current scale relative to goal
-            const currentScale = this.ballSprite.scale.x;
-            const ballPixelWidth = this.ballSprite.texture.width * currentScale;
-            const goalRatio = ballPixelWidth / goalArea.width;
-            
-            // Only process collisions when ball is at 1/6 to 1/7 scale relative to goal
-            if (goalRatio >= 1/7 && goalRatio <= 1/6) {
-              this.checkBounceCollisions();
-            }
-          }
-        } catch (e) {}
-      }
-      */
-
-    } else {
-      // Fallback to linear velocity if curve missing
-      this.x += this._velocity.x;
-      this.y += this._velocity.y;
-      this._velocity.x *= 0.98;
-      this._velocity.y *= 0.98;
-      if (Math.abs(this._velocity.x) < 0.5 && Math.abs(this._velocity.y) < 0.5) {
-        this._velocity.x = 0;
-        this._velocity.y = 0;
-        this._isMoving = false;
-      }
-    }
-
-    // Always check goal collision during motion 
-    // DISABLED: checkBoundaries() - let ball fly freely off screen
-    // this.checkBoundaries();
-    this.checkGoalkeeperCollision();
-    this.predictGoalkeeperTiming();
-    this.checkGoalCollision();
-
-    // Finish movement
-    if (t >= 1) {
-      this._isMoving = false;
-      
-      // Check if goalkeeper should attempt catch for missed shots
-      this.handleGoalkeeperForMissedShots();
-      
-      // Keep path visible for 5s then clear
-      if (this._pathGraphics) {
-        const pg = this._pathGraphics;
-        this._pathGraphics = null;
-        setTimeout(() => { try { pg.destroy(); } catch (e) {} }, 5000);
-      }
-
-      // clear curve points
-      this._curveStart = this._curveControl = this._curveEnd = null;
-
-      // If ball landed in goal and was snapped to a zone, start a small bounce + settle animation
-      try {
-        if (this._inGoal && this._snappedToZone && !this._postGoalAnimating) {
-          this._postGoalAnimating = true;
-          // Spawn impact effect immediately when arrival occurs (before fall/settle)
-          try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
-          this._postGoalStartTime = performance.now();
-          // amplitude based on shot power (clamped)
-          this._postGoalAmplitude = Math.min(80, 10 + (this._lastShotPower / 100) * 80);
-          this._postGoalDuration = 800; // ms
-          this._animationBaseY = this.y; // store arrival y
-          this._currentYOffset = 0;
-          // compute final settle Y as bottom of goal area (so ball sinks to lowest point)
-          try {
-            if (this.goal && typeof this.goal.getGoalArea === 'function') {
-              const goalArea = this.goal.getGoalArea();
-              if (goalArea) {
-                // place ball higher by 0.5 * goal.y
-                const goalY = this.goal?.goalSprite?.y || 0;
-                const elevationOffset = 0.055 * goalY;
-                this._postGoalFinalY = goalArea.y + goalArea.height - (this.ballSprite.height / 2) - elevationOffset;
-              }
-            }
-          } catch (e) { this._postGoalFinalY = null; }
-        } else if (!this._inGoal && !this._postGoalAnimating) {
-          // Non-goal landing: give a more visible gentle bounce so player notices
-          this._postGoalAnimating = true;
-          this._postGoalStartTime = performance.now();
-          // stronger amplitude (but capped) based on shot power so stronger shots bounce more
-          this._postGoalAmplitude = Math.min(40, 6 + (this._lastShotPower / 100) * 34);
-          this._postGoalDuration = 600; // slightly longer so bounce is visible
-          this._animationBaseY = this.y; // base is current landing y
-          this._currentYOffset = 0;
-          // final settle slightly lower than landing to show a small sink after bounce
-          this._postGoalFinalY = this.y + Math.min(12, 2 + (this._lastShotPower / 100) * 8);
+        // Collision checks when near or past goal depth
+        const GOAL_DISTANCE = 800; // tune to match your scene
+        if (this._z >= GOAL_DISTANCE && !this._firstCollisionHandled) {
+            this.checkGoalCollision();
+            this.checkGoalkeeperCollision();
+            this._firstCollisionHandled = true;
         }
-      } catch (e) {}
-    }
-    // Update shadow based on current offset
-    this.updateShadow();
 
-    // Handle post-goal bounce/fall animation
-    if (this._postGoalAnimating) {
-      const now = performance.now();
-      const p = Math.min(1, (now - this._postGoalStartTime) / this._postGoalDuration);
-      // yOffset: bounce then settle into net. Use a damped sine for bounce.
-      const bounce = -Math.sin(p * Math.PI) * this._postGoalAmplitude * (1 - p * 0.6);
-      // Determine settle target Y (goal bottom) and interpolate toward it after bounce
-      let settleYOffset = 0;
-      if (this._postGoalFinalY !== null && this._postGoalFinalY !== undefined) {
-        // compute desired final delta relative to animation base
-        const desiredFinalDelta = this._postGoalFinalY - this._animationBaseY;
-        // after bounce (p > 0.4) start moving towards final position
-        const settleProgress = Math.min(1, Math.max(0, (p - 0.4) / 0.6));
-        settleYOffset = desiredFinalDelta * settleProgress;
-      } else {
-        // fallback small sink
-        settleYOffset = p > 0.9 ? (p - 0.9) / 0.1 * 12 : 0;
-      }
-      this._currentYOffset = bounce + settleYOffset;
-      // Apply visual offset
-      this.y = this._animationBaseY + this._currentYOffset;
-      // Shadow should shrink and fade as the ball rises, then restore as it settles
-      this.updateShadow();
+        // Stop conditions
+        if (this._z > 1500 || (Math.abs(this._vx) < 0.1 && Math.abs(this._vz) < 0.1 && this._altitude === 0)) {
+            this._isMoving = false;
+            if (!this._goalScored) this.handleGoalkeeperForMissedShots();
+        }
 
-      if (p >= 1) {
-        this._postGoalAnimating = false;
-        this._snappedToZone = false; // reset
-        // ensure final settle at computed goal bottom if available
+        // Trigger goalkeeper timing prediction when depth reaches ~60%
+        if (this._z > GOAL_DISTANCE * 0.6) {
+            this.predictGoalkeeperTiming();
+        }
+
+    } else if (this._postGoalAnimating) {
+        // Keep existing post-goal animation logic (unchanged)
+        const now = performance.now();
+        const p = Math.min(1, (now - this._postGoalStartTime) / this._postGoalDuration);
+        const bounce = -Math.sin(p * Math.PI) * this._postGoalAmplitude * (1 - p * 0.6);
+        let settleYOffset = 0;
         if (this._postGoalFinalY !== null && this._postGoalFinalY !== undefined) {
-          this.y = this._postGoalFinalY;
-          this._currentYOffset = this._postGoalFinalY - this._animationBaseY;
+            const desiredFinalDelta = this._postGoalFinalY - this._animationBaseY;
+            const settleProgress = Math.min(1, Math.max(0, (p - 0.4) / 0.6));
+            settleYOffset = desiredFinalDelta * settleProgress;
         } else {
-          this.y = this._animationBaseY + 12;
-          this._currentYOffset = 12;
+            settleYOffset = p > 0.9 ? (p - 0.9) / 0.1 * 12 : 0;
         }
-        this._postGoalFinalY = null;
-          this.updateShadow();
-        // Finalize pending goal if any: only count as goal if final resting pos is inside net
-        try {
-          if (this._pendingGoalZone && !this._finalGoalCounted) {
+        this._currentYOffset = bounce + settleYOffset;
+        this.y = this._animationBaseY + this._currentYOffset;
+        this.updateShadow();
+
+        if (p >= 1) {
+            this._postGoalAnimating = false;
+            if (this._postGoalFinalY !== null && this._postGoalFinalY !== undefined) {
+                this.y = this._postGoalFinalY;
+                this._currentYOffset = this._postGoalFinalY - this._animationBaseY;
+            } else {
+                this.y = this._animationBaseY + 12;
+                this._currentYOffset = 12;
+            }
+            this._postGoalFinalY = null;
+            this.updateShadow();
             try {
-              if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
-                // spawn visual impact effect at final resting point
-                try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
-                if (this.goalScoredCallback) this.goalScoredCallback(this._pendingGoalZone);
-                this._finalGoalCounted = true;
-              }
-            } catch (e) {}
-            this._pendingGoalZone = null;
-          }
-        } catch (e) {}
-        // Finalize pending save: if ball ended inside goal, treat as goal (do not count save).
-        try {
-          if (this._pendingSave) {
-            try {
-              if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
-                // Ball ended in net -> count as goal instead of save
-                if (!this._finalGoalCounted) {
-                  const zone = this.goal.getZoneFromPosition(this.x, this.y) || this._pendingSaveZone;
-                    // spawn impact effect for converted goal
-                    try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
-                    if (zone && this.goalScoredCallback) this.goalScoredCallback(zone);
-                  this._finalGoalCounted = true;
+                if (this._pendingGoalZone && !this._finalGoalCounted) {
+                    if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
+                        try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
+                        if (this.goalScoredCallback) this.goalScoredCallback(this._pendingGoalZone);
+                        this._finalGoalCounted = true;
+                    }
+                    this._pendingGoalZone = null;
                 }
-              } else {
-                // Ball did not end in net -> count as save
-                if (this.saveCallback) this.saveCallback();
-              }
             } catch (e) {}
-            this._pendingSave = false;
-            this._pendingSaveZone = null;
-          }
-        } catch (e) {}
-        // Notify application that this ball's flight/settle has finished so it can schedule next ball.
-        // If this shot was outbound/low power, notify via outCallback before destroying
-        try {
-          if (this._wasOut && this.outCallback) {
-            try { this.outCallback(); } catch (e) {}
-          }
-        } catch (e) {}
-        // Always call onBallDestroyed after a short delay to allow visuals to settle
-        try {
-          if (this.onBallDestroyed) {
-            setTimeout(() => {
-              try { if (this.onBallDestroyed) this.onBallDestroyed(); } catch (e) {}
-            }, 800);
-          }
-        } catch (e) {}
-      }
+            try {
+                if (this._pendingSave) {
+                    if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
+                        if (!this._finalGoalCounted) {
+                            const zone = this.goal.getZoneFromPosition(this.x, this.y) || this._pendingSaveZone;
+                            try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
+                            if (zone && this.goalScoredCallback) this.goalScoredCallback(zone);
+                            this._finalGoalCounted = true;
+                        }
+                    } else {
+                        if (this.saveCallback) this.saveCallback();
+                    }
+                    this._pendingSave = false;
+                    this._pendingSaveZone = null;
+                }
+            } catch (e) {}
+            try {
+                if (this._wasOut && this.outCallback) {
+                    try { this.outCallback(); } catch (e) {}
+                }
+            } catch (e) {}
+            try {
+                if (this.onBallDestroyed) {
+                    setTimeout(() => { try { if (this.onBallDestroyed) this.onBallDestroyed(); } catch (e) {} }, 800);
+                }
+            } catch (e) {}
+        }
     }
+
+    // Ensure shadow updated each frame
+    this.updateShadow();
   }
 
-  // Ease helper (easeOutQuad)
-  private easeOutQuad(t: number) {
-    return t * (2 - t);
-  }
-
-  // Linear interpolation helper
-  private lerp(a: number, b: number, t: number) {
-    return a + (b - a) * t;
-  }
-
-  // Draw flight path as a stroked curve and keep reference
-  private drawFlightPath(start: { x: number; y: number }, control: { x: number; y: number }, end: { x: number; y: number }) {
-    // Clear existing
-    if (this._pathGraphics) { try { this._pathGraphics.destroy(); } catch (e) {} }
-    const g = new PIXI.Graphics();
-    g.lineStyle(4, 0x00FF00, 0.6);
-    const segments = 48;
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      // Quadratic Bézier curve: P(t) = (1-t)² P₀ + 2(1-t)t P₁ + t² P₂
-      const u = 1 - t;
-      const u2 = u * u;
-      const t2 = t * t;
-      const twoUt = 2 * u * t;
-      const x = u2 * start.x + twoUt * control.x + t2 * end.x;
-      const y = u2 * start.y + twoUt * control.y + t2 * end.y;
-      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  // Compute control point from recorded drag path: take point with max perpendicular distance
+  private computeControlFromPath(start: { x: number; y: number }, end: { x: number; y: number }, path: Array<{ x: number; y: number }>) {
+    if (!path || path.length === 0) return null as any;
+    // line vector
+    const lx = end.x - start.x;
+    const ly = end.y - start.y;
+    const l2 = lx * lx + ly * ly || 1;
+    let sumSigned = 0;
+    let count = 0;
+    let maxAbs = 0;
+    for (const p of path) {
+      // cross product to compute signed perpendicular distance: cross = (p-start) x (end-start)
+      const cross = (p.x - start.x) * ly - (p.y - start.y) * lx;
+      const signedDist = cross / Math.sqrt(l2);
+      sumSigned += signedDist;
+      count++;
+      if (Math.abs(signedDist) > maxAbs) maxAbs = Math.abs(signedDist);
     }
-    // Add to scene root (parent of ball) so it's visible under/over as desired
-    if (this.parent) this.parent.addChild(g);
-    this._pathGraphics = g;
-    // schedule removal in 5s (if movement finishes earlier this will be kept then destroyed)
-    setTimeout(() => {
-      if (this._pathGraphics === g) {
-        try { g.destroy(); } catch (e) {}
-        if (this._pathGraphics === g) this._pathGraphics = null;
-      }
-    }, 5000);
+    const avgSigned = count > 0 ? (sumSigned / count) : 0;
+    const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    // If the path deviates very little, return midpoint
+    if (Math.abs(avgSigned) < 6 && maxAbs < 6) return { x: mid.x, y: mid.y };
+    // build perpendicular unit vector
+    const len = Math.sqrt(l2) || 1;
+    const perpUnit = { x: -ly / len, y: lx / len };
+    // control point is midpoint shifted along perp by avgSigned (weighted) and towards midpoint
+    const weight = 0.85; // how strongly to follow path vs midpoint
+    const shift = avgSigned * weight;
+    return { x: mid.x + perpUnit.x * shift, y: mid.y + perpUnit.y * shift };
+  }
+  
+  // Calculate curve factor (spin) from recorded drag path
+  private calculateCurveFactor(start: {x: number, y: number}, end: {x: number, y: number}, path: Array<{x:number,y:number}>) {
+    if (!path || path.length < 5) return 0;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    let maxDist = 0;
+    for (const p of path) {
+      const dist = (p.x - start.x) * nx + (p.y - start.y) * ny;
+      if (Math.abs(dist) > Math.abs(maxDist)) maxDist = dist;
+    }
+    const MAX_CURVE = 1.5;
+    return Math.max(-MAX_CURVE, Math.min(MAX_CURVE, maxDist * 0.02));
   }
   
   
@@ -859,19 +519,7 @@ export default class Ball extends PIXI.Container {
       };
     }
 
-    // Priority 7: Low power check
-    if (this._lastShotPower < 30) {
-      const distanceToGoal = Math.sqrt((goalArea.x + goalArea.width / 2 - startX) ** 2 + 
-                                      (goalArea.y + goalArea.height / 2 - startY) ** 2);
-      if (distanceToGoal > 200) {
-        return {
-          collisionType: 'low_power',
-          finalTarget: { x: endX, y: endY },
-          shouldSnap: false,
-          hitPoint: null
-        };
-      }
-    }
+    // (low_power case intentionally removed - weak swipes now still produce a full flight)
 
     // Priority 8: Normal behavior (snapping disabled)
     return {
@@ -931,36 +579,30 @@ export default class Ball extends PIXI.Container {
 
   // Predict when ball will reach goal and trigger goalkeeper at the right time
   private predictGoalkeeperTiming() {
-    if (!this.goalkeeper || !this._isMoving || this._goalScored || this._ballUsed || !this._curveEnd || this._keeperCooldown) {
+    if (!this.goalkeeper || !this._isMoving || this._goalScored || this._ballUsed || this._keeperCooldown) {
       return;
     }
 
     const goalArea = this.goal?.getGoalArea();
     if (!goalArea) return;
 
-    // Calculate if ball trajectory will hit goal area
-    const currentProgress = this.getCurrentTrajectoryProgress();
-    const ballToGoalDistance = Math.sqrt(
-      Math.pow(this.x - (goalArea.x + goalArea.width / 2), 2) +
-      Math.pow(this.y - (goalArea.y + goalArea.height / 2), 2)
-    );
+    // Estimate when ball will reach goal depth and predict landing point
+    const GOAL_DISTANCE = 800; // tune as needed
+    if (this._vz <= 0) return;
+    const timeToGoal = Math.max(0.001, (GOAL_DISTANCE - this._z) / this._vz);
+    // Predict future position (simple kinematic estimate)
+    const predictedX = this.x + this._vx * timeToGoal;
+    const predictedY = this.y + (this._vy * timeToGoal) - 0.5 * this._gravity * timeToGoal * timeToGoal;
 
-    // Only trigger goalkeeper when ball is close and moving toward goal
-    const triggerDistance = Math.max(goalArea.width, goalArea.height) * 0.8;
-    
-    if (ballToGoalDistance <= triggerDistance && currentProgress > 0.6 && currentProgress < 0.9) {
-      console.log(`Triggering goalkeeper at optimal timing! Progress: ${(currentProgress * 100).toFixed(1)}%, Distance: ${ballToGoalDistance.toFixed(1)}`);
-      
-      // Predict where ball will land
-      const curveEnd = this._curveEnd!;
-      const predictedZone = this.goal.getZoneFromPosition(curveEnd.x, curveEnd.y) || 
-               { id: Math.floor(Math.random() * 12) + 1 };
+    const predictedZone = this.goal.getZoneFromPosition(predictedX, predictedY) || { id: Math.floor(Math.random() * 12) + 1 };
 
-      this._goalScored = true; // Prevent multiple attempts
-
+    // Only trigger goalkeeper when ball is close in depth (e.g., ~60-90%)
+    const progressZ = this._z / GOAL_DISTANCE;
+    if (progressZ > 0.6 && progressZ < 0.95) {
+      this._goalScored = true; // Prevent duplicate triggers
       const ballRadius = this.ballSprite.width / 2;
-      const ballPosAtCall = { x: curveEnd.x, y: curveEnd.y }; // Store position at call time
-      this.goalkeeper.attemptCatch(curveEnd.x, curveEnd.y, predictedZone, ballRadius).then((result: any) => {
+      const ballPosAtCall = { x: predictedX, y: predictedY };
+      this.goalkeeper.attemptCatch(predictedX, predictedY, predictedZone, ballRadius).then((result: any) => {
         if (result.caught) {
           const catchPos = result.catchPos || ballPosAtCall;
           // Check goalkeeper catch probability - if 100%, skip proximity validation entirely
@@ -1243,6 +885,12 @@ export default class Ball extends PIXI.Container {
   public destroy() {
     PIXI.Ticker.shared.remove(this.onEnterFrame);
     window.removeEventListener('resize', this._onResize);
+    try {
+      this.off('pointerdown', this._onPointerDown);
+      this.off('pointermove', this._onPointerMove);
+      this.off('pointerup', this._onPointerUp);
+      this.off('pointerupoutside', this._onPointerUp);
+    } catch (e) {}
     
     // Store callback and clear it to prevent infinite loop
     const callback = this.onBallDestroyed;

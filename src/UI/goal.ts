@@ -155,7 +155,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw left post (anchor: top-left)
     this.leftPost.clear();
-    this.leftPost.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.leftPost.fill(postColor, 1); // Alpha = 0 to make transparent
     this.leftPost.rect(0, 0, postWidth, postHeight);
     this.leftPost.fill();
     this.leftPost.pivot.set(0, 0); // anchor top-left
@@ -164,7 +164,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw right post (anchor: top-right)
     this.rightPost.clear();
-    this.rightPost.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.rightPost.fill(postColor, 1); // Alpha = 0 to make transparent
     this.rightPost.rect(0, 0, postWidth, postHeight);
     this.rightPost.fill();
     this.rightPost.pivot.set(postWidth, 0); // anchor top-right
@@ -173,7 +173,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw crossbar (anchor: mid-top)
     this.crossbar.clear();
-    this.crossbar.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.crossbar.fill(postColor, 1); // Alpha = 0 to make transparent
     this.crossbar.rect(0, 0, goalBounds.width, crossbarHeight);
     this.crossbar.fill();
     this.crossbar.pivot.set(goalBounds.width / 2, 0); // anchor mid-top
