@@ -85,9 +85,17 @@ export default class Ball2 extends PIXI.Container {
     // delay 2s then snap
     setTimeout(() => {
       const idx = Math.floor(Math.random() * this._targets.length);
-      this._currentTargetIndex = idx;
       const t = this._targets[idx];
       const screen = this._normalizedToScreen(t.x, t.y);
+        // choose a random target index but DO NOT snap exactly to its center
+        this._currentTargetIndex = idx;
+        // apply small random jitter so we don't land exactly on the zone center
+        if (screen) {
+          const jitterX = (Math.random() - 0.5) * 60; // +/-30px
+          const jitterY = (Math.random() - 0.5) * 40; // +/-20px
+          screen.x += jitterX;
+          screen.y += jitterY;
+        }
       // Decide arc side: left targets curve left, right targets curve right, middle random
       let arcSide = 0;
       try {
@@ -122,7 +130,8 @@ export default class Ball2 extends PIXI.Container {
   private _finishShoot() {
     this._isShooting = false;
     // Button removed: ensure shooting flag reset only
-    this._currentTargetIndex = null;
+      // do not record a specific snapped target index to avoid snap-based logic
+      this._currentTargetIndex = null;
     try { if (typeof this.onShotComplete === 'function') this.onShotComplete(); } catch (e) {}
   }
 

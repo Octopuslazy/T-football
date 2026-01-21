@@ -21,7 +21,7 @@ export default class Ball extends PIXI.Container {
   private _finalGoalCounted: boolean = false;
   private _pendingSave: boolean = false;
   private _pendingSaveZone: any = null;
-  private _baseScale = 1;
+  private _baseScale = 0.6;
   private _isDragging = false;
   private _dragTime = 0; // Track drag duration for power
   private _inGoal = false; // Track if ball is inside goal
@@ -339,7 +339,20 @@ export default class Ball extends PIXI.Container {
 
     // Determine intended range based on power, swipe distance and swipe speed
     const rangeBoost = Math.max(0.8, Math.min(1.5, 1 + (swipePps - baselinePps) / (baselinePps * 2)));
-    const range = Math.min(this._maxSpeed * 20, Math.max(this._minSpeed * 10, distance * (0.8 + powerPercent / 150) * rangeBoost));
+    let range = Math.min(this._maxSpeed * 20, Math.max(this._minSpeed * 10, distance * (0.8 + powerPercent / 150) * rangeBoost));
+    // Ensure minimum range reaches the goal center so weak swipes still get to the net
+    try {
+      if (this.goal && typeof this.goal.getGoalArea === 'function') {
+        const ga = this.goal.getGoalArea();
+        if (ga && typeof ga.x === 'number' && typeof ga.y === 'number') {
+          const goalCenterX = ga.x + ga.width / 2;
+          const goalCenterY = ga.y + ga.height / 2;
+          const distToGoalCenter = Math.hypot(goalCenterX - this.x, goalCenterY - this.y);
+          const minNeeded = Math.max(this._minSpeed * 10, Math.round(distToGoalCenter + 20));
+          range = Math.min(this._maxSpeed * 20, Math.max(range, minNeeded));
+        }
+      }
+    } catch (e) {}
 
     // Direction normalized
     const dirX = deltaX / distance;
@@ -397,49 +410,17 @@ export default class Ball extends PIXI.Container {
         this._wasOut = true;
         break;
         
-      case 'low_power':
-        // Stop mid-flight
-        target = {
-          x: this.x + dirX * (range * 0.4),
-          y: this.y + dirY * (range * 0.4)
-        };
-        shouldSnap = false;
-        this._wasOut = true;
-        break;
+      // 'low_power' behavior removed: weak shots now use normal flight so they reach the net
         
       case 'normal':
       default:
-        // Normal snap to goal zone if exists - keep clamp for normal shots
-        if (this.goal && typeof this.goal.getGoalZones === 'function') {
-          try {
-            const zones = this.goal.getGoalZones();
-            if (zones && zones.length) {
-              // Debug: list zone centers and find nearest zone
-              try {
-                let bestZone = zones[0];
-                let bestDist = Infinity;
-                const zoneCenters: any[] = [];
-                for (const z of zones) {
-                  const cx = z.x + z.width / 2;
-                  const cy = z.y + z.height / 2;
-                  zoneCenters.push({ id: z.id, cx, cy });
-                  const d = Math.hypot(target.x - cx, target.y - cy);
-                  if (d < bestDist) { bestDist = d; bestZone = z; }
-                }
-                
-                target.x = bestZone.x + bestZone.width / 2;
-                target.y = bestZone.y + bestZone.height / 2;
-                
-                shouldSnap = true;
-              } catch (e) { /* ignore debug errors */ }
-            }
-          } catch (e) {}
-        }
+        // Normal behaviour: do not snap to goal zones. Keep target as computed.
+        // (Snapping to discrete goal zones removed to preserve free-flight behaviour.)
         break;
     }
 
-    // mark that we snapped to a zone
-    this._snappedToZone = shouldSnap;
+    // snapping disabled — ensure flag is false
+    this._snappedToZone = false;
 
     // Recompute direction and range after potential snap
     const finalDx = target.x - this.x;
@@ -893,11 +874,11 @@ export default class Ball extends PIXI.Container {
       }
     }
 
-    // Priority 8: Normal behavior
+    // Priority 8: Normal behavior (snapping disabled)
     return {
       collisionType: 'normal',
       finalTarget: { x: endX, y: endY },
-      shouldSnap: true,
+      shouldSnap: false,
       hitPoint: null
     };
   }
