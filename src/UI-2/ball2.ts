@@ -8,7 +8,7 @@ export default class Ball2 extends PIXI.Container {
   private _isShooting: boolean = false;
   private _homeX: number = 0;
   private _homeY: number = 0;
-  private _homeScale: number = 0.45;
+  private _homeScale: number = 1;
   private _currentTargetIndex: number | null = null;
   // optional reference to goalkeeper container (set by game code)
   public keeper: PIXI.Container | null = null;
@@ -32,10 +32,24 @@ export default class Ball2 extends PIXI.Container {
 
   constructor() {
     super();
-    const tex = PIXI.Texture.from('./arts/ball.png');
-    this.sprite = new PIXI.Sprite(tex);
+    // use generated white circle texture for the ball visual (canvas-based)
+    const _r = 48;
+    const _diam = _r * 2;
+    const _c = document.createElement('canvas');
+    _c.width = _diam;
+    _c.height = _diam;
+    const _ctx = _c.getContext('2d');
+    if (_ctx) {
+      _ctx.fillStyle = '#ffffff';
+      _ctx.beginPath();
+      _ctx.arc(_r, _r, _r, 0, Math.PI * 2);
+      _ctx.fill();
+    }
+    const _tex = PIXI.Texture.from(_c);
+    this.sprite = new PIXI.Sprite(_tex);
     this.sprite.anchor.set(0.5);
-    this.sprite.scale.set(0.08);
+    // initial scale: x=1, y=0.6 as requested
+    this.sprite.scale.set(0.6, 0.6);
     this.addChild(this.sprite);
     this._homeScale = this.sprite.scale.x;
 

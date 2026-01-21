@@ -64,7 +64,7 @@ import SoundController from './ControllUI/SoundController.js';
 
   // Load assets
   try {
-    await Assets.load(['./arts/goal.png', './arts/ball.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png', './sound/game-loop.mp3', './sound/click.mp3']);
+    await Assets.load(['./arts/goal.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png', './sound/game-loop.mp3', './sound/click.mp3']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update

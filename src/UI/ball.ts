@@ -55,8 +55,20 @@ export default class Ball extends PIXI.Container {
   constructor(gameState: { ballsRemaining: number; gameOver: boolean }, goal: any, goalkeeper?: any) {
     super();
     
-    // Create ball sprite
-    const tex = PIXI.Texture.from('./arts/ball.png');
+    // Create ball sprite as a white circle (generate texture from an offscreen canvas)
+    const _baseRadius = 48; // base pixels for generated texture
+    const _diam = _baseRadius * 2;
+    const _canvas = document.createElement('canvas');
+    _canvas.width = _diam;
+    _canvas.height = _diam;
+    const _ctx = _canvas.getContext('2d');
+    if (_ctx) {
+      _ctx.fillStyle = '#ffffff';
+      _ctx.beginPath();
+      _ctx.arc(_baseRadius, _baseRadius, _baseRadius, 0, Math.PI * 2);
+      _ctx.fill();
+    }
+    const tex = PIXI.Texture.from(_canvas);
     this.ballSprite = new PIXI.Sprite(tex);
     this.ballSprite.anchor.set(0.5, 0.5); // Center anchor
     

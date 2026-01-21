@@ -55,7 +55,20 @@ export default class BallCountDisplay extends PIXI.Container {
     }
 
     for (let i = 0; i < this._count; i++) {
-      const tex = PIXI.Texture.from('./arts/ball.png');
+      // generate a small white circle texture sized to `size`
+      const r = Math.max(2, Math.round(size / 2));
+      const diam = r * 2;
+      const c = document.createElement('canvas');
+      c.width = diam;
+      c.height = diam;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(r, r, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const tex = PIXI.Texture.from(c);
       const s = new PIXI.Sprite(tex);
       s.width = size;
       s.height = size;
