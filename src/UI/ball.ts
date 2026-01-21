@@ -528,45 +528,44 @@ export default class Ball extends PIXI.Container {
       // Lift shadow when ball is 'higher' (negative y offset)
       this._currentYOffset = -deviation * 0.6; // negative means up for updateShadow
 
-      // --- Scale handling (snapped -> shrink toward goal, or depth-based inside goal) ---
+      // --- Scale handling: interpolate scale gradually during flight ---
       try {
-        if (this._snappedToZone) {
-          // While flying to a snapped goal zone, interpolate scale from base to target (1/10 of goal width)
-          if (this.goal && typeof this.goal.getGoalArea === 'function' && this.ballSprite.texture && this.ballSprite.texture.width) {
-            try {
-              const goalArea = this.goal.getGoalArea();
-              if (goalArea && goalArea.width > 0) {
-                const desiredPixelWidth = goalArea.width / 8; // target ball pixel width at snap (1/5 of goal)
-                const desiredScale = desiredPixelWidth / this.ballSprite.texture.width;
-                // Interpolate based on flight progress t so scale reduces smoothly
-                const s = this.lerp(this._baseScale, desiredScale, t);
-                this.ballSprite.scale.set(s, s);
-              } else {
-                this.ballSprite.scale.set(this._baseScale, this._baseScale);
-              }
-            } catch (e) { this.ballSprite.scale.set(this._baseScale, this._baseScale); }
-          } else {
-            this.ballSprite.scale.set(this._baseScale, this._baseScale);
-          }
-        } else if (this._inGoal) {
+        if (this._inGoal) {
           // Depth-based scaling when ball is inside goal area (settling)
+          // Important: do NOT increase the visible scale when entering goal.
+          // Only allow the ball to shrink toward the desired finalScale.
           if (this.goal && typeof this.goal.getGoalArea === 'function') {
             const goalArea = this.goal.getGoalArea();
             if (goalArea && goalArea.height > 0) {
               const depth = (this.y - goalArea.y) / goalArea.height; // 0..1 (may exceed)
               const depthClamped = Math.max(0, Math.min(1, depth));
               const depthScale = 1 - depthClamped * 0.5; // reduce up to ~50%
-              const finalScale = this._baseScale * Math.max(0.6, depthScale);
-              this.ballSprite.scale.set(finalScale, finalScale);
+              const desiredScale = this._baseScale * Math.max(0.6, depthScale);
+              // Only shrink toward desiredScale; never grow here
+              const current = (this.ballSprite.scale && this.ballSprite.scale.x) ? this.ballSprite.scale.x : this._baseScale;
+              if (desiredScale < current) {
+                // smooth shrink step to avoid sudden jump
+                const next = this.lerp(current, desiredScale, 0.25);
+                this.ballSprite.scale.set(next, next);
+              } else {
+                // keep current scale (do not increase)
+                this.ballSprite.scale.set(current, current);
+              }
             } else {
-              this.ballSprite.scale.set(this._baseScale, this._baseScale);
+              // fallback: do not increase above current
+              const cur = (this.ballSprite.scale && this.ballSprite.scale.x) ? this.ballSprite.scale.x : this._baseScale;
+              this.ballSprite.scale.set(cur, cur);
             }
           } else {
-            this.ballSprite.scale.set(this._baseScale, this._baseScale);
+            const cur = (this.ballSprite.scale && this.ballSprite.scale.x) ? this.ballSprite.scale.x : this._baseScale;
+            this.ballSprite.scale.set(cur, cur);
           }
         } else {
-          // Default size
-          this.ballSprite.scale.set(this._baseScale, this._baseScale);
+          // Flight scaling: smoothly interpolate from 1.1*_baseScale down to 0.5*_baseScale over flight progress `t`.
+          const startS = this._baseScale * 1.1;
+          const endS = this._baseScale * 0.4;
+          const s = this.lerp(startS, endS, t);
+          this.ballSprite.scale.set(s, s);
         }
       } catch (e) {}
 
