@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>PixiJS v8 - Ultimate Penalty Kick</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #2c3e50; }
+        canvas { display: block; }
+        #guide {
+            position: absolute; bottom: 20px; width: 100%; text-align: center;
+            color: rgba(255,255,255,0.7); font-family: sans-serif; pointer-events: none;
+        }
+    </style>
+    <script src="https://pixijs.download/v8.1.0/pixi.min.js"></script>
+</head>
+<body>
+
+<div id="guide">Vuốt cong để sút xoáy (Swipe curve to spin)</div>
+
+<script type="module">
+    // --- 1. KHAI BÁO BIẾN TOÀN CỤC (QUAN TRỌNG: ĐỂ TRÁNH LỖI) ---
+    const app = new PIXI.Application();
+    
+    // Cấu hình vật lý
+    const CONFIG = {
+        ballRadius: 22,
+        groundY: 0,         // Sẽ set khi init
+        gravity: 0.8,       // Trọng lực kéo bóng xuống
+        power: 0.25,        // Lực sút cơ bản
+        curveSensitivity: 0.4, // Độ nhạy xoáy (Càng cao càng dễ xoáy)
+        depthScale: 0.015,  // Độ thu nhỏ khi bay xa
+        friction: 0.97      // Ma sát không khí
+    };
+
+    // Biến trạng thái game
+    let isDragging = false;
+    let pathPoints = []; // Lưu đường vẽ tay
+    let ballState = {
+        x: 0, y: 0, z: 0,          // Vị trí 3D giả lập
+        vx: 0, vy: 0, vz: 0,       // Vận tốc
+        spin: 0,                   // Lực xoáy hiện tại
+        isFlying: false,
+        rotationX: 0               // Góc xoay của bóng
+    };
+
+    // --- 2. KHỞI TẠO ỨNG DỤNG ---
+    await app.init({ 
+        background: '#388e3c', // Màu cỏ
+        resizeTo: window,
+        antialias: true 
+    });
+    document.body.appendChild(app.canvas);
+    CONFIG.groundY = app.screen.height - 150;
+
+    // --- 3. TẠO SCENE (ĐỐI TƯỢNG) ---
+    const container = new PIXI.Container();
+    app.stage.addChild(container);
+
+    // Sân cỏ & Vạch vôi
+    const field = new PIXI.Graphics();
+    field.rect(0, CONFIG.groundY, app.screen.width, 5); // Vạch ngang
+    field.fill(0xffffff);
+    container.addChild(field);
+
+    // Khung thành
+    const goal = new PIXI.Graphics();
+    const goalW = 500, goalH = 220;
+    goal.rect(-goalW/2, -goalH, goalW, goalH);
+    goal.stroke({ width: 8, color: 0xffffff });
+    // Lưới khung thành
+    for(let i = -goalW/2; i < goalW/2; i+=40) {
+        goal.moveTo(i, -goalH); goal.lineTo(i, 0);
+    }
+    goal.stroke({ width: 2, color: 0xdddddd, alpha: 0.3 });
+    goal.x = app.screen.width / 2;
+    goal.y = CONFIG.groundY;
+    container.addChild(goal);
+
+    // Bóng đổ (Shadow) - QUAN TRỌNG ĐỂ THẤY ĐỘ CAO
+    const shadow = new PIXI.Graphics();
+    shadow.ellipse(0, 0, 20, 10);
+    shadow.fill({ color: 0x000000, alpha: 0.4 });
+    container.addChild(shadow);
+
+    // Quả bóng
+    const ball = new PIXI.Graphics();
+    ball.circle(0, 0, CONFIG.ballRadius);
+    ball.fill(0xffffff); // Bóng trắng
+    ball.stroke({ width: 1, color: 0x999999 });
+    
+    // Họa tiết bóng (để nhìn thấy nó xoay)
+    const texture = new PIXI.Graphics();
+    texture.poly([0, -10, 9, -3, 6, 8, -6, 8, -9, -3]); // Ngũ giác đen
+    texture.fill(0x000000);
+    ball.addChild(texture); // Gắn họa tiết vào bóng
+    
+    // Thêm vài chấm đen xung quanh
+    const dot1 = new PIXI.Graphics().circle(14, 10, 5).fill(0x000000);
+    const dot2 = new PIXI.Graphics().circle(-14, -8, 5).fill(0x000000);
+    ball.addChild(dot1, dot2);
+
+    container.addChild(ball);
+
+    // Đường vẽ tay (Trail)
+    const trail = new PIXI.Graphics();
+    container.addChild(trail);
+
+    // Vị trí đặt bóng ban đầu
+    const startPos = { x: app.screen.width / 2, y: app.screen.height - 100 };
+
+    // --- 4. HÀM RESET ---
+    function resetGame() {
+        ballState = { 
+            x: startPos.x, y: startPos.y, z: 0, 
+            vx: 0, vy: 0, vz: 0, 
+            spin: 0, isFlying: false, rotationX: 0 
+        };
+        
+        // Reset Visuals
+        ball.x = startPos.x;
+        ball.y = startPos.y;
+        ball.scale.set(1);
+        ball.rotation = 0;
+        
+        shadow.x = startPos.x;
+        shadow.y = startPos.y + CONFIG.ballRadius;
+        shadow.scale.set(1);
+        shadow.alpha = 0.4;
+
+        pathPoints = [];
+        trail.clear();
+    }
+    resetGame();
+
+    // --- 5. XỬ LÝ INPUT (INPUT SYSTEM) ---
+    app.stage.eventMode = 'static';
+    app.stage.hitArea = app.screen;
+
+    app.stage.on('pointerdown', (e) => {
+        if (ballState.isFlying) return;
+        isDragging = true;
+        pathPoints = [{ x: e.global.x, y: e.global.y }];
+    });
+
+    app.stage.on('pointermove', (e) => {
+        if (!isDragging) return;
+        const p = { x: e.global.x, y: e.global.y };
+        pathPoints.push(p);
+
+        // Vẽ đường trail
+        trail.clear();
+        trail.moveTo(pathPoints[0].x, pathPoints[0].y);
+        for(let i=1; i<pathPoints.length; i++) trail.lineTo(pathPoints[i].x, pathPoints[i].y);
+        trail.stroke({ width: 4, color: 0xffff00, alpha: 0.6 });
+    });
+
+    app.stage.on('pointerup', onRelease);
+    app.stage.on('pointerupoutside', onRelease);
+
+    function onRelease() {
+        if (!isDragging) return;
+        isDragging = false;
+        
+        // Xóa đường vẽ dần dần
+        const fade = setInterval(() => {
+            trail.alpha -= 0.1;
+            if(trail.alpha <= 0) { trail.clear(); trail.alpha = 1; clearInterval(fade); }
+        }, 50);
+
+        if (pathPoints.length < 3) return; // Vuốt quá ngắn thì bỏ qua
+
+        // --- TÍNH TOÁN CÚ SÚT ---
+        const start = pathPoints[0];
+        const end = pathPoints[pathPoints.length - 1];
+        
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const distance = Math.sqrt(dx*dx + dy*dy);
+
+        // Chỉ sút nếu vuốt đủ mạnh và hướng lên
+        if (distance > 30 && dy < 0) {
+            
+            // 1. Tính độ lệch (Curve)
+            // Tìm điểm nằm xa nhất so với đường thẳng nối Start-End
+            let maxDist = 0;
+            for(let p of pathPoints) {
+                // Công thức khoảng cách từ điểm đến đường thẳng
+                const d = ((end.x - start.x)*(start.y - p.y) - (start.x - p.x)*(end.y - start.y)) / distance;
+                if(Math.abs(d) > Math.abs(maxDist)) maxDist = d;
+            }
+            
+            // maxDist > 0: Cong phải, < 0: Cong trái
+            
+            // 2. Gán vận tốc
+            ballState.isFlying = true;
+            ballState.vx = dx * CONFIG.power * 0.4;
+            ballState.vy = dy * CONFIG.power;     // Lên cao
+            ballState.vz = Math.abs(dy) * CONFIG.power * 0.8; // Đi sâu vào trong
+            
+            // 3. Gán lực xoáy (Giới hạn max spin để ko bị ảo)
+            let spinForce = maxDist * CONFIG.curveSensitivity;
+            ballState.spin = Math.max(-10, Math.min(10, spinForce)); 
+
+            console.log("Sút! Độ xoáy:", ballState.spin);
+        }
+    }
+
+    // --- 6. VÒNG LẶP GAME (PHYSICS LOOP) ---
+    app.ticker.add((ticker) => {
+        if (!ballState.isFlying) return;
+        
+        const dt = ticker.deltaTime;
+
+        // A. Cập nhật vị trí 3D
+        ballState.x += ballState.vx * dt;
+        ballState.y += ballState.vy * dt;
+        ballState.z += ballState.vz * dt;
+
+        // B. Vật lý
+        // 1. Trọng lực (Chỉ tác động trục Y)
+        ballState.vy += CONFIG.gravity * dt;
+        
+        // 2. Hiệu ứng Magnus (Xoáy) - Tác động vào trục X
+        // Bóng đang bay tới trước -> Xoáy làm nó bẻ cua
+        ballState.vx += ballState.spin * 0.05 * dt;
+
+        // C. Render (Chuyển đổi 3D -> 2D màn hình)
+        // Tính độ thu nhỏ (Scale) dựa trên Z
+        const scale = Math.max(0.2, 1 - (ballState.z * CONFIG.depthScale));
+        
+        ball.x = ballState.x;
+        ball.y = ballState.y;
+        ball.scale.set(scale);
+
+        // Xoay quả bóng (Visual effect)
+        ball.rotation += (ballState.vx * 0.05) * dt; 
+
+        // D. Xử lý Bóng Đổ (Shadow Logic)
+        // Bóng đổ luôn nằm trên mặt đất, nhưng nhỏ đi khi bóng bay cao
+        // Vị trí mặt đất 2D (tính theo phối cảnh xa gần)
+        const currentGroundY = CONFIG.groundY - (ballState.z * 0.4); 
+        
+        shadow.x = ballState.x;
+        shadow.y = currentGroundY + (20 * scale); // Luôn ở dưới chân bóng
+        shadow.scale.set(scale * Math.max(0.5, 1 - (CONFIG.groundY - ball.y)/200)); // Bóng càng cao shadow càng nhỏ
+        shadow.alpha = Math.max(0, 0.4 - (CONFIG.groundY - ball.y)/500); // Bóng càng cao shadow càng mờ
+
+        // E. Va chạm mặt đất (Bounce)
+        if (ballState.y > currentGroundY) {
+            ballState.y = currentGroundY;
+            
+            // Nảy lên
+            ballState.vy = -ballState.vy * 0.55; // Mất năng lượng
+            
+            // Ma sát sàn
+            ballState.vx *= 0.8;
+            ballState.vz *= 0.8;
+            ballState.spin *= 0.8; // Chạm đất thì giảm xoáy nhanh
+
+            // Nếu lăn chậm thì dừng
+            if (Math.abs(ballState.vy) < 2) ballState.vy = 0;
+            
+            // Reset game nếu bóng bay quá xa hoặc đã dừng
+            if (ballState.z > 250 || (ballState.vy === 0 && Math.abs(ballState.vx) < 0.5)) {
+                 if(!ballState.resetTimer) {
+                     ballState.resetTimer = setTimeout(() => {
+                         resetGame();
+                         delete ballState.resetTimer;
+                     }, 1500);
+                 }
+            }
+        }
+    });
+
+    // Resize
+    window.addEventListener('resize', () => {
+        startPos.x = app.screen.width / 2;
+        startPos.y = app.screen.height - 100;
+        CONFIG.groundY = app.screen.height - 150;
+        goal.x = app.screen.width / 2;
+        goal.y = CONFIG.groundY;
+        if (!ballState.isFlying) resetGame();
+    });
+
+</script>
+</body>
+</html>
