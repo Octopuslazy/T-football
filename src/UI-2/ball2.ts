@@ -17,7 +17,7 @@ export default class Ball2 extends PIXI.Container {
   private _suppressArrival: boolean = false;
   private _tweenCancelled: boolean = false;
   private _hasDeflected: boolean = false;
-  private _collideScaleThreshold = 1.3; // scale multiplier to enable collision deflection (larger so snap is more visible)
+  private _collideScaleThreshold = 1.8; // scale multiplier to enable collision deflection (larger so snap is more visible)
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
@@ -35,7 +35,7 @@ export default class Ball2 extends PIXI.Container {
     const tex = PIXI.Texture.from('./arts/ball.png');
     this.sprite = new PIXI.Sprite(tex);
     this.sprite.anchor.set(0.5);
-    this.sprite.scale.set(0.1);
+    this.sprite.scale.set(0.08);
     this.addChild(this.sprite);
     this._homeScale = this.sprite.scale.x;
 

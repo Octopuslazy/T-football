@@ -1,11 +1,12 @@
 import * as PIXI from 'pixi.js';
+import { spawnImpactEffect } from './impact.js';
 import { GAME_CONFIG, BASE_WIDTH, BASE_HEIGHT } from '../constant/global.js';
 
 export default class Ball extends PIXI.Container {
   private ballSprite: PIXI.Sprite;
   private shadowSprite: PIXI.Graphics;
-  private powerIndicator: PIXI.Graphics;
-  private powerText: PIXI.Text;
+  // private powerIndicator: PIXI.Graphics;
+  // private powerText: PIXI.Text;
   private _placeholder: PIXI.Graphics | null = null;
   private _velocity = { x: 0, y: 0 }; // Simple 2D velocity
   // Curve flight properties
@@ -62,24 +63,24 @@ export default class Ball extends PIXI.Container {
     // Create shadow
     this.shadowSprite = new PIXI.Graphics();
     
-    // Create power indicator
-    this.powerIndicator = new PIXI.Graphics();
-    this.powerText = new PIXI.Text({
-      text: 'Lực: 0%',
-      style: {
-        fontFamily: 'Arial',
-        fontSize: 20,
-        fill: 0xFFFFFF,
-        fontWeight: 'bold'
-      }
-    });
-    this.powerText.anchor.set(0.5);
+    // // Create power indicator
+    // this.powerIndicator = new PIXI.Graphics();
+    // this.powerText = new PIXI.Text({
+    //   text: 'Lực: 0%',
+    //   style: {
+    //     fontFamily: 'Arial',
+    //     fontSize: 20,
+    //     fill: 0xFFFFFF,
+    //     fontWeight: 'bold'
+    //   }
+    // });
+    // this.powerText.anchor.set(0.5);
     
     // Add children (shadow first, then ball)
     this.addChild(this.shadowSprite);
     this.addChild(this.ballSprite);
-    this.addChild(this.powerIndicator);
-    this.addChild(this.powerText);
+    // this.addChild(this.powerIndicator);
+    // this.addChild(this.powerText);
     
     this.interactive = true;
     this.cursor = 'pointer';
@@ -214,30 +215,30 @@ export default class Ball extends PIXI.Container {
     this.shadowSprite.fill();
   }
 
-  private updatePowerIndicator(power: number) {
-    this.powerIndicator.clear();
-    this.powerText.text = `Lực: ${Math.round(power)}%`;
-    this.powerText.x = 0;
-    this.powerText.y = -this.ballSprite.height - 40;
+  // private updatePowerIndicator(power: number) {
+  //   this.powerIndicator.clear();
+  //   this.powerText.text = `Lực: ${Math.round(power)}%`;
+  //   this.powerText.x = 0;
+  //   this.powerText.y = -this.ballSprite.height - 40;
     
-    if (power > 0) {
-      // Draw power bar
-      const barWidth = 100;
-      const barHeight = 10;
-      const fillWidth = (barWidth * power) / 100;
+  //   if (power > 0) {
+  //     // Draw power bar
+  //     const barWidth = 100;
+  //     const barHeight = 10;
+  //     const fillWidth = (barWidth * power) / 100;
       
-      // Background bar
-      this.powerIndicator.fill(0x333333, 0.8);
-      this.powerIndicator.rect(-barWidth/2, -this.ballSprite.height - 60, barWidth, barHeight);
-      this.powerIndicator.fill();
+  //     // Background bar
+  //     this.powerIndicator.fill(0x333333, 0.8);
+  //     this.powerIndicator.rect(-barWidth/2, -this.ballSprite.height - 60, barWidth, barHeight);
+  //     this.powerIndicator.fill();
       
-      // Power fill (color changes based on power level)
-      const color = power < 33 ? 0x00FF00 : power < 66 ? 0xFFFF00 : 0xFF0000;
-      this.powerIndicator.fill(color, 0.9);
-      this.powerIndicator.rect(-barWidth/2, -this.ballSprite.height - 60, fillWidth, barHeight);
-      this.powerIndicator.fill();
-    }
-  }
+  //     // Power fill (color changes based on power level)
+  //     const color = power < 33 ? 0x00FF00 : power < 66 ? 0xFFFF00 : 0xFF0000;
+  //     this.powerIndicator.fill(color, 0.9);
+  //     this.powerIndicator.rect(-barWidth/2, -this.ballSprite.height - 60, fillWidth, barHeight);
+  //     this.powerIndicator.fill();
+  //   }
+  // }
   
   private setupInteraction() {
     this.on('pointerdown', (e: PIXI.FederatedPointerEvent) => this.onDragStart(e));
@@ -285,7 +286,7 @@ export default class Ball extends PIXI.Container {
     ));
     
     // Update power indicator
-    this.updatePowerIndicator(powerPercent);
+  //   this.updatePowerIndicator(powerPercent);
   }
 
   private onDragEnd(event: PIXI.FederatedPointerEvent) {
@@ -463,17 +464,22 @@ export default class Ball extends PIXI.Container {
     const perp = { x: -dirY * dirSign, y: dirX * dirSign };
     const extraUp = Math.abs(deltaY) * upBiasFactor + (upBiasFactor > 0.5 ? arcStrength * 0.12 : 0);
 
-    // Bias control point toward the start so curvature is stronger at launch
-    const startBias = 0.6; // 0..1, higher => control moves closer to start (more initial curve)
-    const arcStartBoost = 1 + Math.min(0.25, startBias * 0.15); // small boost near start
-    const arcUsed = arcStrength * arcStartBoost;
+    // Bias control point slightly toward start but pull along swipe direction
+    // so the curve better follows the user's swipe. Reduce extreme lateral
+    // offsets and add a small forward pull along the swipe vector.
+    const startBias = 0.2; // smaller bias keeps control nearer the geometric midpoint
+    const arcStartBoost = 1 + Math.min(0.15, startBias * 0.1);
+    const arcUsed = arcStrength * arcStartBoost * 0.8; // slightly reduce overall arc magnitude
     const controlAnchor = {
       x: mid.x * (1 - startBias) + this.x * startBias,
       y: mid.y * (1 - startBias) + this.y * startBias
     };
+    // Pull control point along perpendicular for arc, reduce upward push,
+    // and add a modest forward pull in swipe direction so initial tangent matches swipe.
+    const forwardPull = 0.06 * finalDist; // small fraction of distance
     const control = {
-      x: controlAnchor.x + perp.x * arcUsed,
-      y: controlAnchor.y + perp.y * arcUsed - extraUp // bias up depending on swipe verticality
+      x: controlAnchor.x + perp.x * arcUsed + dirX * forwardPull,
+      y: controlAnchor.y + perp.y * arcUsed - extraUp * 0.7 + dirY * forwardPull
     };
 
     // Set curve properties
@@ -495,8 +501,8 @@ export default class Ball extends PIXI.Container {
     this.drawFlightPath(this._curveStart, this._curveControl, this._curveEnd);
 
     // Clear indicators
-    try { this.powerIndicator.clear(); } catch (e) {}
-    this.powerText.text = '';
+  //   try { this.powerIndicator.clear(); } catch (e) {}
+  //   this.powerText.text = '';
     
   }
   
@@ -634,6 +640,8 @@ export default class Ball extends PIXI.Container {
       try {
         if (this._inGoal && this._snappedToZone && !this._postGoalAnimating) {
           this._postGoalAnimating = true;
+          // Spawn impact effect immediately when arrival occurs (before fall/settle)
+          try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
           this._postGoalStartTime = performance.now();
           // amplitude based on shot power (clamped)
           this._postGoalAmplitude = Math.min(80, 10 + (this._lastShotPower / 100) * 80);
@@ -711,6 +719,8 @@ export default class Ball extends PIXI.Container {
           if (this._pendingGoalZone && !this._finalGoalCounted) {
             try {
               if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
+                // spawn visual impact effect at final resting point
+                try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
                 if (this.goalScoredCallback) this.goalScoredCallback(this._pendingGoalZone);
                 this._finalGoalCounted = true;
               }
@@ -726,7 +736,9 @@ export default class Ball extends PIXI.Container {
                 // Ball ended in net -> count as goal instead of save
                 if (!this._finalGoalCounted) {
                   const zone = this.goal.getZoneFromPosition(this.x, this.y) || this._pendingSaveZone;
-                  if (zone && this.goalScoredCallback) this.goalScoredCallback(zone);
+                    // spawn impact effect for converted goal
+                    try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
+                    if (zone && this.goalScoredCallback) this.goalScoredCallback(zone);
                   this._finalGoalCounted = true;
                 }
               } else {
@@ -1097,7 +1109,9 @@ export default class Ball extends PIXI.Container {
             if (this._pendingGoalZone && !this._finalGoalCounted) {
               try {
                 if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
-                  if (this.goalScoredCallback) this.goalScoredCallback(this._pendingGoalZone);
+                    // spawn visual impact effect at final resting point
+                    try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
+                    if (this.goalScoredCallback) this.goalScoredCallback(this._pendingGoalZone);
                   this._finalGoalCounted = true;
                 }
               } catch (e) {}
@@ -1111,6 +1125,8 @@ export default class Ball extends PIXI.Container {
                   if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
                     if (!this._finalGoalCounted) {
                       const zone = this.goal.getZoneFromPosition(this.x, this.y) || this._pendingSaveZone;
+                      // spawn impact effect for converted goal
+                      try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch (e) {}
                       if (zone && this.goalScoredCallback) this.goalScoredCallback(zone);
                       this._finalGoalCounted = true;
                     }
