@@ -616,6 +616,8 @@ import SoundController from './ControllUI/SoundController.js';
     
     addToLayer(container, currentBall, Layer.BALL);
 
+    // (Debug logging left disabled by default)
+
     // Update visual ball count when a new ball is spawned
     const visualNow = Math.max(0, gameState.ballsRemaining - (currentBall ? 1 : 0));
     try { ballCountDisplay?.setCount(visualNow); } catch (e) {}

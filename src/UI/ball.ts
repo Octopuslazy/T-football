@@ -38,6 +38,8 @@ export default class Ball extends PIXI.Container {
   private readonly RESTITUTION_POST = 0.75; // energy retained after post hit
   private readonly RESTITUTION_CROSS = 0.72;
   private readonly TANGENTIAL_FRICTION = 0.8; // reduce tangential component on contact
+    // Maximum allowed altitude (screen units) to count as a goal (below crossbar)
+    private readonly MAX_GOAL_HEIGHT = 140;
 
   private vecLen3 = (x:number,y:number,z:number) => Math.sqrt(x*x + y*y + z*z);
   private normalize3 = (x:number,y:number,z:number) => {
@@ -50,11 +52,11 @@ export default class Ball extends PIXI.Container {
       const rx = vx - 2 * dot * nx;
       const ry = vy - 2 * dot * ny;
       const rz = vz - 2 * dot * nz;
-      return { x: rx * restitution, y: ry * restitution, z: rz * restitution };
-  }
-
-  // Flags
-  private _isMoving = false;
+          // apply restitution (scale outgoing velocity)
+          return { x: rx * restitution, y: ry * restitution, z: rz * restitution };
+      };
+      private _isMoving = false;
+    private _debugLogs: boolean = false;
   private _isDragging = false;
   private _dragPath: Array<{ x: number; y: number }> = [];
   private _dragTime = 0;
@@ -63,6 +65,7 @@ export default class Ball extends PIXI.Container {
     private _pushedOffByPost = false; // ball was forcefully pushed off by post/crossbar
     private _potentialGoal = false;   // Candidate goal detected during flight
     private _targetZ: number | null = null; // Smoothly move _z toward this target when set
+    private _everOverBar: boolean = false; // true if during this shot the ball was seen over the crossbar
     private _keeperCooldown = false;  // Cooldown sau khi thủ môn chạm bóng
     private _allowGoalAttract = true; // Per-shot flag: disable attraction for mostly-horizontal swipes
     private _displayScale: number | null = null; // Smoothed visual scale to avoid snapping
@@ -81,21 +84,70 @@ export default class Ball extends PIXI.Container {
   public goalScoredCallback?: (zone: any) => void;
     public goalConfirmCallback?: () => void; // called immediately when ball crosses plane into goal
     public onGroundHit?: (z:number, x:number, y:number) => void; // called when ball hits ground
+        public onNetContact?: (scale: number) => void; // called when ball contacts the net/goal plane with visual scale
   public saveCallback?: () => void;
   public outCallback?: () => void;
+
+    // Enable/disable debug logs at runtime
+    public setDebugLogs(enable: boolean) { this._debugLogs = !!enable; }
+
+    // Temporary debug overlay (drawn into the ball's parent) for diagnosing edge collisions
+    private _debugOverlayGraphics: PIXI.Graphics | null = null;
+    private _debugOverlayText: PIXI.Text | null = null;
+    private _debugOverlayEnabled: boolean = false;
+    private _debugOverlayTimeout: any = null;
+
+    // Enable a temporary debug overlay that draws the world bounds and ball position.
+    // Auto-disables after `durationMs` (default 10000ms).
+    public enableDebugOverlay(durationMs: number = 10000) {
+        try {
+            if (!this.parent) return;
+            // Clean up any existing overlay
+            this.disableDebugOverlay();
+
+            this._debugOverlayGraphics = new PIXI.Graphics();
+            this._debugOverlayText = new PIXI.Text('', { fontSize: 12, fill: 0xffffff, wordWrap: true });
+            // Add below UI elements by inserting at index 0 so it doesn't block input; caller can adjust
+            try { (this.parent as any).addChild(this._debugOverlayGraphics); (this.parent as any).addChild(this._debugOverlayText); } catch (e) {
+                // fallback: attach to this container
+                this.addChild(this._debugOverlayGraphics);
+                this.addChild(this._debugOverlayText);
+            }
+            this._debugOverlayEnabled = true;
+            // Auto-disable after duration
+            this._debugOverlayTimeout = setTimeout(() => this.disableDebugOverlay(), durationMs);
+        } catch (e) { /* ignore */ }
+    }
+
+    public disableDebugOverlay() {
+        try {
+            if (this._debugOverlayTimeout) { clearTimeout(this._debugOverlayTimeout); this._debugOverlayTimeout = null; }
+            if (this._debugOverlayGraphics) {
+                try { if (this._debugOverlayGraphics.parent) this._debugOverlayGraphics.parent.removeChild(this._debugOverlayGraphics); } catch (e) {}
+                try { this._debugOverlayGraphics.destroy(); } catch (e) {}
+                this._debugOverlayGraphics = null;
+            }
+            if (this._debugOverlayText) {
+                try { if (this._debugOverlayText.parent) this._debugOverlayText.parent.removeChild(this._debugOverlayText); } catch (e) {}
+                try { this._debugOverlayText.destroy(); } catch (e) {}
+                this._debugOverlayText = null;
+            }
+            this._debugOverlayEnabled = false;
+        } catch (e) {}
+    }
 
   private onEnterFrame!: () => void;
     private _baseScale = 0.6;
     private _groundLevelY = 0;
         private _powerMultiplier = 1.6; // further reduced shot power
         // Velocity caps to avoid extremely large forces from long/fast swipes
-        private readonly MAX_VX = 30;
+        private readonly MAX_VX = 20;
         private readonly MAX_VY = 20;
         private readonly MAX_VZ = 40;
         // Minimum velocity floors so weak swipes still reach the net
-        private readonly MIN_VX = 12;
-        private readonly MIN_VY = 10;
-        private readonly MIN_VZ = 20;
+        private readonly MIN_VX = 10;
+        private readonly MIN_VY = 12;
+        private readonly MIN_VZ = 10;
         // Gentle lateral attraction toward goal center (small, non-snapping)
         // Increased so the tendency to curve into the net is visible but subtle
         private readonly GOAL_ATTRACT = 0.004;
@@ -315,8 +367,15 @@ export default class Ball extends PIXI.Container {
     this._ballUsed = false;
     this._goalScored = false;
     this._goalConfirmed = false;
+        this._everOverBar = false;
     this._pendingBarDown = false;
     this._lastPostHitSide = null;
+    // Prevent immediate scale snapping: keep the current displayed scale for a few frames
+    try {
+        const currentRendered = (this.ballSprite && this.ballSprite.scale && this.ballSprite.scale.x) ? this.ballSprite.scale.x / 0.8 : null;
+        if (currentRendered !== null) this._displayScale = currentRendered;
+        this._forceScaleFrames = 8; // hold scale for ~8 frames (~130ms at 60fps)
+    } catch (e) {}
   };
 
     // Global pointer handlers so user can swipe anywhere on screen
@@ -400,9 +459,32 @@ export default class Ball extends PIXI.Container {
 
     // Planar goal confirmation: the instant the ball crosses the goal plane
     try {
-        if (!this._goalConfirmed && this.goal && this._z >= this.GOAL_DISTANCE && this.goal.isInGoalArea(this.x, this.y)) {
+        // Only treat a plane crossing as a goal when the ball is inside the goal area
+        // and not clearly over the crossbar (altitude must be below MAX_GOAL_HEIGHT).
+        if (!this._goalConfirmed && this.goal && this._z >= this.GOAL_DISTANCE && this.goal.isInGoalArea(this.x, this.y) && this._altitude < this.MAX_GOAL_HEIGHT) {
             this._goalConfirmed = true;
             try { if (this.goalConfirmCallback) this.goalConfirmCallback(); } catch (e) {}
+            if (this._debugLogs) {
+                try { console.log('BALL: GOAL_PLANE_CROSSED', { x:this.x.toFixed(1), y:this.y.toFixed(1), z:this._z.toFixed(2), scale: this.getVisualScale() }); } catch(e) {}
+            }
+        } else if (this.goal && this._z >= this.GOAL_DISTANCE && this.goal.isInGoalArea(this.x, this.y) && this._altitude >= this.MAX_GOAL_HEIGHT) {
+            // Ball entered goal plane footprint but is above the crossbar — ignore as goal.
+            // Record that during this shot the ball went over the bar so we won't
+            // later accept a plane crossing as a goal for the same shot.
+            this._everOverBar = true;
+            if (this._debugLogs) {
+                try { console.log('BALL: GOAL_PLANE_IGNORED_OVER_BAR', { x:this.x.toFixed(1), y:this.y.toFixed(1), z:this._z.toFixed(2), altitude: this._altitude.toFixed(1) }); } catch(e) {}
+            }
+        }
+    } catch (e) {}
+
+    // Notify listeners of net contact (visual scale) when goal plane is crossed
+    try {
+        if (this._goalConfirmed && this.onNetContact) {
+            const scaleNow = this.getVisualScale();
+            try { this.onNetContact(scaleNow); } catch (e) {}
+            // Only call once per crossing
+            this.onNetContact = undefined;
         }
     } catch (e) {}
 
@@ -466,23 +548,28 @@ export default class Ball extends PIXI.Container {
         }
     } catch (e) {}
 
-    // Scale Logic: strictly derive visual scale from screen Y so
-    // when `y` increases scale decreases, and when `y` decreases scale increases.
-    // This mapping is independent of internal Z/altitude values to satisfy the rule.
+    // Scale Logic: derive visual scale from screen Y so
+    // when `y` increases (lower on screen) scale increases, and when `y` decreases (higher) scale decreases.
+    // This mapping is independent of internal Z/altitude values.
     const yNorm = Math.max(0, Math.min(1, this.y / BASE_HEIGHT)); // 0 = top, 1 = bottom
-    const minFactor = 0.35; // scale factor when y is at bottom
-    const maxFactor = 1.0;  // scale factor when y is at top
-    const visualFactor = maxFactor - (maxFactor - minFactor) * yNorm;
+    const minFactor = 0.35; // scale factor when y is at top (small)
+    const maxFactor = 1.0;  // scale factor when y is at bottom (large)
+    const visualFactor = minFactor + (maxFactor - minFactor) * yNorm;
     const finalScale = this._baseScale * visualFactor;
         // Smooth the displayed scale to avoid snapping when bouncing off crossbar/net
-        if (this._displayScale === null) this._displayScale = finalScale;
+        if (this._displayScale === null) {
+            // Initialize from current rendered sprite scale (account for 0.8 multiplier)
+            const currentRendered = (this.ballSprite && this.ballSprite.scale && this.ballSprite.scale.x) ? this.ballSprite.scale.x / 0.8 : finalScale;
+            this._displayScale = currentRendered;
+        }
         if (this._forceScaleFrames && this._forceScaleFrames > 0) {
             // Honor the forced display scale for a couple frames to avoid immediate override
             this._forceScaleFrames -= 1;
             this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
         } else {
             // Lerp toward target scale (0.18 gives a responsive but smooth transition)
-            this._displayScale += (finalScale - this._displayScale) * 0.18;
+            // Use a smaller lerp factor for a slower, smoother scale transition
+            this._displayScale += (finalScale - this._displayScale) * 0.08;
             this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
         }
 
@@ -491,6 +578,35 @@ export default class Ball extends PIXI.Container {
 
     // 3. Shadow Update
     this.updateShadow(currentGroundVisualY, finalScale);
+
+    // Debug overlay drawing (if enabled)
+    if (this._debugOverlayEnabled && this._debugOverlayGraphics) {
+        try {
+            const g = this._debugOverlayGraphics;
+            g.clear();
+            // Draw world/design bounds
+            g.lineStyle(2, 0xFF0000, 0.9);
+            g.drawRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+            // Draw ball position marker (in parent coords)
+            const px = this.x;
+            const py = this.y;
+            g.beginFill(0x00FF00, 0.9);
+            g.drawCircle(px, py, 6);
+            g.endFill();
+            // Small crosshair
+            g.lineStyle(1, 0x00FF00, 0.9);
+            g.moveTo(px - 10, py);
+            g.lineTo(px + 10, py);
+            g.moveTo(px, py - 10);
+            g.lineTo(px, py + 10);
+
+            if (this._debugOverlayText) {
+                this._debugOverlayText.text = `x:${px.toFixed(1)} y:${py.toFixed(1)} z:${this._z.toFixed(1)} alt:${this._altitude.toFixed(1)}`;
+                this._debugOverlayText.x = Math.max(4, Math.min(BASE_WIDTH - 160, px + 12));
+                this._debugOverlayText.y = Math.max(4, Math.min(BASE_HEIGHT - 24, py - 18));
+            }
+        } catch (e) {}
+    }
 
     // 4. Ground Collision (Bounce)
     if (this._altitude <= 0) {
@@ -516,6 +632,12 @@ export default class Ball extends PIXI.Container {
             this._vx *= 0.8;
             this._vz *= 0.8;
             this._state = 'BOUNCING_GROUND';
+            // Debug log for ground bounce
+            if (this._debugLogs) {
+                console.log('BALL: GROUND_BOUNCE', {
+                    x: this.x.toFixed(1), y: this.y.toFixed(1), altitude: this._altitude.toFixed(2), vy: this._vy.toFixed(2), vx: this._vx.toFixed(2), vz: this._vz.toFixed(2), z: this._z.toFixed(2)
+                });
+            }
             // Fire ground hit event for AI / keeper to re-evaluate
             try { if (this.onGroundHit) this.onGroundHit(this._z, this.x, this.y); } catch (e) {}
         } else {
@@ -523,6 +645,9 @@ export default class Ball extends PIXI.Container {
             // Roll friction
             this._vx *= 0.9; 
             this._vz *= 0.9;
+            if (this._debugLogs) {
+                console.log('BALL: ROLL', { x:this.x.toFixed(1), y:this.y.toFixed(1), vx:this._vx.toFixed(2), vz:this._vz.toFixed(2) });
+            }
         }
     }
 
@@ -564,6 +689,20 @@ export default class Ball extends PIXI.Container {
       this.shadowSprite.position.set(0, this._altitude + 15 * scale); // Relative to Container (Ball is 0,0)
   }
 
+  // Return the current visual scale applied to the ball sprite (including 0.8 factor used in update())
+  public getVisualScale(): number {
+      try {
+          // Mirror the visual scale computation from update()
+          const yNorm = Math.max(0, Math.min(1, this.y / BASE_HEIGHT));
+          const minFactor = 0.35;
+          const maxFactor = 1.0;
+          const visualFactor = maxFactor - (maxFactor - minFactor) * yNorm;
+          const finalScale = this._baseScale * visualFactor;
+          const display = this._displayScale === null ? finalScale : this._displayScale;
+          return 0.8 * display;
+      } catch (e) { return (this._baseScale || 1) * 0.8; }
+  }
+
   // --- COLLISION LOGIC ---
 
   private checkGameCollisions() {
@@ -571,17 +710,14 @@ export default class Ball extends PIXI.Container {
       if (this.checkPostCollisions()) return;
 
       // Priority 2: Check Goal (Net)
-      // FIX: Added altitude check!
-      // Assuming goal height is around 120px-150px in world space (relative to goal sprite)
-      const MAX_GOAL_HEIGHT = 140; 
-      
+      // Candidate goal only if below crossbar height
       if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
-          if (this._altitude < MAX_GOAL_HEIGHT) {
+          if (this._altitude < this.MAX_GOAL_HEIGHT) {
               // Candidate goal: defer final decision until ball stops
               this._potentialGoal = true;
           } else {
               // OVER THE BAR
-              console.log("Over the bar!");
+              if (this._debugLogs) console.log('Over the bar!');
               // Ball continues flying...
           }
       }
@@ -594,30 +730,35 @@ export default class Ball extends PIXI.Container {
 
       const now = Date.now();
 
-      // Helper: segment (prev->curr) intersects rect (expanded by radius)
-      const segmentIntersectsRect = (x1:number,y1:number,x2:number,y2:number, rect:any, pad:number) => {
+    // Compute prev/current positions in WORLD coordinates so we're comparing apples->apples
+    const converter = this.parent || this;
+    const prevGlobal = converter.toGlobal(new PIXI.Point(this._prevX, this._prevY));
+    const currGlobal = converter.toGlobal(new PIXI.Point(this.x, this.y));
+
+    // Helper: segment (prev->curr) intersects rect (expanded by radius)
+    const segmentIntersectsRect = (wx1:number,wy1:number,wx2:number,wy2:number, rect:any, pad:number) => {
           try {
               const left = rect.x - pad;
               const right = rect.x + rect.width + pad;
               const top = rect.y - pad;
               const bottom = rect.y + rect.height + pad;
               // quick reject if both points are on one side
-              if ((x1 < left && x2 < left) || (x1 > right && x2 > right) || (y1 < top && y2 < top) || (y1 > bottom && y2 > bottom)) return false;
+              if ((wx1 < left && wx2 < left) || (wx1 > right && wx2 > right) || (wy1 < top && wy2 < top) || (wy1 > bottom && wy2 > bottom)) return false;
               // If either endpoint is inside, treat as intersection
-              if (x1 >= left && x1 <= right && y1 >= top && y1 <= bottom) return true;
-              if (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom) return true;
+              if (wx1 >= left && wx1 <= right && wy1 >= top && wy1 <= bottom) return true;
+              if (wx2 >= left && wx2 <= right && wy2 >= top && wy2 <= bottom) return true;
               // Check intersection with each rect edge
-              const lineIntersects = (x1:number,y1:number,x2:number,y2:number, x3:number,y3:number,x4:number,y4:number) => {
-                  const denom = (y4 - y3)*(x2 - x1) - (x4 - x3)*(y2 - y1);
+              const lineIntersects = (ax:number,ay:number,bx:number,by:number, cx:number,cy:number,dx:number,dy:number) => {
+                  const denom = (dy - cy)*(bx - ax) - (dx - cx)*(by - ay);
                   if (Math.abs(denom) < 1e-6) return false;
-                  const ua = ((x4 - x3)*(y1 - y3) - (y4 - y3)*(x1 - x3)) / denom;
-                  const ub = ((x2 - x1)*(y1 - y3) - (y2 - y1)*(x1 - x3)) / denom;
+                  const ua = ((dx - cx)*(ay - cy) - (dy - cy)*(ax - cx)) / denom;
+                  const ub = ((bx - ax)*(ay - cy) - (by - ay)*(ax - cx)) / denom;
                   return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
               };
-              if (lineIntersects(x1,y1,x2,y2,left,top,right,top)) return true; // top edge
-              if (lineIntersects(x1,y1,x2,y2,right,top,right,bottom)) return true; // right
-              if (lineIntersects(x1,y1,x2,y2,right,bottom,left,bottom)) return true; // bottom
-              if (lineIntersects(x1,y1,x2,y2,left,bottom,left,top)) return true; // left
+              if (lineIntersects(wx1,wy1,wx2,wy2,left,top,right,top)) return true; // top edge
+              if (lineIntersects(wx1,wy1,wx2,wy2,right,top,right,bottom)) return true; // right
+              if (lineIntersects(wx1,wy1,wx2,wy2,right,bottom,left,bottom)) return true; // bottom
+              if (lineIntersects(wx1,wy1,wx2,wy2,left,bottom,left,top)) return true; // left
               return false;
           } catch (e) { return false; }
       };
@@ -631,31 +772,38 @@ export default class Ball extends PIXI.Container {
               const right = bounds.x + bounds.width;
               const top = bounds.y;
               const bottom = bounds.y + bounds.height;
-              const closestX = Math.max(left, Math.min(this.x, right));
-              const closestY = Math.max(top, Math.min(this.y, bottom));
-              const dx = this.x - closestX;
-              const dy = this.y - closestY;
+              // use current world coordinates for the ball
+              const bx = currGlobal.x;
+              const by = currGlobal.y;
+              const closestX = Math.max(left, Math.min(bx, right));
+              const closestY = Math.max(top, Math.min(by, bottom));
+              const dx = bx - closestX;
+              const dy = by - closestY;
               return (dx*dx + dy*dy) <= (r * r + 1e-6);
           } catch (e) { return false; }
       };
 
       // Perfect Top Bin detection (narrow slot under crossbar near post)
       try {
-          if (this.goal && this.goal.crossbar && (this.goal.leftPost || this.goal.rightPost)) {
+        if (this.goal && this.goal.crossbar && (this.goal.leftPost || this.goal.rightPost)) {
               const cb = this.goal.crossbar.getBounds();
               // screen Y of crossbar bottom
               const crossY = cb.y + cb.height;
               // Check near left inner edge
-              if (this.goal.leftPost) {
-                  const lb = this.goal.leftPost.getBounds();
-                  const innerX = lb.x + lb.width; // inner edge
-                  const dx = Math.abs(this.x - innerX);
-                  const dy = Math.abs(this.y - (crossY + 4)); // just under crossbar
-                  if (dx < 12 && dy < 18 && this.goal.isInGoalArea(this.x, this.y) && this._z >= this.GOAL_DISTANCE) {
+                  if (this.goal.leftPost) {
+                      const lb = this.goal.leftPost.getBounds();
+                      const innerX = lb.x + lb.width; // inner edge (world coords)
+                      const bx = currGlobal.x;
+                      const by = currGlobal.y;
+                      const dx = Math.abs(bx - innerX);
+                      const dy = Math.abs(by - (crossY + 4)); // just under crossbar (world)
+                      const goalLocalForCheck = this.goal.toLocal(new PIXI.Point(bx, by));
+                      if (dx < 12 && dy < 18 && this.goal.isInGoalArea(goalLocalForCheck.x, goalLocalForCheck.y) && this._z >= this.GOAL_DISTANCE) {
                       // Perfect top-bin into left corner
                       spawnImpactEffect(this.parent || this, this.x, this.y);
                       soundController.playSfx('./Assets/sound/click.mp3');
                       soundController.playSfx('./Assets/sound/click.mp3');
+                      if (this._debugLogs) console.log('BALL: PERFECT_TOP_BIN', { side: 'left', x:this.x, y:this.y, z:this._z });
                       this._state = 'STUCK_IN_NET';
                       // mark as goal immediately (planar check)
                       this._goalConfirmed = true;
@@ -674,15 +822,19 @@ export default class Ball extends PIXI.Container {
                   }
               }
               // Right side
-              if (this.goal.rightPost) {
-                  const rb = this.goal.rightPost.getBounds();
-                  const innerX = rb.x; // inner edge (left edge of right post)
-                  const dx = Math.abs(this.x - innerX);
-                  const dy = Math.abs(this.y - (cb.y + cb.height + 4));
-                  if (dx < 12 && dy < 18 && this.goal.isInGoalArea(this.x, this.y) && this._z >= this.GOAL_DISTANCE) {
+                  if (this.goal.rightPost) {
+                      const rb = this.goal.rightPost.getBounds();
+                      const innerX = rb.x; // inner edge (left edge of right post)
+                      const bx = currGlobal.x;
+                      const by = currGlobal.y;
+                      const dx = Math.abs(bx - innerX);
+                      const dy = Math.abs(by - (cb.y + cb.height + 4));
+                      const goalLocalForCheck = this.goal.toLocal(new PIXI.Point(bx, by));
+                      if (dx < 12 && dy < 18 && this.goal.isInGoalArea(goalLocalForCheck.x, goalLocalForCheck.y) && this._z >= this.GOAL_DISTANCE) {
                       spawnImpactEffect(this.parent || this, this.x, this.y);
                       soundController.playSfx('./Assets/sound/click.mp3');
                       soundController.playSfx('./Assets/sound/click.mp3');
+                      if (this._debugLogs) console.log('BALL: PERFECT_TOP_BIN', { side: 'right', x:this.x, y:this.y, z:this._z });
                       this._state = 'STUCK_IN_NET';
                       this._goalConfirmed = true;
                       try { if (this.goalConfirmCallback) this.goalConfirmCallback(); } catch (e) {}
@@ -700,15 +852,11 @@ export default class Ball extends PIXI.Container {
           }
       } catch (e) {}
 
-      // Crossbar and posts
-    // Use swept collision: test segment from previous frame to current position
-    const prevX = typeof this._prevX === 'number' ? this._prevX : this.x;
-    const prevY = typeof this._prevY === 'number' ? this._prevY : this.y;
-    // Use a slightly larger pad for swept checks to be conservative at high speed
+    // Crossbar and posts (use world coords for swept checks)
     const sweptPad = Math.max(6, r * 1.1);
-    const hitLeft = (this.goal.leftPost && (checkHit(this.goal.leftPost) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.leftPost.getBounds(), sweptPad)));
-    const hitRight = (this.goal.rightPost && (checkHit(this.goal.rightPost) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.rightPost.getBounds(), sweptPad)));
-    const hitCross = (this.goal.crossbar && (checkHit(this.goal.crossbar) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.crossbar.getBounds(), sweptPad)));
+    const hitLeft = (this.goal.leftPost && (checkHit(this.goal.leftPost) || segmentIntersectsRect(prevGlobal.x, prevGlobal.y, currGlobal.x, currGlobal.y, this.goal.leftPost.getBounds(), sweptPad)));
+    const hitRight = (this.goal.rightPost && (checkHit(this.goal.rightPost) || segmentIntersectsRect(prevGlobal.x, prevGlobal.y, currGlobal.x, currGlobal.y, this.goal.rightPost.getBounds(), sweptPad)));
+    const hitCross = (this.goal.crossbar && (checkHit(this.goal.crossbar) || segmentIntersectsRect(prevGlobal.x, prevGlobal.y, currGlobal.x, currGlobal.y, this.goal.crossbar.getBounds(), sweptPad)));
 
       // Predictive crossbar behavior (bar-up vs bar-down)
       if (hitCross) {
@@ -731,6 +879,7 @@ export default class Ball extends PIXI.Container {
                       this._pendingBarDown = true;
                       this._state = 'HIT_BAR_DOWN';
                       this._lastPostCollisionTime = now;
+                      if (this._debugLogs) console.log('BALL: CROSSBAR_HIT_DOWN', { x:this.x.toFixed(1), y:this.y.toFixed(1), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2), incoming:incoming.toFixed(2) });
                       return true;
                   } else {
                       // Regular crossbar deflection (upwards) using normal-based reflection
@@ -746,6 +895,7 @@ export default class Ball extends PIXI.Container {
                       this._ignorePostCollisions = true;
                       this._lastPostCollisionTime = now;
                       this._state = 'HIT_BAR_UP';
+                      if (this._debugLogs) console.log('BALL: CROSSBAR_HIT_UP', { x:this.x.toFixed(1), y:this.y.toFixed(1), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2), incoming:incoming.toFixed(2) });
                       return true;
                   }
               }
@@ -758,8 +908,8 @@ export default class Ball extends PIXI.Container {
           try {
               const bounds = obj.getBounds();
               const postCenterX = bounds.x + bounds.width / 2;
-              // approaching if velocity points toward the post center
-              const approaching = (postCenterX - this.x) * this._vx > 0;
+              // approaching if velocity points toward the post center (use world x)
+              const approaching = (postCenterX - currGlobal.x) * this._vx > 0;
               const recent = (now - this._lastPostCollisionTime) < 200;
               if (!approaching && recent) return false;
 
@@ -783,12 +933,14 @@ export default class Ball extends PIXI.Container {
               } catch (e) {}
 
               // Slightly different handling for inner-edge hits (roll along the goal mouth)
-              const sign = Math.sign(this.x - postCenterX) || 1;
+              const sign = Math.sign(currGlobal.x - postCenterX) || 1;
               if (inNet) {
                   // Nudge inward so ball doesn't rest on the post
                   const inwardSign = (side === 'left') ? 1 : -1;
                   const inwardX = postCenterX + inwardSign * (bounds.width / 2 + r + 6);
-                  this.x = inwardX;
+                  // convert world inwardX back into local coordinates
+                  const localIn = converter.toLocal(new PIXI.Point(inwardX, currGlobal.y));
+                  this.x = localIn.x;
                   spawnImpactEffect(this.parent || this, this.x, this.y);
                   const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
                   const nudge = Math.max(4, Math.min(28, incoming * 0.35));
@@ -797,6 +949,7 @@ export default class Ball extends PIXI.Container {
                   this._vy = Math.max(2, Math.abs(this._vy) * 0.3 + nudge * 0.08);
                   this._lastPostCollisionTime = now;
                   this._state = 'HIT_POST_IN';
+                  if (this._debugLogs) console.log('BALL: POST_IN', { side, x:this.x.toFixed(1), y:this.y.toFixed(1), incoming:incoming.toFixed(2), vx:this._vx.toFixed(2), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2) });
                   // Post-to-post drama: if recent opposite side inner hit, escalate
                   if (this._lastPostHitSide && this._lastPostHitSide !== side && (now - this._lastPostHitTime) < 800) {
                       // strong horizontal transfer
@@ -809,7 +962,8 @@ export default class Ball extends PIXI.Container {
 
               // Outer-face hit: bounce out proportional to incoming energy
               const outX = postCenterX + sign * (bounds.width / 2 + r + 12);
-              this.x = outX;
+              const localOut = converter.toLocal(new PIXI.Point(outX, currGlobal.y));
+              this.x = localOut.x;
               spawnImpactEffect(this.parent || this, this.x, this.y);
               const oldVx = this._vx;
               // Post normal (approx): horizontal from post center toward ball
@@ -828,6 +982,7 @@ export default class Ball extends PIXI.Container {
               }
               this._lastPostCollisionTime = now;
               this._state = 'HIT_POST_OUT';
+              if (this._debugLogs) console.log('BALL: POST_OUT', { side, x:this.x.toFixed(1), y:this.y.toFixed(1), oldVx:oldVx.toFixed(2), vx:this._vx.toFixed(2), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2) });
               // record side
               this._lastPostHitSide = side;
               this._lastPostHitTime = now;
@@ -1072,8 +1227,7 @@ export default class Ball extends PIXI.Container {
       
       if (!this._goalScored && !this._ballUsed) {
           // Final goal check: only after ball has stopped
-          const MAX_GOAL_HEIGHT = 140;
-          const inNet = this.goal && (this._potentialGoal || this.goal.isInGoalArea(this.x, this.y)) && this._altitude < MAX_GOAL_HEIGHT;
+          const inNet = this.goal && (this._potentialGoal || this.goal.isInGoalArea(this.x, this.y)) && this._altitude < this.MAX_GOAL_HEIGHT;
           if (inNet) {
               // clear potential flag and run goal handling (this may resume motion into net)
               this._potentialGoal = false;
