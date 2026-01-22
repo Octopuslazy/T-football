@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js';
 import { spawnImpactEffect } from './impact.js';
+import { soundController } from '../ControllUI/SoundController';
 import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 export default class Ball extends PIXI.Container {
@@ -18,6 +19,12 @@ export default class Ball extends PIXI.Container {
   private _vy: number = 0;          // Vận tốc dọc (Altitude velocity)
   private _vz: number = 0;          // Vận tốc chiều sâu (Depth velocity)
   private _curveFactor: number = 0; // Lực xoáy (Magnus effect)
+    // State machine for clearer collision flows
+    private _state: 'IDLE'|'FLYING'|'BOUNCING_GROUND'|'HIT_POST_IN'|'HIT_POST_OUT'|'HIT_BAR_UP'|'HIT_BAR_DOWN'|'STUCK_IN_NET' = 'IDLE';
+    private _goalConfirmed: boolean = false; // set when ball planar-crosses the goal line
+    private _pendingBarDown: boolean = false; // track bar-down -> ground resolution
+    private _lastPostHitSide: 'left'|'right'|null = null;
+    private _lastPostHitTime: number = 0;
   
   // Constants
   private readonly GOAL_DISTANCE = 600; // Khoảng cách từ điểm sút đến khung thành
@@ -51,6 +58,8 @@ export default class Ball extends PIXI.Container {
   // Callbacks
   public onBallDestroyed?: () => void;
   public goalScoredCallback?: (zone: any) => void;
+    public goalConfirmCallback?: () => void; // called immediately when ball crosses plane into goal
+    public onGroundHit?: (z:number, x:number, y:number) => void; // called when ball hits ground
   public saveCallback?: () => void;
   public outCallback?: () => void;
 
@@ -276,10 +285,14 @@ export default class Ball extends PIXI.Container {
     this._z = 0;
     this._altitude = 0;
     this._isMoving = true;
+    this._state = 'FLYING';
     // Ensure we allow goalkeeper checks for the new shot by default
     this._ignoreGoalkeeper = false;
     this._ballUsed = false;
     this._goalScored = false;
+    this._goalConfirmed = false;
+    this._pendingBarDown = false;
+    this._lastPostHitSide = null;
   };
 
     // Global pointer handlers so user can swipe anywhere on screen
@@ -361,6 +374,14 @@ export default class Ball extends PIXI.Container {
     }
     this._altitude += this._vy;
 
+    // Planar goal confirmation: the instant the ball crosses the goal plane
+    try {
+        if (!this._goalConfirmed && this.goal && this._z >= this.GOAL_DISTANCE && this.goal.isInGoalArea(this.x, this.y)) {
+            this._goalConfirmed = true;
+            try { if (this.goalConfirmCallback) this.goalConfirmCallback(); } catch (e) {}
+        }
+    } catch (e) {}
+
     // 2. Perspective Projection (2.5D)
     // As Z increases, the "ground" position on screen moves up (vanishing point)
     // We assume the goal is at Z = 800
@@ -419,10 +440,29 @@ export default class Ball extends PIXI.Container {
     // 4. Ground Collision (Bounce)
     if (this._altitude <= 0) {
         this._altitude = 0;
+        // If we were in a special 'bar-down' case, resolve on ground: decide goal/miss
+        if (this._pendingBarDown) {
+            const goalLineZ = this.GOAL_DISTANCE;
+            if (this._z >= goalLineZ) {
+                this.handleGoal();
+                this._pendingBarDown = false;
+                // keep moving so net settle works
+                this._isMoving = true;
+                return;
+            } else {
+                // Miss: mark as pushed off and proceed with normal bounce
+                this._pushedOffByPost = true;
+                this._pendingBarDown = false;
+            }
+        }
+
         if (Math.abs(this._vy) > 2) {
             this._vy = -this._vy * 0.5; // Bounce energy loss
             this._vx *= 0.8;
             this._vz *= 0.8;
+            this._state = 'BOUNCING_GROUND';
+            // Fire ground hit event for AI / keeper to re-evaluate
+            try { if (this.onGroundHit) this.onGroundHit(this._z, this.x, this.y); } catch (e) {}
         } else {
             this._vy = 0;
             // Roll friction
@@ -494,175 +534,195 @@ export default class Ball extends PIXI.Container {
       if (!this.goal) return false;
       const r = (this.ballSprite.width / 2) * 0.8; // Reduced hitbox for realism
 
-      // Helper for collision
+      const now = Date.now();
+
+      // Basic circle-rect intersection helper
       const checkHit = (obj: any) => {
           if (!obj) return false;
-          const bounds = obj.getBounds();
-          // Simple circle-rect check in screen space
-          const dx = Math.abs(this.x - (bounds.x + bounds.width/2));
-          const dy = Math.abs(this.y - (bounds.y + bounds.height/2));
-
-          if (dx > (bounds.width/2 + r)) return false;
-          if (dy > (bounds.height/2 + r)) return false;
-          return true;
+          try {
+              const bounds = obj.getBounds();
+              const dx = Math.abs(this.x - (bounds.x + bounds.width/2));
+              const dy = Math.abs(this.y - (bounds.y + bounds.height/2));
+              if (dx > (bounds.width/2 + r)) return false;
+              if (dy > (bounds.height/2 + r)) return false;
+              return true;
+          } catch (e) { return false; }
       };
 
-      // Check Left, Right, Crossbar
+      // Perfect Top Bin detection (narrow slot under crossbar near post)
+      try {
+          if (this.goal && this.goal.crossbar && (this.goal.leftPost || this.goal.rightPost)) {
+              const cb = this.goal.crossbar.getBounds();
+              // screen Y of crossbar bottom
+              const crossY = cb.y + cb.height;
+              // Check near left inner edge
+              if (this.goal.leftPost) {
+                  const lb = this.goal.leftPost.getBounds();
+                  const innerX = lb.x + lb.width; // inner edge
+                  const dx = Math.abs(this.x - innerX);
+                  const dy = Math.abs(this.y - (crossY + 4)); // just under crossbar
+                  if (dx < 12 && dy < 18 && this.goal.isInGoalArea(this.x, this.y) && this._z >= this.GOAL_DISTANCE) {
+                      // Perfect top-bin into left corner
+                      spawnImpactEffect(this.parent || this, this.x, this.y);
+                      soundController.playSfx('./Assets/sound/click.mp3');
+                      soundController.playSfx('./Assets/sound/click.mp3');
+                      this._state = 'STUCK_IN_NET';
+                      // mark as goal immediately (planar check)
+                      this._goalConfirmed = true;
+                      try { if (this.goalConfirmCallback) this.goalConfirmCallback(); } catch (e) {}
+                      // Let the ball be visually stuck for a bit
+                      this.handleGoal();
+                      this._ignorePostCollisions = true;
+                      setTimeout(() => {
+                          // after being stuck, drop it down
+                          this._state = 'FLYING';
+                          this._ignorePostCollisions = false;
+                          this._vz = Math.max(4, this._vz * 0.2);
+                          this._vy = -6;
+                      }, 1400);
+                      return true;
+                  }
+              }
+              // Right side
+              if (this.goal.rightPost) {
+                  const rb = this.goal.rightPost.getBounds();
+                  const innerX = rb.x; // inner edge (left edge of right post)
+                  const dx = Math.abs(this.x - innerX);
+                  const dy = Math.abs(this.y - (cb.y + cb.height + 4));
+                  if (dx < 12 && dy < 18 && this.goal.isInGoalArea(this.x, this.y) && this._z >= this.GOAL_DISTANCE) {
+                      spawnImpactEffect(this.parent || this, this.x, this.y);
+                      soundController.playSfx('./Assets/sound/click.mp3');
+                      soundController.playSfx('./Assets/sound/click.mp3');
+                      this._state = 'STUCK_IN_NET';
+                      this._goalConfirmed = true;
+                      try { if (this.goalConfirmCallback) this.goalConfirmCallback(); } catch (e) {}
+                      this.handleGoal();
+                      this._ignorePostCollisions = true;
+                      setTimeout(() => {
+                          this._state = 'FLYING';
+                          this._ignorePostCollisions = false;
+                          this._vz = Math.max(4, this._vz * 0.2);
+                          this._vy = -6;
+                      }, 1400);
+                      return true;
+                  }
+              }
+          }
+      } catch (e) {}
+
+      // Crossbar and posts
       const hitLeft = checkHit(this.goal.leftPost);
       const hitRight = checkHit(this.goal.rightPost);
       const hitCross = checkHit(this.goal.crossbar);
 
-      // If the ball hit the crossbar but is inside the goal area (i.e. landed into the net),
-      // treat it as a goal instead of deflecting the ball out of the net.
-      if (hitCross) {
-          try {
-              // Predict a short future step to decide whether the ball will go into the net
-              // or bounce back. This avoids treating all crossbar touches as goals.
-              const dt = 0.12; // small time step (seconds)
-              // simple kinematic prediction (screen-space):
-              const predX = this.x + this._vx * dt;
-
-              // Predict altitude after dt using current _vy and GRAVITY
-              const predAltitude = this._altitude + this._vy * dt - 0.5 * (this.GRAVITY) * dt * dt;
-
-              // Predict z (depth)
-              const predZ = this._z + this._vz * dt;
-
-              // Compute projected ground Y at predicted depth (reuse perspective formula)
-              const predT = Math.min(1, predZ / this.GOAL_DISTANCE);
-              let predTargetGroundY = this._groundLevelY - 200;
-              if (this.goal && this.goal.goalSprite) {
-                  try {
-                      const nb = this.goal.goalSprite.getBounds();
-                      const worldBottomY = nb.y + nb.height;
-                      const worldCenterX = nb.x + nb.width / 2;
-                      const converter = this.parent || this;
-                      const localPt = converter.toLocal(new PIXI.Point(worldCenterX, worldBottomY));
-                      predTargetGroundY = localPt.y;
-                  } catch (e) {
-                      // fallback left as is
-                  }
-              }
-              const predGroundY = this._groundLevelY + (predTargetGroundY - this._groundLevelY) * predT;
-              const predScreenY = predGroundY - Math.max(0, predAltitude);
-
-              if (this.goal && this.goal.isInGoalArea(predX, predScreenY) && predAltitude < 140) {
-                  // Predicted to land in goal -> mark potential goal and defer final check
-                  this._potentialGoal = true;
-                  return true;
-              }
-          } catch (e) {
-              console.warn('ball.ts: predictive crossbar check failed', e);
-          }
-      }
-
-      const now = Date.now();
-
-      // Helper to process a post-like collision with approach check and penetration correction
-      const handlePost = (obj: any) => {
-          if (!obj) return false;
-          try {
-              const bounds = obj.getBounds();
-              const postCenterX = bounds.x + bounds.width / 2;
-              const dxToPost = postCenterX - this.x;
-              const approaching = dxToPost * this._vx > 0; // positive if moving toward post
-              const recent = (now - this._lastPostCollisionTime) < 200;
-              if (!approaching && recent) return false;
-
-                            // push ball out of penetration horizontally
-                            const sign = Math.sign(this.x - postCenterX) || 1;
-
-                            // Decide if the ball is inside the net (goal) — if so, nudge inward lightly
-                            let inNet = false;
-                            try {
-                                const converter = this.parent || this;
-                                const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
-                                const goalLocal = this.goal.toLocal(worldPt);
-                                inNet = !!(this.goal && this.goal.isInGoalArea(goalLocal.x, goalLocal.y));
-                            } catch (e) {
-                                inNet = false;
-                            }
-
-                            if (inNet && (obj === this.goal.leftPost || obj === this.goal.rightPost)) {
-                                // Nudge slightly toward goal center so ball doesn't rest on the post
-                                const inwardSign = obj === this.goal.leftPost ? 1 : -1; // left post -> nudge right (into net)
-                                const inwardX = postCenterX + inwardSign * (bounds.width / 2 + r + 6);
-                                this.x = inwardX;
-                                spawnImpactEffect(this.parent || this, this.x, this.y);
-                                // gentle, proportional nudge toward center (smaller than full rebound)
-                                const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
-                                const nudge = Math.max(4, Math.min(28, incoming * 0.35));
-                                this._vx = inwardSign * nudge;
-                                this._vz = Math.sign(this._vz || 1) * Math.max(2, Math.abs(this._vz) * 0.25);
-                                this._vy = Math.max(2, Math.abs(this._vy) * 0.3 + nudge * 0.08);
-                                // do not mark as pushed-off; keep collisions enabled so it can still interact
-                                this._lastPostCollisionTime = now;
-                                return true;
-                            }
-
-                            // push far enough so ball isn't left resting on the post edge
-                            const outX = postCenterX + sign * (bounds.width / 2 + r + 12);
-                            this.x = outX;
-
-                            spawnImpactEffect(this.parent || this, this.x, this.y);
-                            // Compute impulse proportional to incoming motion so rebound feels physical
-                            const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
-                            const impact = Math.max(12, Math.min(90, incoming * 1.15));
-                            this._altitude = Math.max(this._altitude, 60);
-                            // Reflect depth using impact magnitude (send away from goal)
-                            this._vz = -Math.sign(this._vz || 1) * impact * 0.9;
-                            // Horizontal push scaled from impact and directed away from post center
-                            const sidePush = Math.sign(this.x - postCenterX) || Math.sign(this._vx) || 1;
-                            this._vx = sidePush * impact * 0.8;
-                            // Give vertical pop proportional to impact and existing vertical energy
-                            this._vy = Math.max(6, Math.abs(this._vy) * 0.5 + impact * 0.18);
-                            // Mark as pushed off by post so finishTurn treats it as an 'out'
-                            this._pushedOffByPost = true;
-                            this._ignorePostCollisions = true;
-                            this._lastPostCollisionTime = now;
-                            return true;
-          } catch (e) {
-              console.warn('ball.ts: post collision handling failed', e);
-              return false;
-          }
-      };
-
-      // Crossbar handling: ensure we're moving downward toward the crossbar (falling)
+      // Predictive crossbar behavior (bar-up vs bar-down)
       if (hitCross) {
           try {
               const bounds = this.goal.crossbar.getBounds();
               const centerY = bounds.y + bounds.height / 2;
-              // If altitude is falling (vy < 0) or z is approaching, handle collision
               const falling = this._vy < 0 || this._vz > 0;
               const recent = (now - this._lastPostCollisionTime) < 200;
               if (!recent && falling) {
-                  // Compute proportional impulse for crossbar hit so magnitude matches incoming energy
-                  this._altitude = Math.max(this._altitude, centerY - this.y + 16);
+                  // Determine whether we hit lower edge (bar-down) or top
+                  const hitPointY = this.y;
+                  const edgeThreshold = centerY + bounds.height * 0.25;
                   spawnImpactEffect(this.parent || this, this.x, this.y);
                   const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
-                  const impact = Math.max(14, Math.min(120, incoming * 1.2));
-                  this._vz = -Math.sign(this._vz || 1) * impact * 1.0;
-                  this._vy = Math.max(8, Math.abs(this._vy) * 0.5 + impact * 0.25);
-                  this._vx = (Math.random() > 0.5 ? 1 : -1) * impact * 0.6;
-                  this._pushedOffByPost = true;
-                  this._ignorePostCollisions = true;
+                  if (hitPointY > edgeThreshold) {
+                      // Bar-down: send downwards and mark pending for ground check
+                      this._vy = -Math.abs(this._vy) - Math.max(6, incoming * 0.15);
+                      this._vz = Math.min(this._vz, 6);
+                      this._vx *= 0.6;
+                      this._pendingBarDown = true;
+                      this._state = 'HIT_BAR_DOWN';
+                      this._lastPostCollisionTime = now;
+                      return true;
+                  } else {
+                      // Regular crossbar deflection (upwards)
+                      const impact = Math.max(12, Math.min(120, incoming * 1.1));
+                      this._vz = -Math.sign(this._vz || 1) * impact * 1.0;
+                      this._vy = Math.max(8, Math.abs(this._vy) * 0.5 + impact * 0.25);
+                      this._vx = (Math.random() > 0.5 ? 1 : -1) * impact * 0.6;
+                      this._pushedOffByPost = true;
+                      this._ignorePostCollisions = true;
+                      this._lastPostCollisionTime = now;
+                      this._state = 'HIT_BAR_UP';
+                      return true;
+                  }
+              }
+          } catch (e) { console.warn('ball.ts: crossbar collision handling failed', e); }
+      }
+
+      // Post handling (with inner/outer detection & post-to-post drama)
+      const handlePost = (obj: any, side: 'left'|'right') => {
+          if (!obj) return false;
+          try {
+              const bounds = obj.getBounds();
+              const postCenterX = bounds.x + bounds.width / 2;
+              // approaching if velocity points toward the post center
+              const approaching = (postCenterX - this.x) * this._vx > 0;
+              const recent = (now - this._lastPostCollisionTime) < 200;
+              if (!approaching && recent) return false;
+
+              // Is this an inner-face hit? (vector from post into goal)
+              let inNet = false;
+              try {
+                  const converter = this.parent || this;
+                  const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                  const goalLocal = this.goal.toLocal(worldPt);
+                  inNet = !!(this.goal && this.goal.isInGoalArea(goalLocal.x, goalLocal.y));
+              } catch (e) { inNet = false; }
+
+              // Slightly different handling for inner-edge hits (roll along the goal mouth)
+              const sign = Math.sign(this.x - postCenterX) || 1;
+              if (inNet) {
+                  // Nudge inward so ball doesn't rest on the post
+                  const inwardSign = (side === 'left') ? 1 : -1;
+                  const inwardX = postCenterX + inwardSign * (bounds.width / 2 + r + 6);
+                  this.x = inwardX;
+                  spawnImpactEffect(this.parent || this, this.x, this.y);
+                  const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
+                  const nudge = Math.max(4, Math.min(28, incoming * 0.35));
+                  this._vx = inwardSign * nudge;
+                  this._vz = Math.sign(this._vz || 1) * Math.max(2, Math.abs(this._vz) * 0.25);
+                  this._vy = Math.max(2, Math.abs(this._vy) * 0.3 + nudge * 0.08);
                   this._lastPostCollisionTime = now;
+                  this._state = 'HIT_POST_IN';
+                  // Post-to-post drama: if recent opposite side inner hit, escalate
+                  if (this._lastPostHitSide && this._lastPostHitSide !== side && (now - this._lastPostHitTime) < 800) {
+                      // strong horizontal transfer
+                      this._vx = (side === 'left' ? 1 : -1) * Math.max(12, Math.abs(this._vx) * 1.2);
+                  }
+                  this._lastPostHitSide = side;
+                  this._lastPostHitTime = now;
                   return true;
               }
-          } catch (e) {
-              console.warn('ball.ts: crossbar collision handling failed', e);
-          }
-      }
 
-      // Left/Right posts
-      if (hitLeft) {
-          if (handlePost(this.goal.leftPost)) return true;
-      }
-      if (hitRight) {
-          if (handlePost(this.goal.rightPost)) return true;
-      }
+              // Outer-face hit: bounce out proportional to incoming energy
+              const outX = postCenterX + sign * (bounds.width / 2 + r + 12);
+              this.x = outX;
+              spawnImpactEffect(this.parent || this, this.x, this.y);
+              const oldVx = this._vx;
+              this._vx = -oldVx * 0.75 + (Math.random() - 0.5) * 4;
+              this._vz = this._vz * 0.75;
+              this._vy = this._vy * 0.75;
+              this._altitude = Math.max(this._altitude, 8 + Math.abs(oldVx) * 0.02);
+              if (!inNet) {
+                  this._pushedOffByPost = true;
+                  this._ignorePostCollisions = true;
+              }
+              this._lastPostCollisionTime = now;
+              this._state = 'HIT_POST_OUT';
+              // record side
+              this._lastPostHitSide = side;
+              this._lastPostHitTime = now;
+              return true;
+          } catch (e) { console.warn('ball.ts: post collision handling failed', e); return false; }
+      };
 
-      return false;
+      if (hitLeft) { if (handlePost(this.goal.leftPost, 'left')) return true; }
+      if (hitRight) { if (handlePost(this.goal.rightPost, 'right')) return true; }
+
       return false;
   }
 
