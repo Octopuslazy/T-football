@@ -590,6 +590,12 @@ import SoundController from './ControllUI/SoundController.js';
     
     // Set callback for when goal is scored with zone information
     currentBall.goalScoredCallback = (zone: any) => {
+      if (!zone) {
+        console.warn('goalScoredCallback called with null zone');
+        try { scoreDisplay?.addGoal?.(); } catch (e) {}
+        scheduleNextBallIfNeeded();
+        return;
+      }
       console.log(`⚽ GOAL! Ball scored in zone ${zone.id}`);
       try { scoreDisplay?.addGoal?.(); } catch (e) {}
       // Schedule reset and next ball after delay

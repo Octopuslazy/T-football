@@ -33,7 +33,13 @@ export default class Ball extends PIXI.Container {
   private _goalScored = false;      // Đã xác nhận bàn thắng chưa
   private _ballUsed = false;        // Bóng đã vào lưới hoặc ra ngoài chưa
     private _potentialGoal = false;   // Candidate goal detected during flight
-  private _keeperCooldown = false;  // Cooldown sau khi thủ môn chạm bóng
+    private _targetZ: number | null = null; // Smoothly move _z toward this target when set
+    private _keeperCooldown = false;  // Cooldown sau khi thủ môn chạm bóng
+    private _allowGoalAttract = true; // Per-shot flag: disable attraction for mostly-horizontal swipes
+    private _displayScale: number | null = null; // Smoothed visual scale to avoid snapping
+    private _forceScaleFrames: number = 0; // skip lerp for a few frames after forced scale
+    private _lastPostCollisionTime: number = 0;
+    private _ignorePostCollisions: boolean = false; // temporarily disable post collisions (e.g., on keeper save)
 
   // External Refs
   public goal: any;
@@ -187,6 +193,8 @@ export default class Ball extends PIXI.Container {
     const p = e.data.global;
     this._dragPath.push({ x: p.x, y: p.y });
     this._previewGraphics?.clear();
+        // default: allow attraction until we determine swipe direction
+        this._allowGoalAttract = true;
   };
 
   private _onPointerMove = (e: any) => {
@@ -252,6 +260,10 @@ export default class Ball extends PIXI.Container {
     // Calculate Spin (Magnus)
     this._curveFactor = this.calculateCurveFactor(first, last, this._dragPath);
 
+    // Decide whether to allow goal attraction for this shot: disable for mostly-horizontal swipes
+    // If horizontal displacement is significantly larger than vertical (lift) component, treat as horizontal swipe
+    this._allowGoalAttract = !(Math.abs(dx) > Math.abs(dy) * 1.5);
+
     // Reset State
     this._z = 0;
     this._altitude = 0;
@@ -299,7 +311,7 @@ export default class Ball extends PIXI.Container {
     // is approaching the goal (near goal depth) so early flight is unaffected.
     const approachStart = this.GOAL_DISTANCE * 0.5; // start applying at 50% of distance
     const approachEnd = this.GOAL_DISTANCE + 200;   // small margin past goal plane
-    if (this.goal && this.goal.goalSprite && this._vz > 0 && this._z >= approachStart && this._z <= approachEnd) {
+    if (this._allowGoalAttract && this.goal && this.goal.goalSprite && this._vz > 0 && this._z >= approachStart && this._z <= approachEnd) {
         try {
             const nb = this.goal.goalSprite.getBounds();
             const worldCenterX = nb.x + nb.width / 2;
@@ -321,7 +333,22 @@ export default class Ball extends PIXI.Container {
 
     // Move positions
     this.x += this._vx;
-    this._z += this._vz;
+    // If a target Z is set (e.g. we want the ball to settle into the net),
+    // smoothly interpolate _z toward it to avoid snapping the visual scale.
+    if (this._targetZ !== null) {
+        const dz = this._targetZ - this._z;
+        // move up to a small step per frame (smooth)
+        const step = Math.sign(dz) * Math.min(Math.abs(dz), Math.max(2, Math.abs(this._vz) * 0.5));
+        this._z += step;
+        // damp depth velocity while settling
+        this._vz *= 0.8;
+        if (Math.abs(dz) < 0.5) {
+            this._z = this._targetZ;
+            this._targetZ = null;
+        }
+    } else {
+        this._z += this._vz;
+    }
     this._altitude += this._vy;
 
     // 2. Perspective Projection (2.5D)
@@ -353,10 +380,25 @@ export default class Ball extends PIXI.Container {
     // Final Screen Y = Ground - Altitude
     this.y = currentGroundVisualY - this._altitude;
 
-    // Scale Logic
-    const depthScale = Math.max(0.35, 1 - (this._z / 2200));
-    const finalScale = this._baseScale * depthScale;
-    this.ballSprite.scale.set(finalScale);
+    // Scale Logic: strictly derive visual scale from screen Y so
+    // when `y` increases scale decreases, and when `y` decreases scale increases.
+    // This mapping is independent of internal Z/altitude values to satisfy the rule.
+    const yNorm = Math.max(0, Math.min(1, this.y / BASE_HEIGHT)); // 0 = top, 1 = bottom
+    const minFactor = 0.35; // scale factor when y is at bottom
+    const maxFactor = 1.0;  // scale factor when y is at top
+    const visualFactor = maxFactor - (maxFactor - minFactor) * yNorm;
+    const finalScale = this._baseScale * visualFactor;
+        // Smooth the displayed scale to avoid snapping when bouncing off crossbar/net
+        if (this._displayScale === null) this._displayScale = finalScale;
+        if (this._forceScaleFrames && this._forceScaleFrames > 0) {
+            // Honor the forced display scale for a couple frames to avoid immediate override
+            this._forceScaleFrames -= 1;
+            this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
+        } else {
+            // Lerp toward target scale (0.18 gives a responsive but smooth transition)
+            this._displayScale += (finalScale - this._displayScale) * 0.18;
+            this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
+        }
 
     // Visual Rotation
     this.ballSprite.rotation += this._vx * 0.05;
@@ -380,9 +422,15 @@ export default class Ball extends PIXI.Container {
     }
 
     // 5. Game Logic Checks (Collisions)
-    // Only check collision when ball is near the goal depth
-    if (this._z >= this.GOAL_DISTANCE && !this._ballUsed) {
-        this.checkGameCollisions();
+    // When near the goal depth always check posts/crossbar collisions so
+    // the ball can interact with left/right posts even while in the net.
+    if (this._z >= this.GOAL_DISTANCE) {
+        // Priority: posts/crossbar (checked always near goal depth)
+        if (this.checkPostCollisions()) return;
+        // If the ball has not been used (not yet scored/out), perform goal checks
+        if (!this._ballUsed) {
+            this.checkGameCollisions();
+        }
     }
 
     // Goalkeeper AI Trigger (slightly before goal)
@@ -432,6 +480,7 @@ export default class Ball extends PIXI.Container {
   }
 
   private checkPostCollisions(): boolean {
+      if (this._ignorePostCollisions) return false;
       if (!this.goal) return false;
       const r = (this.ballSprite.width / 2) * 0.8; // Reduced hitbox for realism
 
@@ -497,14 +546,81 @@ export default class Ball extends PIXI.Container {
           }
       }
 
-      if (hitLeft || hitRight || hitCross) {
-          // Deflect Logic (only for non-goal collisions)
-          spawnImpactEffect(this.parent || this, this.x, this.y);
-          this._vz *= -0.4; // Bounce back
-          this._vx += (Math.random() - 0.5) * 20; // Random side deflection
-          this._vy = Math.abs(this._vy) * 0.8; // Bounce up/down
-          return true;
+      const now = Date.now();
+
+      // Helper to process a post-like collision with approach check and penetration correction
+      const handlePost = (obj: any) => {
+          if (!obj) return false;
+          try {
+              const bounds = obj.getBounds();
+              const postCenterX = bounds.x + bounds.width / 2;
+              const dxToPost = postCenterX - this.x;
+              const approaching = dxToPost * this._vx > 0; // positive if moving toward post
+              const recent = (now - this._lastPostCollisionTime) < 200;
+              if (!approaching && recent) return false;
+
+              // push ball out of penetration horizontally
+              const sign = Math.sign(this.x - postCenterX) || 1;
+              const outX = postCenterX + sign * (bounds.width / 2 + r + 2);
+              this.x = outX;
+
+              spawnImpactEffect(this.parent || this, this.x, this.y);
+              // Push the ball away from goal/off-screen rather than a small bounce
+              // Send depth away from goal (negative) with extra force
+              this._vz = -(Math.abs(this._vz) + 20);
+              // Push horizontally away from the post center (left post -> left, right post -> right)
+              let sidePush = Math.sign(this.x - postCenterX) || Math.sign(this._vx) || 1;
+              this._vx = sidePush * Math.max(30, Math.abs(this._vx) || 30);
+              // Give an upward pop so the ball travels visibly off-screen
+              this._vy = Math.max(6, Math.abs(this._vy));
+              // Mark as used/cleared so other logic treats it as played out
+              this._ballUsed = true;
+              this._ignorePostCollisions = true;
+              this._lastPostCollisionTime = now;
+              return true;
+          } catch (e) {
+              console.warn('ball.ts: post collision handling failed', e);
+              return false;
+          }
+      };
+
+      // Crossbar handling: ensure we're moving downward toward the crossbar (falling)
+      if (hitCross) {
+          try {
+              const bounds = this.goal.crossbar.getBounds();
+              const centerY = bounds.y + bounds.height / 2;
+              // If altitude is falling (vy < 0) or z is approaching, handle collision
+              const falling = this._vy < 0 || this._vz > 0;
+              const recent = (now - this._lastPostCollisionTime) < 200;
+              if (!recent && falling) {
+                  // Nudge ball then push it away/back off-screen rather than small bounce
+                  this._altitude = Math.max(this._altitude, centerY - this.y + 10);
+                  spawnImpactEffect(this.parent || this, this.x, this.y);
+                  // Force strong backward depth velocity to send ball outwards
+                  this._vz = -(Math.abs(this._vz) + 20);
+                  // Give a noticeable upward pop so it lifts off
+                  this._vy = Math.max(6, Math.abs(this._vy));
+                  // Give a sideways random kick so it leaves the goal area
+                  this._vx = (Math.random() > 0.5 ? 40 : -40);
+                  this._ballUsed = true;
+                  this._ignorePostCollisions = true;
+                  this._lastPostCollisionTime = now;
+                  return true;
+              }
+          } catch (e) {
+              console.warn('ball.ts: crossbar collision handling failed', e);
+          }
       }
+
+      // Left/Right posts
+      if (hitLeft) {
+          if (handlePost(this.goal.leftPost)) return true;
+      }
+      if (hitRight) {
+          if (handlePost(this.goal.rightPost)) return true;
+      }
+
+      return false;
       return false;
   }
 
@@ -519,9 +635,9 @@ export default class Ball extends PIXI.Container {
       if (this.goalScoredCallback) this.goalScoredCallback(zone);
       
       // Stop ball inside net
-            // Clamp depth to goal plane so projection doesn't send the ball off-screen
-            this._z = Math.min(this._z, this.GOAL_DISTANCE);
-            // Move slightly into the net (gentle forward) but prevent flying further away
+            // Instead of snapping _z, set a target Z and let update() smoothly interpolate
+            this._targetZ = Math.min(this._z, this.GOAL_DISTANCE);
+            // Move slightly into the net (gentle forward) but cap forward velocity
             this._vz = Math.min(this._vz, 3);
             this._vx *= 0.2;
             // Give a small downward impulse so the ball falls into the net and settles
@@ -536,6 +652,8 @@ export default class Ball extends PIXI.Container {
 
       this.goalkeeper.attemptCatch(this.x, this.y, zone, ballRadius).then((result: any) => {
           if (result.caught) {
+              // When keeper saves, send ball out and disable post/crossbar collisions
+              this._ignorePostCollisions = true;
               this._ballUsed = true; // Keeper caught/blocked it
               this._keeperCooldown = true;
               
@@ -554,10 +672,31 @@ export default class Ball extends PIXI.Container {
                   console.warn('ball.ts: failed to re-layer ball above goalkeeper', e);
               }
 
-              // Physics Deflection
-              this._vz *= -0.5; // Bounce out
-              this._vy = 10;    // Pop up
-              this._vx = (Math.random() > 0.5 ? 15 : -15);
+              // Physics Deflection: push the ball strongly off-screen (away from goal)
+              this._vz = -(Math.abs(this._vz) + 30); // send depth away from goal
+              this._vy = Math.max(8, Math.abs(this._vy)); // pop upward
+              this._vx = (Math.random() > 0.5 ? 40 : -40); // strong lateral push
+              // Ensure further post collisions don't re-intercept the ball
+              this._ignorePostCollisions = true;
+
+              // Ensure visual scale updates immediately as ball moves after save
+              try {
+                  this._displayScale = null;
+                  this._targetZ = null;
+                  // Force one-frame scale recompute so the ball appears larger when popped up
+                  try {
+                      const yNorm = Math.max(0, Math.min(1, this.y / BASE_HEIGHT));
+                      const minFactor = 0.35;
+                      const maxFactor = 1.0;
+                      const visualFactor = maxFactor - (maxFactor - minFactor) * yNorm;
+                          const immediateScale = this._baseScale * visualFactor;
+                          // Set the smoothed display scale and apply the same scale used in update()
+                          this._displayScale = immediateScale;
+                          this.ballSprite.scale.set(0.8 * immediateScale, 0.8 * immediateScale);
+                          // Prevent update() from immediately lerping away for a frame or two
+                          this._forceScaleFrames = 2;
+                  } catch (e) {}
+              } catch (e) {}
 
               if (this.saveCallback) this.saveCallback();
               
@@ -582,6 +721,8 @@ export default class Ball extends PIXI.Container {
   private finishTurn() {
       if (!this._isMoving) return;
       this._isMoving = false;
+      // Re-enable post collisions once the play finishes
+      this._ignorePostCollisions = false;
       
       if (!this._goalScored && !this._ballUsed) {
           // Final goal check: only after ball has stopped
