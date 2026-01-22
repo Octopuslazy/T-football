@@ -7,7 +7,7 @@ export default class Goalkeeper extends PIXI.Container {
   private _initialRotation: number = 0;
   private _isActive: boolean = true;
   private _isAnimating: boolean = false;
-  private _catchProbability: number = 0.7;
+  private _catchProbability: number = 0;
   private _goal: any = null;
   private _lastActionTime: number = 0; 
   private _actionCooldown: number = 3000; 

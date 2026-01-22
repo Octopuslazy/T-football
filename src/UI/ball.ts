@@ -32,6 +32,7 @@ export default class Ball extends PIXI.Container {
   private _dragTime = 0;
   private _goalScored = false;      // Đã xác nhận bàn thắng chưa
   private _ballUsed = false;        // Bóng đã vào lưới hoặc ra ngoài chưa
+    private _pushedOffByPost = false; // ball was forcefully pushed off by post/crossbar
     private _potentialGoal = false;   // Candidate goal detected during flight
     private _targetZ: number | null = null; // Smoothly move _z toward this target when set
     private _keeperCooldown = false;  // Cooldown sau khi thủ môn chạm bóng
@@ -40,6 +41,7 @@ export default class Ball extends PIXI.Container {
     private _forceScaleFrames: number = 0; // skip lerp for a few frames after forced scale
     private _lastPostCollisionTime: number = 0;
     private _ignorePostCollisions: boolean = false; // temporarily disable post collisions (e.g., on keeper save)
+    private _ignoreGoalkeeper: boolean = false; // when true, skip goalkeeper interactions for this shot
 
   // External Refs
   public goal: any;
@@ -247,8 +249,14 @@ export default class Ball extends PIXI.Container {
     const computedVy = Math.max(0, dy) * 0.025 * speedFactor * this._powerMultiplier; // Altitude lift (only positive when swiping up)
     const computedVz = Math.max(6, dy * 0.035 * speedFactor * this._powerMultiplier); // depth velocity driven by upward swipe
 
-    // Enforce minimum floors so weak swipes still travel sufficiently
-    this._vx = Math.sign(computedVx) * Math.max(this.MIN_VX, Math.abs(computedVx));
+        // Enforce minimum floors so weak swipes still travel sufficiently
+        // Introduce a small deadzone for horizontal input so tiny jitters don't force lateral movement.
+        const HORIZONTAL_DEADZONE = 10; // pixels of raw swipe dx below which we treat as straight
+        if (Math.abs(dx) < HORIZONTAL_DEADZONE) {
+            this._vx = 0.5; // small nudge to avoid zero
+        } else {
+            this._vx = Math.sign(computedVx) * Math.max(this.MIN_VX, Math.abs(computedVx));
+        }
     this._vy = Math.max(this.MIN_VY, computedVy);
     this._vz = Math.max(this.MIN_VZ, computedVz);
 
@@ -268,6 +276,8 @@ export default class Ball extends PIXI.Container {
     this._z = 0;
     this._altitude = 0;
     this._isMoving = true;
+    // Ensure we allow goalkeeper checks for the new shot by default
+    this._ignoreGoalkeeper = false;
     this._ballUsed = false;
     this._goalScored = false;
   };
@@ -434,7 +444,7 @@ export default class Ball extends PIXI.Container {
     }
 
     // Goalkeeper AI Trigger (slightly before goal)
-    if (this.goalkeeper && this._z > this.GOAL_DISTANCE * 0.65 && this._vz > 0 && !this._ballUsed && !this._keeperCooldown) {
+    if (this.goalkeeper && this._z > this.GOAL_DISTANCE * 0.65 && this._vz > 0 && !this._ballUsed && !this._keeperCooldown && !this._ignoreGoalkeeper) {
         this.triggerGoalkeeper();
     }
 
@@ -559,25 +569,58 @@ export default class Ball extends PIXI.Container {
               const recent = (now - this._lastPostCollisionTime) < 200;
               if (!approaching && recent) return false;
 
-              // push ball out of penetration horizontally
-              const sign = Math.sign(this.x - postCenterX) || 1;
-              const outX = postCenterX + sign * (bounds.width / 2 + r + 2);
-              this.x = outX;
+                            // push ball out of penetration horizontally
+                            const sign = Math.sign(this.x - postCenterX) || 1;
 
-              spawnImpactEffect(this.parent || this, this.x, this.y);
-              // Push the ball away from goal/off-screen rather than a small bounce
-              // Send depth away from goal (negative) with extra force
-              this._vz = -(Math.abs(this._vz) + 20);
-              // Push horizontally away from the post center (left post -> left, right post -> right)
-              let sidePush = Math.sign(this.x - postCenterX) || Math.sign(this._vx) || 1;
-              this._vx = sidePush * Math.max(30, Math.abs(this._vx) || 30);
-              // Give an upward pop so the ball travels visibly off-screen
-              this._vy = Math.max(6, Math.abs(this._vy));
-              // Mark as used/cleared so other logic treats it as played out
-              this._ballUsed = true;
-              this._ignorePostCollisions = true;
-              this._lastPostCollisionTime = now;
-              return true;
+                            // Decide if the ball is inside the net (goal) — if so, nudge inward lightly
+                            let inNet = false;
+                            try {
+                                const converter = this.parent || this;
+                                const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                                const goalLocal = this.goal.toLocal(worldPt);
+                                inNet = !!(this.goal && this.goal.isInGoalArea(goalLocal.x, goalLocal.y));
+                            } catch (e) {
+                                inNet = false;
+                            }
+
+                            if (inNet && (obj === this.goal.leftPost || obj === this.goal.rightPost)) {
+                                // Nudge slightly toward goal center so ball doesn't rest on the post
+                                const inwardSign = obj === this.goal.leftPost ? 1 : -1; // left post -> nudge right (into net)
+                                const inwardX = postCenterX + inwardSign * (bounds.width / 2 + r + 6);
+                                this.x = inwardX;
+                                spawnImpactEffect(this.parent || this, this.x, this.y);
+                                // gentle, proportional nudge toward center (smaller than full rebound)
+                                const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
+                                const nudge = Math.max(4, Math.min(28, incoming * 0.35));
+                                this._vx = inwardSign * nudge;
+                                this._vz = Math.sign(this._vz || 1) * Math.max(2, Math.abs(this._vz) * 0.25);
+                                this._vy = Math.max(2, Math.abs(this._vy) * 0.3 + nudge * 0.08);
+                                // do not mark as pushed-off; keep collisions enabled so it can still interact
+                                this._lastPostCollisionTime = now;
+                                return true;
+                            }
+
+                            // push far enough so ball isn't left resting on the post edge
+                            const outX = postCenterX + sign * (bounds.width / 2 + r + 12);
+                            this.x = outX;
+
+                            spawnImpactEffect(this.parent || this, this.x, this.y);
+                            // Compute impulse proportional to incoming motion so rebound feels physical
+                            const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
+                            const impact = Math.max(12, Math.min(90, incoming * 1.15));
+                            this._altitude = Math.max(this._altitude, 60);
+                            // Reflect depth using impact magnitude (send away from goal)
+                            this._vz = -Math.sign(this._vz || 1) * impact * 0.9;
+                            // Horizontal push scaled from impact and directed away from post center
+                            const sidePush = Math.sign(this.x - postCenterX) || Math.sign(this._vx) || 1;
+                            this._vx = sidePush * impact * 0.8;
+                            // Give vertical pop proportional to impact and existing vertical energy
+                            this._vy = Math.max(6, Math.abs(this._vy) * 0.5 + impact * 0.18);
+                            // Mark as pushed off by post so finishTurn treats it as an 'out'
+                            this._pushedOffByPost = true;
+                            this._ignorePostCollisions = true;
+                            this._lastPostCollisionTime = now;
+                            return true;
           } catch (e) {
               console.warn('ball.ts: post collision handling failed', e);
               return false;
@@ -593,16 +636,15 @@ export default class Ball extends PIXI.Container {
               const falling = this._vy < 0 || this._vz > 0;
               const recent = (now - this._lastPostCollisionTime) < 200;
               if (!recent && falling) {
-                  // Nudge ball then push it away/back off-screen rather than small bounce
-                  this._altitude = Math.max(this._altitude, centerY - this.y + 10);
+                  // Compute proportional impulse for crossbar hit so magnitude matches incoming energy
+                  this._altitude = Math.max(this._altitude, centerY - this.y + 16);
                   spawnImpactEffect(this.parent || this, this.x, this.y);
-                  // Force strong backward depth velocity to send ball outwards
-                  this._vz = -(Math.abs(this._vz) + 20);
-                  // Give a noticeable upward pop so it lifts off
-                  this._vy = Math.max(6, Math.abs(this._vy));
-                  // Give a sideways random kick so it leaves the goal area
-                  this._vx = (Math.random() > 0.5 ? 40 : -40);
-                  this._ballUsed = true;
+                  const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
+                  const impact = Math.max(14, Math.min(120, incoming * 1.2));
+                  this._vz = -Math.sign(this._vz || 1) * impact * 1.0;
+                  this._vy = Math.max(8, Math.abs(this._vy) * 0.5 + impact * 0.25);
+                  this._vx = (Math.random() > 0.5 ? 1 : -1) * impact * 0.6;
+                  this._pushedOffByPost = true;
                   this._ignorePostCollisions = true;
                   this._lastPostCollisionTime = now;
                   return true;
@@ -631,18 +673,54 @@ export default class Ball extends PIXI.Container {
 
     spawnImpactEffect(this.parent || this, this.x, this.y);
       
-      // Convert ball position into goal-local coordinates to avoid coordinate-space mismatches
-      let zone = null as any;
-      try {
-          const converter = this.parent || this;
-          const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
-          const goalLocal = this.goal.toLocal(worldPt);
-          zone = this.goal.getZoneFromPosition(goalLocal.x, goalLocal.y);
-      } catch (e) {
-          // Fallback to direct call if conversion fails
-          try { zone = this.goal.getZoneFromPosition(this.x, this.y); } catch (e) { zone = null; }
-      }
-      if (this.goalScoredCallback) this.goalScoredCallback(zone);
+            // Robust zone lookup: convert to goal-local coords, clamp inside goal area,
+            // or fall back to nearest zone so we never pass null for edge cases.
+            let zone = null as any;
+            if (this.goal) {
+                try {
+                    const converter = this.parent || this;
+                    const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                    const goalLocal = this.goal.toLocal(worldPt);
+                    zone = this.goal.getZoneFromPosition(goalLocal.x, goalLocal.y);
+
+                    // If null, clamp the point inside the goal area and retry
+                    if (!zone) {
+                        try {
+                            const ga = this.goal.getGoalArea();
+                            const clampX = Math.max(ga.x, Math.min(ga.x + ga.width - 1, goalLocal.x));
+                            const clampY = Math.max(ga.y, Math.min(ga.y + ga.height - 1, goalLocal.y));
+                            zone = this.goal.getZoneFromPosition(clampX, clampY);
+                        } catch (e) {
+                            zone = null;
+                        }
+                    }
+
+                    // If still null, pick the nearest zone center as a best-effort fallback
+                    if (!zone) {
+                        try {
+                            const zones = this.goal.getGoalZones();
+                            if (zones && zones.length) {
+                                let best = zones[0];
+                                let bestD = Infinity;
+                                for (const z of zones) {
+                                    const cx = z.x + z.width / 2;
+                                    const cy = z.y + z.height / 2;
+                                    const dx1 = cx - goalLocal.x;
+                                    const dy1 = cy - goalLocal.y;
+                                    const d = dx1 * dx1 + dy1 * dy1;
+                                    if (d < bestD) { bestD = d; best = z; }
+                                }
+                                zone = best;
+                            }
+                        } catch (e) {
+                            zone = null;
+                        }
+                    }
+                } catch (e) {
+                    try { zone = this.goal.getZoneFromPosition(this.x, this.y); } catch (e) { zone = null; }
+                }
+            }
+            if (this.goalScoredCallback) this.goalScoredCallback(zone);
       
       // Stop ball inside net
             // Instead of snapping _z, set a target Z and let update() smoothly interpolate
@@ -657,16 +735,44 @@ export default class Ball extends PIXI.Container {
   }
 
   private triggerGoalkeeper() {
-      // Convert the ball position into goal-local coordinates for keeper logic as well
-      let zone = null as any;
-      try {
-          const converter = this.parent || this;
-          const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
-          const goalLocal = this.goal.toLocal(worldPt);
-          zone = this.goal.getZoneFromPosition(goalLocal.x, goalLocal.y);
-      } catch (e) {
-          try { zone = this.goal.getZoneFromPosition(this.x, this.y); } catch (e) { zone = null; }
-      }
+            // Robust zone lookup for keeper logic (avoid null when ball sits on posts)
+            let zone = null as any;
+            if (this.goal) {
+                try {
+                    const converter = this.parent || this;
+                    const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                    const goalLocal = this.goal.toLocal(worldPt);
+                    zone = this.goal.getZoneFromPosition(goalLocal.x, goalLocal.y);
+                    if (!zone) {
+                        try {
+                            const ga = this.goal.getGoalArea();
+                            const clampX = Math.max(ga.x, Math.min(ga.x + ga.width - 1, goalLocal.x));
+                            const clampY = Math.max(ga.y, Math.min(ga.y + ga.height - 1, goalLocal.y));
+                            zone = this.goal.getZoneFromPosition(clampX, clampY);
+                        } catch (e) { zone = null; }
+                    }
+                    if (!zone) {
+                        try {
+                            const zones = this.goal.getGoalZones();
+                            if (zones && zones.length) {
+                                let best = zones[0];
+                                let bestD = Infinity;
+                                for (const z of zones) {
+                                    const cx = z.x + z.width / 2;
+                                    const cy = z.y + z.height / 2;
+                                    const dx1 = cx - goalLocal.x;
+                                    const dy1 = cy - goalLocal.y;
+                                    const d = dx1 * dx1 + dy1 * dy1;
+                                    if (d < bestD) { bestD = d; best = z; }
+                                }
+                                zone = best;
+                            }
+                        } catch (e) { zone = null; }
+                    }
+                } catch (e) {
+                    try { zone = this.goal.getZoneFromPosition(this.x, this.y); } catch (e) { zone = null; }
+                }
+            }
       const ballRadius = this.ballSprite.width / 2;
 
       this.goalkeeper.attemptCatch(this.x, this.y, zone, ballRadius).then((result: any) => {
@@ -691,10 +797,12 @@ export default class Ball extends PIXI.Container {
                   console.warn('ball.ts: failed to re-layer ball above goalkeeper', e);
               }
 
-              // Physics Deflection: push the ball strongly off-screen (away from goal)
-              this._vz = -(Math.abs(this._vz) + 30); // send depth away from goal
-              this._vy = Math.max(8, Math.abs(this._vy)); // pop upward
-              this._vx = (Math.random() > 0.5 ? 40 : -40); // strong lateral push
+              // Physics Deflection: compute impulse proportional to incoming energy
+              const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
+              const impact = Math.max(18, Math.min(110, incoming * 1.2));
+              this._vz = -Math.sign(this._vz || 1) * impact * 1.1;
+              this._vy = Math.max(6, Math.abs(this._vy) * 0.5 + impact * 0.22);
+              this._vx = (Math.random() > 0.5 ? 1 : -1) * impact * 0.9;
               // Ensure further post collisions don't re-intercept the ball
               this._ignorePostCollisions = true;
 
@@ -722,6 +830,9 @@ export default class Ball extends PIXI.Container {
               setTimeout(() => this._keeperCooldown = false, 1000);
           }
           else {
+              // Keeper missed: ignore future goalkeeper collisions for this shot
+              this._ignoreGoalkeeper = true;
+
               // Keeper missed: ensure the ball is rendered beneath the goalkeeper
               try {
                   const p = this.parent;
