@@ -13,6 +13,7 @@ export default class Goal extends PIXI.Container {
   private _onResize: () => void;
   private _showGrid: boolean = false;
   private showZones: boolean = true; // Toggle zone visualization
+  private _showNetHitbox: boolean = true; // draw blue rectangle for net hitbox
 
   constructor() {
     super();
@@ -155,7 +156,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw left post (anchor: top-left)
     this.leftPost.clear();
-    this.leftPost.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.leftPost.fill(postColor, 1); // Alpha = 0 to make transparent
     this.leftPost.rect(0, 0, postWidth, postHeight);
     this.leftPost.fill();
     this.leftPost.pivot.set(0, 0); // anchor top-left
@@ -164,7 +165,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw right post (anchor: top-right)
     this.rightPost.clear();
-    this.rightPost.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.rightPost.fill(postColor, 1); // Alpha = 0 to make transparent
     this.rightPost.rect(0, 0, postWidth, postHeight);
     this.rightPost.fill();
     this.rightPost.pivot.set(postWidth, 0); // anchor top-right
@@ -173,7 +174,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw crossbar (anchor: mid-top)
     this.crossbar.clear();
-    this.crossbar.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.crossbar.fill(postColor, 1); // Alpha = 0 to make transparent
     this.crossbar.rect(0, 0, goalBounds.width, crossbarHeight);
     this.crossbar.fill();
     this.crossbar.pivot.set(goalBounds.width / 2, 0); // anchor mid-top
@@ -346,6 +347,22 @@ export default class Goal extends PIXI.Container {
       this.zoneVisualization.fill();
       */
     } catch (e) {}
+
+    // Draw blue net hitbox rectangle (local coords)
+    try {
+      if (this._showNetHitbox) {
+        const tl = this.toLocal(new PIXI.Point(goalArea.x, goalArea.y));
+        const br = this.toLocal(new PIXI.Point(goalArea.x + goalArea.width, goalArea.y + goalArea.height));
+        const localX = tl.x;
+        const localY = tl.y;
+        const localW = br.x - tl.x;
+        const localH = br.y - tl.y;
+        this.zoneVisualization.lineStyle(2, 0x0077FF, 0.9);
+        this.zoneVisualization.beginFill(0x0077FF, 0.06);
+        this.zoneVisualization.drawRect(localX, localY, localW, localH);
+        this.zoneVisualization.endFill();
+      }
+    } catch (e) {}
   }
   
   // Toggle zone visualization on/off
@@ -356,6 +373,12 @@ export default class Goal extends PIXI.Container {
     } else {
       this.zoneVisualization.clear();
     }
+  }
+
+  // Show/hide blue net hitbox rectangle
+  public setNetHitboxVisible(show: boolean) {
+    this._showNetHitbox = !!show;
+    if (this.showZones) this.drawZoneVisualization();
   }
 
   // Public API: set the fill alpha for the red zone center circles (0..1)

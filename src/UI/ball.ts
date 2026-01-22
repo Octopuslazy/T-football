@@ -25,6 +25,9 @@ export default class Ball extends PIXI.Container {
     private _pendingBarDown: boolean = false; // track bar-down -> ground resolution
     private _lastPostHitSide: 'left'|'right'|null = null;
     private _lastPostHitTime: number = 0;
+    // Previous frame position (for swept collision tests)
+    private _prevX: number = 0;
+    private _prevY: number = 0;
   
   // Constants
   private readonly GOAL_DISTANCE = 600; // Khoảng cách từ điểm sút đến khung thành
@@ -127,6 +130,9 @@ export default class Ball extends PIXI.Container {
     
     // Initial sizing
     this.updateScale();
+        // initialize previous position for swept collision detection
+        this._prevX = this.x;
+        this._prevY = this.y;
     window.addEventListener('resize', () => this.updateScale());
   }
 
@@ -492,6 +498,9 @@ export default class Ball extends PIXI.Container {
     if (this._z > 1500 || (Math.abs(this._vx) < 0.1 && Math.abs(this._vz) < 0.1 && this._altitude === 0)) {
         this.finishTurn();
     }
+
+    // store previous position for next frame (used by swept collision tests)
+    try { this._prevX = this.x; this._prevY = this.y; } catch (e) {}
   }
 
   private updateShadow(groundY: number, scale: number) {
@@ -535,6 +544,34 @@ export default class Ball extends PIXI.Container {
       const r = (this.ballSprite.width / 2) * 0.8; // Reduced hitbox for realism
 
       const now = Date.now();
+
+      // Helper: segment (prev->curr) intersects rect (expanded by radius)
+      const segmentIntersectsRect = (x1:number,y1:number,x2:number,y2:number, rect:any, pad:number) => {
+          try {
+              const left = rect.x - pad;
+              const right = rect.x + rect.width + pad;
+              const top = rect.y - pad;
+              const bottom = rect.y + rect.height + pad;
+              // quick reject if both points are on one side
+              if ((x1 < left && x2 < left) || (x1 > right && x2 > right) || (y1 < top && y2 < top) || (y1 > bottom && y2 > bottom)) return false;
+              // If either endpoint is inside, treat as intersection
+              if (x1 >= left && x1 <= right && y1 >= top && y1 <= bottom) return true;
+              if (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom) return true;
+              // Check intersection with each rect edge
+              const lineIntersects = (x1:number,y1:number,x2:number,y2:number, x3:number,y3:number,x4:number,y4:number) => {
+                  const denom = (y4 - y3)*(x2 - x1) - (x4 - x3)*(y2 - y1);
+                  if (Math.abs(denom) < 1e-6) return false;
+                  const ua = ((x4 - x3)*(y1 - y3) - (y4 - y3)*(x1 - x3)) / denom;
+                  const ub = ((x2 - x1)*(y1 - y3) - (y2 - y1)*(x1 - x3)) / denom;
+                  return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
+              };
+              if (lineIntersects(x1,y1,x2,y2,left,top,right,top)) return true; // top edge
+              if (lineIntersects(x1,y1,x2,y2,right,top,right,bottom)) return true; // right
+              if (lineIntersects(x1,y1,x2,y2,right,bottom,left,bottom)) return true; // bottom
+              if (lineIntersects(x1,y1,x2,y2,left,bottom,left,top)) return true; // left
+              return false;
+          } catch (e) { return false; }
+      };
 
       // Basic circle-rect intersection helper
       const checkHit = (obj: any) => {
@@ -611,9 +648,12 @@ export default class Ball extends PIXI.Container {
       } catch (e) {}
 
       // Crossbar and posts
-      const hitLeft = checkHit(this.goal.leftPost);
-      const hitRight = checkHit(this.goal.rightPost);
-      const hitCross = checkHit(this.goal.crossbar);
+    // Use swept collision: test segment from previous frame to current position
+    const prevX = typeof this._prevX === 'number' ? this._prevX : this.x;
+    const prevY = typeof this._prevY === 'number' ? this._prevY : this.y;
+    const hitLeft = (this.goal.leftPost && (checkHit(this.goal.leftPost) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.leftPost.getBounds(), r)));
+    const hitRight = (this.goal.rightPost && (checkHit(this.goal.rightPost) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.rightPost.getBounds(), r)));
+    const hitCross = (this.goal.crossbar && (checkHit(this.goal.crossbar) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.crossbar.getBounds(), r)));
 
       // Predictive crossbar behavior (bar-up vs bar-down)
       if (hitCross) {
@@ -673,6 +713,16 @@ export default class Ball extends PIXI.Container {
                   inNet = !!(this.goal && this.goal.isInGoalArea(goalLocal.x, goalLocal.y));
               } catch (e) { inNet = false; }
 
+              // Compute incoming energy magnitude and consult helper to avoid resting on posts
+              const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
+              try {
+                  if (this.preventRestOnPost(obj, incoming, inNet, side)) {
+                      // helper handled stopping or special-case; treat as handled
+                      this._lastPostCollisionTime = now;
+                      return true;
+                  }
+              } catch (e) {}
+
               // Slightly different handling for inner-edge hits (roll along the goal mouth)
               const sign = Math.sign(this.x - postCenterX) || 1;
               if (inNet) {
@@ -724,6 +774,39 @@ export default class Ball extends PIXI.Container {
       if (hitRight) { if (handlePost(this.goal.rightPost, 'right')) return true; }
 
       return false;
+  }
+
+  // Prevent ball from resting on a post. Returns true if the helper handled the collision
+  private preventRestOnPost(obj: any, incoming: number, inNet: boolean, side: 'left'|'right'): boolean {
+      try {
+          // Thresholds (tunable)
+          const STRONG_HIT = 14; // incoming magnitude above this will bounce
+          const WEAK_STOP_MAX = 14; // below or equal to this we may stop the ball if in net
+
+          // If strong enough, do not stop here (let other logic bounce)
+          if (incoming >= STRONG_HIT) return false;
+
+          // If weak and inside net, stop ball to avoid unnatural rest-on-post
+          if (inNet) {
+              // Quietly settle ball in net
+              this._vx = 0;
+              this._vy = 0;
+              this._vz = 0;
+              this._altitude = Math.max(0, Math.min(8, this._altitude));
+              this._isMoving = false;
+              this._ballUsed = true;
+              this._goalScored = true;
+              this._pushedOffByPost = false;
+              spawnImpactEffect(this.parent || this, this.x, this.y);
+              soundController.playSfx('./Assets/sound/click.mp3');
+              // Keep goal confirmed so later stanchion bounces don't un-confirm
+              this._goalConfirmed = true;
+              try { if (this.goalScoredCallback) this.goalScoredCallback(null); } catch (e) {}
+              return true;
+          }
+
+          return false;
+      } catch (e) { return false; }
   }
 
   private handleGoal() {
