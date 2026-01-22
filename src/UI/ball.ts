@@ -34,6 +34,24 @@ export default class Ball extends PIXI.Container {
   private readonly GRAVITY = 1.1;
   private readonly FRICTION = 0.99;
   private readonly GROUND_Y_OFFSET = 100; // Điều chỉnh mặt đất
+  // Collision tuning (Matter.js-like response helpers)
+  private readonly RESTITUTION_POST = 0.75; // energy retained after post hit
+  private readonly RESTITUTION_CROSS = 0.72;
+  private readonly TANGENTIAL_FRICTION = 0.8; // reduce tangential component on contact
+
+  private vecLen3 = (x:number,y:number,z:number) => Math.sqrt(x*x + y*y + z*z);
+  private normalize3 = (x:number,y:number,z:number) => {
+      const l = Math.sqrt(x*x + y*y + z*z) || 1e-6; return { x: x/l, y: y/l, z: z/l };
+  }
+  private dot3 = (ax:number,ay:number,az:number, bx:number,by:number,bz:number) => ax*bx + ay*by + az*bz;
+  private reflectVec3 = (vx:number,vy:number,vz:number, nx:number,ny:number,nz:number, restitution:number) => {
+      const dot = this.dot3(vx,vy,vz, nx,ny,nz);
+      // v' = v - 2*(v·n)*n
+      const rx = vx - 2 * dot * nx;
+      const ry = vy - 2 * dot * ny;
+      const rz = vz - 2 * dot * nz;
+      return { x: rx * restitution, y: ry * restitution, z: rz * restitution };
+  }
 
   // Flags
   private _isMoving = false;
@@ -417,6 +435,37 @@ export default class Ball extends PIXI.Container {
     // Final Screen Y = Ground - Altitude
     this.y = currentGroundVisualY - this._altitude;
 
+    // If ball is not in the net and has passed the visual bottom of the net,
+    // move its display layer to be right after the goal container so it renders
+    // 'after' the net (visually above net art but below front elements).
+    try {
+        if (this.goal && this.parent) {
+            const nb = this.goal.netSprite && this.goal.netSprite.getBounds ? this.goal.netSprite.getBounds() : null;
+            if (nb) {
+                const netBottomY = nb.y + nb.height;
+                let inNetLocal = false;
+                try {
+                    const converter = this.parent || this;
+                    const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                    const goalLocal = this.goal.toLocal(worldPt);
+                    inNetLocal = !!(this.goal && this.goal.isInGoalArea(goalLocal.x, goalLocal.y));
+                } catch (e) { inNetLocal = false; }
+
+                if (!inNetLocal && this.y > netBottomY) {
+                    try {
+                        const p = this.parent as any;
+                        const goalIndex = p && typeof p.getChildIndex === 'function' ? p.getChildIndex(this.goal) : -1;
+                        if (goalIndex >= 0) {
+                            // place ball immediately after goal container so it appears after the net
+                            const targetIndex = Math.min(p.children.length - 1, goalIndex + 1);
+                            p.setChildIndex(this, targetIndex);
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+    } catch (e) {}
+
     // Scale Logic: strictly derive visual scale from screen Y so
     // when `y` increases scale decreases, and when `y` decreases scale increases.
     // This mapping is independent of internal Z/altitude values to satisfy the rule.
@@ -573,16 +622,20 @@ export default class Ball extends PIXI.Container {
           } catch (e) { return false; }
       };
 
-      // Basic circle-rect intersection helper
+      // Precise circle-vs-rect intersection using closest point on rect
       const checkHit = (obj: any) => {
           if (!obj) return false;
           try {
               const bounds = obj.getBounds();
-              const dx = Math.abs(this.x - (bounds.x + bounds.width/2));
-              const dy = Math.abs(this.y - (bounds.y + bounds.height/2));
-              if (dx > (bounds.width/2 + r)) return false;
-              if (dy > (bounds.height/2 + r)) return false;
-              return true;
+              const left = bounds.x;
+              const right = bounds.x + bounds.width;
+              const top = bounds.y;
+              const bottom = bounds.y + bounds.height;
+              const closestX = Math.max(left, Math.min(this.x, right));
+              const closestY = Math.max(top, Math.min(this.y, bottom));
+              const dx = this.x - closestX;
+              const dy = this.y - closestY;
+              return (dx*dx + dy*dy) <= (r * r + 1e-6);
           } catch (e) { return false; }
       };
 
@@ -651,9 +704,11 @@ export default class Ball extends PIXI.Container {
     // Use swept collision: test segment from previous frame to current position
     const prevX = typeof this._prevX === 'number' ? this._prevX : this.x;
     const prevY = typeof this._prevY === 'number' ? this._prevY : this.y;
-    const hitLeft = (this.goal.leftPost && (checkHit(this.goal.leftPost) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.leftPost.getBounds(), r)));
-    const hitRight = (this.goal.rightPost && (checkHit(this.goal.rightPost) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.rightPost.getBounds(), r)));
-    const hitCross = (this.goal.crossbar && (checkHit(this.goal.crossbar) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.crossbar.getBounds(), r)));
+    // Use a slightly larger pad for swept checks to be conservative at high speed
+    const sweptPad = Math.max(6, r * 1.1);
+    const hitLeft = (this.goal.leftPost && (checkHit(this.goal.leftPost) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.leftPost.getBounds(), sweptPad)));
+    const hitRight = (this.goal.rightPost && (checkHit(this.goal.rightPost) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.rightPost.getBounds(), sweptPad)));
+    const hitCross = (this.goal.crossbar && (checkHit(this.goal.crossbar) || segmentIntersectsRect(prevX, prevY, this.x, this.y, this.goal.crossbar.getBounds(), sweptPad)));
 
       // Predictive crossbar behavior (bar-up vs bar-down)
       if (hitCross) {
@@ -678,11 +733,15 @@ export default class Ball extends PIXI.Container {
                       this._lastPostCollisionTime = now;
                       return true;
                   } else {
-                      // Regular crossbar deflection (upwards)
-                      const impact = Math.max(12, Math.min(120, incoming * 1.1));
-                      this._vz = -Math.sign(this._vz || 1) * impact * 1.0;
-                      this._vy = Math.max(8, Math.abs(this._vy) * 0.5 + impact * 0.25);
-                      this._vx = (Math.random() > 0.5 ? 1 : -1) * impact * 0.6;
+                      // Regular crossbar deflection (upwards) using normal-based reflection
+                      const bounds = this.goal.crossbar.getBounds();
+                      // crossbar normal points up in screen space
+                      const nx = 0, ny = -1, nz = 0;
+                      const refl = this.reflectVec3(this._vx, this._vy, this._vz, nx, ny, nz, this.RESTITUTION_CROSS);
+                      // add a small random tangential for drama
+                      this._vx = refl.x + (Math.random() - 0.5) * 6;
+                      this._vy = Math.max(6, Math.abs(refl.y));
+                      this._vz = Math.sign(this._vz || 1) * Math.max(4, Math.abs(refl.z));
                       this._pushedOffByPost = true;
                       this._ignorePostCollisions = true;
                       this._lastPostCollisionTime = now;
@@ -753,9 +812,15 @@ export default class Ball extends PIXI.Container {
               this.x = outX;
               spawnImpactEffect(this.parent || this, this.x, this.y);
               const oldVx = this._vx;
-              this._vx = -oldVx * 0.75 + (Math.random() - 0.5) * 4;
-              this._vz = this._vz * 0.75;
-              this._vy = this._vy * 0.75;
+              // Post normal (approx): horizontal from post center toward ball
+              const nx = Math.sign(this.x - postCenterX) || 1;
+              const ny = 0;
+              const nz = 0;
+              const refl = this.reflectVec3(this._vx, this._vy, this._vz, nx, ny, nz, this.RESTITUTION_POST);
+              // small random tangential component
+              this._vx = refl.x + (Math.random() - 0.5) * 4;
+              this._vz = refl.z;
+              this._vy = Math.abs(refl.y);
               this._altitude = Math.max(this._altitude, 8 + Math.abs(oldVx) * 0.02);
               if (!inNet) {
                   this._pushedOffByPost = true;
@@ -779,33 +844,41 @@ export default class Ball extends PIXI.Container {
   // Prevent ball from resting on a post. Returns true if the helper handled the collision
   private preventRestOnPost(obj: any, incoming: number, inNet: boolean, side: 'left'|'right'): boolean {
       try {
-          // Thresholds (tunable)
-          const STRONG_HIT = 14; // incoming magnitude above this will bounce
-          const WEAK_STOP_MAX = 14; // below or equal to this we may stop the ball if in net
-
-          // If strong enough, do not stop here (let other logic bounce)
-          if (incoming >= STRONG_HIT) return false;
-
-          // If weak and inside net, stop ball to avoid unnatural rest-on-post
+          // We never want the ball to remain physically stuck on a post.
+          // If the ball is inside the net, treat this as a goal immediately and let
+          // the normal goal handling settle the ball into the net (visual only).
           if (inNet) {
-              // Quietly settle ball in net
-              this._vx = 0;
-              this._vy = 0;
-              this._vz = 0;
-              this._altitude = Math.max(0, Math.min(8, this._altitude));
-              this._isMoving = false;
-              this._ballUsed = true;
-              this._goalScored = true;
+              try {
+                  spawnImpactEffect(this.parent || this, this.x, this.y);
+                  soundController.playSfx('./Assets/sound/click.mp3');
+              } catch (e) {}
+              // Use existing goal handler which also computes zone and smooths into net
+              try { this.handleGoal(); } catch (e) { /* fallback quiet */ }
+              // Ensure we don't leave post collisions enabled while settling
+              this._ignorePostCollisions = true;
               this._pushedOffByPost = false;
-              spawnImpactEffect(this.parent || this, this.x, this.y);
-              soundController.playSfx('./Assets/sound/click.mp3');
-              // Keep goal confirmed so later stanchion bounces don't un-confirm
-              this._goalConfirmed = true;
-              try { if (this.goalScoredCallback) this.goalScoredCallback(null); } catch (e) {}
               return true;
           }
 
-          return false;
+          // If not in net, do not allow the ball to rest on the post. Even weak impacts
+          // should produce a small outward nudge so the ball rolls away instead of staying stuck.
+          try {
+              const bounds = obj.getBounds();
+              const postCenterX = bounds.x + bounds.width / 2;
+              const sign = Math.sign(this.x - postCenterX) || 1;
+              // Small outward nudge proportional to incoming energy but clamped
+              const nudge = Math.max(6, Math.min(28, incoming * 0.5 + 6));
+              this.x = postCenterX + sign * (bounds.width / 2 + (this.ballSprite.width/2) * 0.8 + 8);
+              spawnImpactEffect(this.parent || this, this.x, this.y);
+              this._vx = sign * nudge;
+              this._vz = Math.sign(this._vz || 1) * Math.max(2, Math.abs(this._vz) * 0.25);
+              this._vy = Math.max(2, Math.abs(this._vy) * 0.25 + nudge * 0.04);
+              this._altitude = Math.max(this._altitude, 6);
+              this._lastPostCollisionTime = Date.now();
+              this._pushedOffByPost = true;
+              // Keep collisions enabled so subsequent interactions still work
+              return true;
+          } catch (e) { return false; }
       } catch (e) { return false; }
   }
 
