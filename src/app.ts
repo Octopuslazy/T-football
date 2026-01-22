@@ -579,12 +579,9 @@ import SoundController from './ControllUI/SoundController.js';
     
     // Set callback for when ball is destroyed
     currentBall.onBallDestroyed = () => {
-      // If a ball is destroyed (out of play), schedule the next ball after respawn delay
-      if (currentBall) {
-        container.removeChild(currentBall);
-        currentBall.destroy();
-        currentBall = null;
-      }
+      // Manager will remove/destroy balls on the respawn timer.
+      // Just clear the currentBall reference and schedule the next spawn.
+      currentBall = null;
       scheduleNextBallIfNeeded();
     };
     

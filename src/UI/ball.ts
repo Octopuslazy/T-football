@@ -631,7 +631,17 @@ export default class Ball extends PIXI.Container {
 
     spawnImpactEffect(this.parent || this, this.x, this.y);
       
-      const zone = this.goal.getZoneFromPosition(this.x, this.y);
+      // Convert ball position into goal-local coordinates to avoid coordinate-space mismatches
+      let zone = null as any;
+      try {
+          const converter = this.parent || this;
+          const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+          const goalLocal = this.goal.toLocal(worldPt);
+          zone = this.goal.getZoneFromPosition(goalLocal.x, goalLocal.y);
+      } catch (e) {
+          // Fallback to direct call if conversion fails
+          try { zone = this.goal.getZoneFromPosition(this.x, this.y); } catch (e) { zone = null; }
+      }
       if (this.goalScoredCallback) this.goalScoredCallback(zone);
       
       // Stop ball inside net
@@ -647,7 +657,16 @@ export default class Ball extends PIXI.Container {
   }
 
   private triggerGoalkeeper() {
-      const zone = this.goal.getZoneFromPosition(this.x, this.y);
+      // Convert the ball position into goal-local coordinates for keeper logic as well
+      let zone = null as any;
+      try {
+          const converter = this.parent || this;
+          const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+          const goalLocal = this.goal.toLocal(worldPt);
+          zone = this.goal.getZoneFromPosition(goalLocal.x, goalLocal.y);
+      } catch (e) {
+          try { zone = this.goal.getZoneFromPosition(this.x, this.y); } catch (e) { zone = null; }
+      }
       const ballRadius = this.ballSprite.width / 2;
 
       this.goalkeeper.attemptCatch(this.x, this.y, zone, ballRadius).then((result: any) => {
