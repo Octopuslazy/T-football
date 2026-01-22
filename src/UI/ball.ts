@@ -32,6 +32,7 @@ export default class Ball extends PIXI.Container {
   private _dragTime = 0;
   private _goalScored = false;      // Đã xác nhận bàn thắng chưa
   private _ballUsed = false;        // Bóng đã vào lưới hoặc ra ngoài chưa
+    private _potentialGoal = false;   // Candidate goal detected during flight
   private _keeperCooldown = false;  // Cooldown sau khi thủ môn chạm bóng
 
   // External Refs
@@ -46,9 +47,20 @@ export default class Ball extends PIXI.Container {
   public outCallback?: () => void;
 
   private onEnterFrame!: () => void;
-  private _baseScale = 0.6;
-  private _groundLevelY = 0;
-    private _powerMultiplier = 5.2; // reduced shot power
+    private _baseScale = 0.6;
+    private _groundLevelY = 0;
+        private _powerMultiplier = 1.6; // further reduced shot power
+        // Velocity caps to avoid extremely large forces from long/fast swipes
+        private readonly MAX_VX = 30;
+        private readonly MAX_VY = 20;
+        private readonly MAX_VZ = 40;
+        // Minimum velocity floors so weak swipes still reach the net
+        private readonly MIN_VX = 12;
+        private readonly MIN_VY = 10;
+        private readonly MIN_VZ = 20;
+        // Gentle lateral attraction toward goal center (small, non-snapping)
+        // Increased so the tendency to curve into the net is visible but subtle
+        private readonly GOAL_ATTRACT = 0.004;
 
   constructor(gameState?: { ballsRemaining: number; gameOver: boolean }, goal?: any, goalkeeper?: any) {
     super();
@@ -65,6 +77,33 @@ export default class Ball extends PIXI.Container {
     this.on('pointermove', this._onPointerMove);
     this.on('pointerup', this._onPointerUp);
     this.on('pointerupoutside', this._onPointerUp);
+
+        // Register global pointer handlers so swipes starting anywhere are accepted
+        this._globalPointerDown = (ev: PointerEvent) => {
+            try {
+                // ignore if already dragging on this ball or ball used
+                if (this._isMoving || this._ballUsed) return;
+                const p = { global: new PIXI.Point(ev.clientX, ev.clientY) } as any;
+                this._onPointerDown({ data: p });
+            } catch (e) { console.warn('ball.ts global down', e); }
+        };
+        this._globalPointerMove = (ev: PointerEvent) => {
+            try {
+                if (!this._isDragging) return;
+                const p = { global: new PIXI.Point(ev.clientX, ev.clientY) } as any;
+                this._onPointerMove({ data: p });
+            } catch (e) { console.warn('ball.ts global move', e); }
+        };
+        this._globalPointerUp = (ev: PointerEvent) => {
+            try {
+                if (!this._isDragging) return;
+                const p = { global: new PIXI.Point(ev.clientX, ev.clientY) } as any;
+                this._onPointerUp({ data: p });
+            } catch (e) { console.warn('ball.ts global up', e); }
+        };
+        window.addEventListener('pointerdown', this._globalPointerDown);
+        window.addEventListener('pointermove', this._globalPointerMove);
+        window.addEventListener('pointerup', this._globalPointerUp);
 
     this.onEnterFrame = this.update.bind(this);
     PIXI.Ticker.shared.add(this.onEnterFrame);
@@ -98,6 +137,15 @@ export default class Ball extends PIXI.Container {
     this.ballSprite = new PIXI.Sprite(tex);
     this.ballSprite.anchor.set(0.5);
     this.addChild(this.ballSprite);
+
+        // Expand interactive hit area so small off-center taps still register as pointerdown
+        try {
+            const hitR = 60; // pixels radius for easier touching
+            this.hitArea = new PIXI.Circle(0, 0, hitR);
+            this.interactive = true; // ensure container is interactive
+        } catch (e) {
+            console.warn('ball.ts: failed to set hitArea', e);
+        }
 
     this._previewGraphics = new PIXI.Graphics();
     this.addChild(this._previewGraphics);
@@ -173,20 +221,33 @@ export default class Ball extends PIXI.Container {
     const first = this._dragPath[0];
     const last = this._dragPath[this._dragPath.length - 1];
 
+
+    // Use global swipe vector (world coords) so swipes anywhere map to shot direction
     const dx = last.x - first.x;
-    const dy = last.y - first.y;
+    // Upward motion should increase depth/lift, so invert Y (start.y - end.y)
+    const dy = first.y - last.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Filter weak swipes
-    if (dist < 40 || dy > 0) return; // Must swipe UP
+    // Filter weak swipes (allow shorter swipes)
+    if (dist < 20) return;
 
-    // Calculate Power
-    const speedFactor = Math.min(2.5, (dist / duration) * 20 + dist / 120);
-    
-    // Set 3D Velocities (tuned for gentler shots)
-    this._vx = dx * 0.045 * speedFactor * this._powerMultiplier;
-    this._vy = Math.abs(dy) * 0.03 * speedFactor * this._powerMultiplier; // Altitude lift
-    this._vz = Math.max(12, (Math.abs(dy) * 0.05) * speedFactor * this._powerMultiplier);
+    // Calculate Power (cap speedFactor to avoid extreme values)
+    const speedFactor = Math.min(1.3, (dist / duration) * 0.02 + dist / 120);
+
+    // Set 3D Velocities (tuned for much gentler shots)
+    const computedVx = dx * 0.02 * speedFactor * this._powerMultiplier; // horizontal scaled from swipe
+    const computedVy = Math.max(0, dy) * 0.025 * speedFactor * this._powerMultiplier; // Altitude lift (only positive when swiping up)
+    const computedVz = Math.max(6, dy * 0.035 * speedFactor * this._powerMultiplier); // depth velocity driven by upward swipe
+
+    // Enforce minimum floors so weak swipes still travel sufficiently
+    this._vx = Math.sign(computedVx) * Math.max(this.MIN_VX, Math.abs(computedVx));
+    this._vy = Math.max(this.MIN_VY, computedVy);
+    this._vz = Math.max(this.MIN_VZ, computedVz);
+
+    // Clamp velocities to configured maximums to prevent extremely large forces
+    this._vx = Math.max(-this.MAX_VX, Math.min(this.MAX_VX, this._vx));
+    this._vy = Math.max(0, Math.min(this.MAX_VY, this._vy));
+    this._vz = Math.max(this.MIN_VZ, Math.min(this.MAX_VZ, this._vz));
 
     // Calculate Spin (Magnus)
     this._curveFactor = this.calculateCurveFactor(first, last, this._dragPath);
@@ -198,6 +259,11 @@ export default class Ball extends PIXI.Container {
     this._ballUsed = false;
     this._goalScored = false;
   };
+
+    // Global pointer handlers so user can swipe anywhere on screen
+    private _globalPointerDown!: (e: PointerEvent) => void;
+    private _globalPointerMove!: (e: PointerEvent) => void;
+    private _globalPointerUp!: (e: PointerEvent) => void;
 
   private calculateCurveFactor(start: {x:number, y:number}, end: {x:number, y:number}, path: any[]) {
      // Find point with max deviation from straight line
@@ -216,9 +282,8 @@ export default class Ball extends PIXI.Container {
          if (Math.abs(dist) > Math.abs(maxDist)) maxDist = dist;
      }
 
-     // Tuning: maxDist > 0 usually means curve right (depending on coord system)
-     // Adjust constant 0.02 to change spin strength
-     return Math.max(-2.5, Math.min(2.5, maxDist * 0.025)); 
+      // Tuning: reduce raw spin sensitivity and clamp to a smaller range
+      return Math.max(-1, Math.min(1, maxDist * 0.01)); 
   }
 
   // --- MAIN LOOP ---
@@ -227,7 +292,27 @@ export default class Ball extends PIXI.Container {
     if (!this._isMoving) return;
 
     // 1. Physics Integration
-    this._vx += this._curveFactor * (this._vz / 30); // Magnus effect
+    // Magnus effect (strongly damped to avoid excessive curving)
+    this._vx += this._curveFactor * (this._vz / 120);
+
+    // Gentle attraction toward the goal center: only apply when the ball
+    // is approaching the goal (near goal depth) so early flight is unaffected.
+    const approachStart = this.GOAL_DISTANCE * 0.5; // start applying at 50% of distance
+    const approachEnd = this.GOAL_DISTANCE + 200;   // small margin past goal plane
+    if (this.goal && this.goal.goalSprite && this._vz > 0 && this._z >= approachStart && this._z <= approachEnd) {
+        try {
+            const nb = this.goal.goalSprite.getBounds();
+            const worldCenterX = nb.x + nb.width / 2;
+            const converter = this.parent || this;
+            const localCenter = converter.toLocal(new PIXI.Point(worldCenterX, nb.y + nb.height));
+            const dxToGoal = localCenter.x - this.x;
+            const tDepth = Math.min(1, this._z / this.GOAL_DISTANCE);
+            const attractStrength = this.GOAL_ATTRACT * (0.2 + 0.8 * tDepth); // baseline + increases with depth
+            this._vx += dxToGoal * attractStrength;
+        } catch (e) {
+            console.warn('ball.ts: goal attraction failed', e);
+        }
+    }
     
     // Apply Gravity & Friction
     this._vy -= this.GRAVITY;
@@ -336,8 +421,8 @@ export default class Ball extends PIXI.Container {
       
       if (this.goal && this.goal.isInGoalArea(this.x, this.y)) {
           if (this._altitude < MAX_GOAL_HEIGHT) {
-              // GOAL!
-              this.handleGoal();
+              // Candidate goal: defer final decision until ball stops
+              this._potentialGoal = true;
           } else {
               // OVER THE BAR
               console.log("Over the bar!");
@@ -364,8 +449,56 @@ export default class Ball extends PIXI.Container {
       };
 
       // Check Left, Right, Crossbar
-      if (checkHit(this.goal.leftPost) || checkHit(this.goal.rightPost) || checkHit(this.goal.crossbar)) {
-          // Deflect Logic
+      const hitLeft = checkHit(this.goal.leftPost);
+      const hitRight = checkHit(this.goal.rightPost);
+      const hitCross = checkHit(this.goal.crossbar);
+
+      // If the ball hit the crossbar but is inside the goal area (i.e. landed into the net),
+      // treat it as a goal instead of deflecting the ball out of the net.
+      if (hitCross) {
+          try {
+              // Predict a short future step to decide whether the ball will go into the net
+              // or bounce back. This avoids treating all crossbar touches as goals.
+              const dt = 0.12; // small time step (seconds)
+              // simple kinematic prediction (screen-space):
+              const predX = this.x + this._vx * dt;
+
+              // Predict altitude after dt using current _vy and GRAVITY
+              const predAltitude = this._altitude + this._vy * dt - 0.5 * (this.GRAVITY) * dt * dt;
+
+              // Predict z (depth)
+              const predZ = this._z + this._vz * dt;
+
+              // Compute projected ground Y at predicted depth (reuse perspective formula)
+              const predT = Math.min(1, predZ / this.GOAL_DISTANCE);
+              let predTargetGroundY = this._groundLevelY - 200;
+              if (this.goal && this.goal.goalSprite) {
+                  try {
+                      const nb = this.goal.goalSprite.getBounds();
+                      const worldBottomY = nb.y + nb.height;
+                      const worldCenterX = nb.x + nb.width / 2;
+                      const converter = this.parent || this;
+                      const localPt = converter.toLocal(new PIXI.Point(worldCenterX, worldBottomY));
+                      predTargetGroundY = localPt.y;
+                  } catch (e) {
+                      // fallback left as is
+                  }
+              }
+              const predGroundY = this._groundLevelY + (predTargetGroundY - this._groundLevelY) * predT;
+              const predScreenY = predGroundY - Math.max(0, predAltitude);
+
+              if (this.goal && this.goal.isInGoalArea(predX, predScreenY) && predAltitude < 140) {
+                  // Predicted to land in goal -> mark potential goal and defer final check
+                  this._potentialGoal = true;
+                  return true;
+              }
+          } catch (e) {
+              console.warn('ball.ts: predictive crossbar check failed', e);
+          }
+      }
+
+      if (hitLeft || hitRight || hitCross) {
+          // Deflect Logic (only for non-goal collisions)
           spawnImpactEffect(this.parent || this, this.x, this.y);
           this._vz *= -0.4; // Bounce back
           this._vx += (Math.random() - 0.5) * 20; // Random side deflection
@@ -409,6 +542,18 @@ export default class Ball extends PIXI.Container {
               spawnImpactEffect(this.parent || this, this.x, this.y);
               console.log("Saved by Keeper!");
               
+              // Ensure ball renders above the goalkeeper when saved
+              try {
+                  const p = this.parent;
+                  if (p && this.goalkeeper && this.goalkeeper.parent === p && typeof (p as any).getChildIndex === 'function' && typeof (p as any).setChildIndex === 'function') {
+                      const keeperIndex = (p as any).getChildIndex(this.goalkeeper);
+                      const topIndex = Math.max(0, Math.min((p as any).children.length - 1, keeperIndex + 1));
+                      (p as any).setChildIndex(this, topIndex);
+                  }
+              } catch (e) {
+                  console.warn('ball.ts: failed to re-layer ball above goalkeeper', e);
+              }
+
               // Physics Deflection
               this._vz *= -0.5; // Bounce out
               this._vy = 10;    // Pop up
@@ -418,6 +563,19 @@ export default class Ball extends PIXI.Container {
               
               setTimeout(() => this._keeperCooldown = false, 1000);
           }
+          else {
+              // Keeper missed: ensure the ball is rendered beneath the goalkeeper
+              try {
+                  const p = this.parent;
+                  if (p && this.goalkeeper && this.goalkeeper.parent === p && typeof (p as any).getChildIndex === 'function' && typeof (p as any).setChildIndex === 'function') {
+                      const keeperIndex = (p as any).getChildIndex(this.goalkeeper);
+                      const newIndex = Math.max(0, keeperIndex - 1);
+                      (p as any).setChildIndex(this, newIndex);
+                  }
+              } catch (e) {
+                  console.warn('ball.ts: failed to re-layer ball under goalkeeper', e);
+              }
+          }
       });
   }
 
@@ -426,6 +584,26 @@ export default class Ball extends PIXI.Container {
       this._isMoving = false;
       
       if (!this._goalScored && !this._ballUsed) {
+          // Final goal check: only after ball has stopped
+          const MAX_GOAL_HEIGHT = 140;
+          const inNet = this.goal && (this._potentialGoal || this.goal.isInGoalArea(this.x, this.y)) && this._altitude < MAX_GOAL_HEIGHT;
+          if (inNet) {
+              // clear potential flag and run goal handling (this may resume motion into net)
+              this._potentialGoal = false;
+              this.handleGoal();
+              return;
+          }
+
+          // Not a goal: ball is out or stopped outside net — ensure it's rendered beneath the goalkeeper
+          try {
+              const p = this.parent;
+              if (p && this.goalkeeper && this.goalkeeper.parent === p && typeof (p as any).getChildIndex === 'function' && typeof (p as any).setChildIndex === 'function') {
+                  const keeperIndex = (p as any).getChildIndex(this.goalkeeper);
+                  const newIndex = Math.max(0, keeperIndex - 1);
+                  (p as any).setChildIndex(this, newIndex);
+              }
+          } catch (e) { console.warn('ball.ts: failed to re-layer ball on out', e); }
+
           if (this.outCallback) this.outCallback();
       }
 
@@ -437,6 +615,11 @@ export default class Ball extends PIXI.Container {
   public destroy() {
       PIXI.Ticker.shared.remove(this.onEnterFrame);
       this.removeAllListeners();
-      super.destroy();
+            try {
+                window.removeEventListener('pointerdown', this._globalPointerDown);
+                window.removeEventListener('pointermove', this._globalPointerMove);
+                window.removeEventListener('pointerup', this._globalPointerUp);
+            } catch (e) {}
+            super.destroy();
   }
 }
