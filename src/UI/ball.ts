@@ -4,22 +4,21 @@ import { soundController } from '../ControllUI/SoundController';
 import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 
 export default class Ball extends PIXI.Container {
-  // --- Visuals ---
-  private ballSprite!: PIXI.Sprite;
-  private shadowSprite!: PIXI.Graphics;
-  private _previewGraphics: PIXI.Graphics | null = null;
+    // --- Visuals ---
+    private ballSprite!: PIXI.Sprite;
+    private shadowSprite!: PIXI.Graphics;
+    private _previewGraphics: PIXI.Graphics | null = null;
 
-  // --- Physics & State ---
-  private _velocity = { x: 0, y: 0 }; // 2D placeholder (cho tương thích cũ)
-  
-  // 3D Physics Properties
-  private _z: number = 0;           // Độ sâu (0 = điểm đặt bóng)
-  private _altitude: number = 0;    // Độ cao so với mặt đất (Y ngược)
-  private _vx: number = 0;          // Vận tốc ngang
-  private _vy: number = 0;          // Vận tốc dọc (Altitude velocity)
-  private _vz: number = 0;          // Vận tốc chiều sâu (Depth velocity)
-  private _curveFactor: number = 0; // Lực xoáy (Magnus effect)
-    // State machine for clearer collision flows
+    // --- Physics & State ---
+    private _velocity = { x: 0, y: 0 }; // 2D placeholder (cho tương thích cũ)
+    // 3D Physics Properties
+    private _z: number = 0;           // Độ sâu (0 = điểm đặt bóng)
+    private _altitude: number = 0;    // Độ cao so với mặt đất (Y ngược)
+    private _vx: number = 0;          // Vận tốc ngang
+    private _vy: number = 0;          // Vận tốc dọc (Altitude velocity)
+    private _vz: number = 0;          // Vận tốc chiều sâu (Depth velocity)
+    private _curveFactor: number = 0; // Lực xoáy (Magnus effect)
+        // State machine for clearer collision flows
     private _state: 'IDLE'|'FLYING'|'BOUNCING_GROUND'|'HIT_POST_IN'|'HIT_POST_OUT'|'HIT_BAR_UP'|'HIT_BAR_DOWN'|'STUCK_IN_NET' = 'IDLE';
     private _goalConfirmed: boolean = false; // set when ball planar-crosses the goal line
     private _pendingBarDown: boolean = false; // track bar-down -> ground resolution
@@ -73,6 +72,8 @@ export default class Ball extends PIXI.Container {
     private _lastPostCollisionTime: number = 0;
     private _ignorePostCollisions: boolean = false; // temporarily disable post collisions (e.g., on keeper save)
     private _ignoreGoalkeeper: boolean = false; // when true, skip goalkeeper interactions for this shot
+    private _goalPending: boolean = false; // defer final goal decision until stop
+    private _savedPending: boolean = false; // defer keeper-save decision until stop
 
   // External Refs
   public goal: any;
@@ -139,7 +140,7 @@ export default class Ball extends PIXI.Container {
   private onEnterFrame!: () => void;
     private _baseScale = 0.6;
     private _groundLevelY = 0;
-        private _powerMultiplier = 1.6; // further reduced shot power
+        private _powerMultiplier = 1.4; // slightly reduced shot power per request
         // Velocity caps to avoid extremely large forces from long/fast swipes
         private readonly MAX_VX = 20;
         private readonly MAX_VY = 20;
@@ -437,8 +438,17 @@ export default class Ball extends PIXI.Container {
     this._vx *= this.FRICTION;
     this._vz *= this.FRICTION;
 
-    // Move positions
-    this.x += this._vx;
+    // Compute current final (un-smoothed) scale based on world/screen Y
+    // and derive a small speed modulation so larger (closer) balls feel slightly faster.
+    const _scaleConverter = this.parent || this;
+    const worldPtForScaleNow = _scaleConverter.toGlobal(new PIXI.Point(this.x, this.y));
+    const finalScaleNow = this.computeFinalScaleForY(worldPtForScaleNow.y);
+    const visualFactorNow = finalScaleNow / this._baseScale;
+    const _speedMod = 1 + (visualFactorNow - 0.65) * 0.12; // subtle tuning
+    const speedModClamped = Math.max(0.85, Math.min(1.15, _speedMod));
+
+    // Move positions (will apply speed modulation below)
+    this.x += this._vx * speedModClamped;
     // If a target Z is set (e.g. we want the ball to settle into the net),
     // smoothly interpolate _z toward it to avoid snapping the visual scale.
     if (this._targetZ !== null) {
@@ -453,9 +463,9 @@ export default class Ball extends PIXI.Container {
             this._targetZ = null;
         }
     } else {
-        this._z += this._vz;
+        this._z += this._vz * speedModClamped;
     }
-    this._altitude += this._vy;
+    this._altitude += this._vy * speedModClamped;
 
     // Planar goal confirmation: the instant the ball crosses the goal plane
     try {
@@ -482,6 +492,7 @@ export default class Ball extends PIXI.Container {
     try {
         if (this._goalConfirmed && this.onNetContact) {
             const scaleNow = this.getVisualScale();
+            try { this.checkAndLogScale('NET_CONTACT'); } catch (e) {}
             try { this.onNetContact(scaleNow); } catch (e) {}
             // Only call once per crossing
             this.onNetContact = undefined;
@@ -548,14 +559,12 @@ export default class Ball extends PIXI.Container {
         }
     } catch (e) {}
 
-    // Scale Logic: derive visual scale from screen Y so
+    // Scale Logic: derive visual scale from world/screen Y so
     // when `y` increases (lower on screen) scale increases, and when `y` decreases (higher) scale decreases.
-    // This mapping is independent of internal Z/altitude values.
-    const yNorm = Math.max(0, Math.min(1, this.y / BASE_HEIGHT)); // 0 = top, 1 = bottom
-    const minFactor = 0.35; // scale factor when y is at top (small)
-    const maxFactor = 1.0;  // scale factor when y is at bottom (large)
-    const visualFactor = minFactor + (maxFactor - minFactor) * yNorm;
-    const finalScale = this._baseScale * visualFactor;
+    // Use the smoothed, non-linear mapping from `computeFinalScaleForY` so
+    // the ball appears noticeably smaller near the top (keeper region).
+    const finalScale = typeof finalScaleNow !== 'undefined' ? finalScaleNow : this.computeFinalScaleForY((this.parent||this).toGlobal(new PIXI.Point(this.x, this.y)).y);
+    const visualFactor = finalScale / this._baseScale;
         // Smooth the displayed scale to avoid snapping when bouncing off crossbar/net
         if (this._displayScale === null) {
             // Initialize from current rendered sprite scale (account for 0.8 multiplier)
@@ -571,8 +580,8 @@ export default class Ball extends PIXI.Container {
             // Use asymmetric lerp so the ball grows faster when moving downward
             // (so players perceive it becoming larger quickly), but shrinks slowly.
             const delta = finalScale - this._displayScale;
-            const growLerp = 0.28; // faster when increasing
-            const shrinkLerp = 0.06; // slower when decreasing
+            const growLerp = 0.65; // faster when increasing (grow slightly quicker)
+            const shrinkLerp = 0.1; // slower when decreasing
             const lerpFactor = delta > 0 ? growLerp : shrinkLerp;
             this._displayScale += delta * lerpFactor;
             this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
@@ -697,27 +706,46 @@ export default class Ball extends PIXI.Container {
   // Return the current visual scale applied to the ball sprite (including 0.8 factor used in update())
   public getVisualScale(): number {
       try {
-          // Mirror the visual scale computation from update()
-          const yNorm = Math.max(0, Math.min(1.6, this.y / BASE_HEIGHT));
-          const minFactor = 0.35;
-          const maxFactor = 1.6;
-          const visualFactor = minFactor + (maxFactor - minFactor) * yNorm;
-          const finalScale = this._baseScale * visualFactor;
+          // Delegate to computeFinalScaleForY so mapping is consistent and centralized
+          const converter = this.parent || this;
+          const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+          const finalScale = this.computeFinalScaleForY(worldPt.y);
           const display = this._displayScale === null ? finalScale : this._displayScale;
           return 0.8 * display;
       } catch (e) { return (this._baseScale || 1) * 0.8; }
   }
 
-    // Compute final scale (un-smoothed) for a given screen Y position
-    private computeFinalScaleForY(y: number): number {
-            const yNorm = Math.max(0, Math.min(1, y / BASE_HEIGHT));
-            const minFactor = 0.35;
-            const maxFactor = 1.6;
-            const visualFactor = minFactor + (maxFactor - minFactor) * yNorm;
-            return this._baseScale * visualFactor;
-    }
+      // Compute final scale (un-smoothed) for a given screen/world Y position
+      private computeFinalScaleForY(worldY: number, screenHeight?: number): number {
+          // Non-linear mapping: make the ball noticeably smaller near the top
+          const sh = screenHeight || (typeof window !== 'undefined' ? window.innerHeight : BASE_HEIGHT);
+          const yNorm = Math.max(0, Math.min(1, worldY / sh));
+          const minFactor = 0.4; // smaller at top (keeper area)
+          const maxFactor = 1.2; // slightly larger max so ball grows a bit more when low
+          const exponent = 1.5; // bias toward smaller values near top
+          const visualFactor = minFactor + (maxFactor - minFactor) * Math.pow(yNorm, exponent);
+          return this._baseScale * visualFactor;
+      }
 
   // --- COLLISION LOGIC ---
+
+      // Log current scale/state for debugging at important moments
+      public checkAndLogScale(eventName: string) {
+          try {
+              const visual = this.getVisualScale();
+              console.log(`BALL_SCALE_${eventName}`, {
+                  visualScale: Number(visual.toFixed(4)),
+                  displayScale: this._displayScale,
+                  baseScale: this._baseScale,
+                  x: Number(this.x.toFixed(1)),
+                  y: Number(this.y.toFixed(1)),
+                  z: Number(this._z.toFixed(2)),
+                  altitude: Number(this._altitude.toFixed(2)),
+                  state: this._state,
+                  timestamp: Date.now()
+              });
+          } catch (e) { try { console.log('BALL_SCALE_LOG_ERROR', e); } catch (ee) {} }
+      }
 
   private checkGameCollisions() {
       // Priority 1: Check Posts/Crossbar
@@ -911,10 +939,11 @@ export default class Ball extends PIXI.Container {
                       this._state = 'HIT_BAR_UP';
                       // Ensure displayed scale is near the expected visual size after deflection
                       try {
-                          const expectedFinal = this.computeFinalScaleForY(this.y);
-                          this._displayScale = Math.max(this._displayScale || expectedFinal, expectedFinal);
+                          const worldPt = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
+                          const expectedFinal = this.computeFinalScaleForY(worldPt.y);
+                          this._displayScale = expectedFinal;
                           this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
-                          this._forceScaleFrames = 6;
+                          this._forceScaleFrames = 2;
                       } catch (e) {}
                       if (this._debugLogs) console.log('BALL: CROSSBAR_HIT_UP', { x:this.x.toFixed(1), y:this.y.toFixed(1), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2), incoming:incoming.toFixed(2) });
                       return true;
@@ -979,10 +1008,11 @@ export default class Ball extends PIXI.Container {
                   this._lastPostHitSide = side;
                   this._lastPostHitTime = now;
                   try {
-                      const expectedFinal = this.computeFinalScaleForY(this.y);
-                      this._displayScale = Math.max(this._displayScale || expectedFinal, expectedFinal);
+                      const worldPt = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
+                      const expectedFinal = this.computeFinalScaleForY(worldPt.y);
+                      this._displayScale = expectedFinal;
                       this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
-                      this._forceScaleFrames = 6;
+                      this._forceScaleFrames = 2;
                   } catch (e) {}
                   return true;
               }
@@ -1000,7 +1030,8 @@ export default class Ball extends PIXI.Container {
               const refl = this.reflectVec3(this._vx, this._vy, this._vz, nx, ny, nz, this.RESTITUTION_POST);
               // small random tangential component
               this._vx = refl.x + (Math.random() - 0.5) * 4;
-              this._vz = refl.z;
+              // Ensure outer-face post collisions tend to send the ball back toward the field (negative Z)
+              this._vz = -Math.max(6, Math.abs(refl.z));
               this._vy = Math.abs(refl.y);
               this._altitude = Math.max(this._altitude, 8 + Math.abs(oldVx) * 0.02);
               if (!inNet) {
@@ -1011,10 +1042,11 @@ export default class Ball extends PIXI.Container {
               this._state = 'HIT_POST_OUT';
               // Ensure displayed scale increases toward expected after bouncing off post
               try {
-                  const expectedFinal = this.computeFinalScaleForY(this.y);
-                  this._displayScale = Math.max(this._displayScale || expectedFinal, expectedFinal);
+                  const worldPt = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
+                  const expectedFinal = this.computeFinalScaleForY(worldPt.y);
+                  this._displayScale = expectedFinal;
                   this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
-                  this._forceScaleFrames = 6;
+                  this._forceScaleFrames = 2;
               } catch (e) {}
               if (this._debugLogs) console.log('BALL: POST_OUT', { side, x:this.x.toFixed(1), y:this.y.toFixed(1), oldVx:oldVx.toFixed(2), vx:this._vx.toFixed(2), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2) });
               // record side
@@ -1072,71 +1104,16 @@ export default class Ball extends PIXI.Container {
   }
 
   private handleGoal() {
-      if (this._goalScored) return;
-      this._goalScored = true;
-      this._ballUsed = true; // Stop further checks
-
-    spawnImpactEffect(this.parent || this, this.x, this.y);
-      
-            // Robust zone lookup: convert to goal-local coords, clamp inside goal area,
-            // or fall back to nearest zone so we never pass null for edge cases.
-            let zone = null as any;
-            if (this.goal) {
-                try {
-                    const converter = this.parent || this;
-                    const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
-                    const goalLocal = this.goal.toLocal(worldPt);
-                    zone = this.goal.getZoneFromPosition(goalLocal.x, goalLocal.y);
-
-                    // If null, clamp the point inside the goal area and retry
-                    if (!zone) {
-                        try {
-                            const ga = this.goal.getGoalArea();
-                            const clampX = Math.max(ga.x, Math.min(ga.x + ga.width - 1, goalLocal.x));
-                            const clampY = Math.max(ga.y, Math.min(ga.y + ga.height - 1, goalLocal.y));
-                            zone = this.goal.getZoneFromPosition(clampX, clampY);
-                        } catch (e) {
-                            zone = null;
-                        }
-                    }
-
-                    // If still null, pick the nearest zone center as a best-effort fallback
-                    if (!zone) {
-                        try {
-                            const zones = this.goal.getGoalZones();
-                            if (zones && zones.length) {
-                                let best = zones[0];
-                                let bestD = Infinity;
-                                for (const z of zones) {
-                                    const cx = z.x + z.width / 2;
-                                    const cy = z.y + z.height / 2;
-                                    const dx1 = cx - goalLocal.x;
-                                    const dy1 = cy - goalLocal.y;
-                                    const d = dx1 * dx1 + dy1 * dy1;
-                                    if (d < bestD) { bestD = d; best = z; }
-                                }
-                                zone = best;
-                            }
-                        } catch (e) {
-                            zone = null;
-                        }
-                    }
-                } catch (e) {
-                    try { zone = this.goal.getZoneFromPosition(this.x, this.y); } catch (e) { zone = null; }
-                }
-            }
-            if (this.goalScoredCallback) this.goalScoredCallback(zone);
-      
-      // Stop ball inside net
-            // Instead of snapping _z, set a target Z and let update() smoothly interpolate
-            this._targetZ = Math.min(this._z, this.GOAL_DISTANCE);
-            // Move slightly into the net (gentle forward) but cap forward velocity
-            this._vz = Math.min(this._vz, 3);
-            this._vx *= 0.2;
-            // Give a small downward impulse so the ball falls into the net and settles
-            this._vy = -6;
-            // Keep moving flag true so update() continues physics until settled
-            this._isMoving = true;
+      // Mark a pending goal: defer final scoring until the ball stops
+      if (this._goalPending) return;
+      this._goalPending = true;
+      spawnImpactEffect(this.parent || this, this.x, this.y);
+      // Visually settle into the net (keep moving so update() will smooth into net)
+      this._targetZ = Math.min(this._z, this.GOAL_DISTANCE);
+      this._vz = Math.min(this._vz, 3);
+      this._vx *= 0.2;
+      this._vy = -6;
+      this._isMoving = true;
   }
 
   private triggerGoalkeeper() {
@@ -1182,9 +1159,15 @@ export default class Ball extends PIXI.Container {
 
       this.goalkeeper.attemptCatch(this.x, this.y, zone, ballRadius).then((result: any) => {
           if (result.caught) {
+              try { this.checkAndLogScale('KEEPER_CONTACT'); } catch (e) {}
               // When keeper saves, send ball out and disable post/crossbar collisions
               this._ignorePostCollisions = true;
-              this._ballUsed = true; // Keeper caught/blocked it
+              this._savedPending = true; // mark pending save; finalize when ball stops
+              // clear any goal candidates for this shot — keeper save overrides
+              this._potentialGoal = false;
+              this._goalPending = false;
+              // ignore further goalkeeper checks for this shot
+              this._ignoreGoalkeeper = true;
               this._keeperCooldown = true;
               
               spawnImpactEffect(this.parent || this, this.x, this.y);
@@ -1217,24 +1200,23 @@ export default class Ball extends PIXI.Container {
                   this._targetZ = null;
                   // Force one-frame scale recompute so the ball appears larger when popped up
                   try {
-                      const yNorm = Math.max(0, Math.min(1, this.y / BASE_HEIGHT));
-                      const minFactor = 0.35;
-                      const maxFactor = 1.0;
-                      const visualFactor = minFactor + (maxFactor - minFactor) * yNorm;
-                          const immediateScale = this._baseScale * visualFactor;
-                          // Set the smoothed display scale and apply the same scale used in update()
-                          this._displayScale = immediateScale;
-                          this.ballSprite.scale.set(0.8 * immediateScale, 0.8 * immediateScale);
-                          // Prevent update() from immediately lerping away for a frame or two
-                          this._forceScaleFrames = 2;
+                      const converter = this.parent || this;
+                      const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                      const immediateScale = this.computeFinalScaleForY(worldPt.y);
+                      // Set the smoothed display scale and apply the same scale used in update()
+                      this._displayScale = immediateScale;
+                      this.ballSprite.scale.set(0.8 * immediateScale, 0.8 * immediateScale);
+                      // Prevent update() from immediately lerping away for a frame or two
+                      this._forceScaleFrames = 2;
                   } catch (e) {}
               } catch (e) {}
 
-              if (this.saveCallback) this.saveCallback();
+              // do not call saveCallback here; finalization occurs in finishTurn()
               
               setTimeout(() => this._keeperCooldown = false, 1000);
           }
           else {
+              try { this.checkAndLogScale('KEEPER_CONTACT'); } catch (e) {}
               // Keeper missed: ignore future goalkeeper collisions for this shot
               this._ignoreGoalkeeper = true;
 
@@ -1256,18 +1238,65 @@ export default class Ball extends PIXI.Container {
   private finishTurn() {
       if (!this._isMoving) return;
       this._isMoving = false;
+      try { this.checkAndLogScale('STOPPED'); } catch (e) {}
       // Re-enable post collisions once the play finishes
       this._ignorePostCollisions = false;
       
-      if (!this._goalScored && !this._ballUsed) {
-          // Final goal check: only after ball has stopped
-          const inNet = this.goal && (this._potentialGoal || this.goal.isInGoalArea(this.x, this.y)) && this._altitude < this.MAX_GOAL_HEIGHT;
-          if (inNet) {
-              // clear potential flag and run goal handling (this may resume motion into net)
-              this._potentialGoal = false;
-              this.handleGoal();
-              return;
+      // Finalize pending results: saved takes priority over goal
+      if (this._savedPending) {
+          this._savedPending = false;
+          this._ballUsed = true;
+          try { if (this.saveCallback) this.saveCallback(); } catch (e) {}
+          return;
+      }
+
+      // If a goal was previously requested to settle, finalize it now
+      const inNet = this.goal && (this._potentialGoal || this.goal.isInGoalArea(this.x, this.y)) && this._altitude < this.MAX_GOAL_HEIGHT;
+      if (this._goalPending || inNet) {
+          // finalize goal
+          this._goalPending = false;
+          this._potentialGoal = false;
+          this._goalScored = true;
+          this._ballUsed = true;
+          // compute zone and call callback (robust lookup)
+          let zone = null as any;
+          if (this.goal) {
+              try {
+                  const converter = this.parent || this;
+                  const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                  const goalLocal = this.goal.toLocal(worldPt);
+                  zone = this.goal.getZoneFromPosition(goalLocal.x, goalLocal.y);
+                  if (!zone) {
+                      try {
+                          const ga = this.goal.getGoalArea();
+                          const clampX = Math.max(ga.x, Math.min(ga.x + ga.width - 1, goalLocal.x));
+                          const clampY = Math.max(ga.y, Math.min(ga.y + ga.height - 1, goalLocal.y));
+                          zone = this.goal.getZoneFromPosition(clampX, clampY);
+                      } catch (e) { zone = null; }
+                  }
+                  if (!zone) {
+                      try {
+                          const zones = this.goal.getGoalZones();
+                          if (zones && zones.length) {
+                              let best = zones[0];
+                              let bestD = Infinity;
+                              for (const z of zones) {
+                                  const cx = z.x + z.width / 2;
+                                  const cy = z.y + z.height / 2;
+                                  const dx1 = cx - goalLocal.x;
+                                  const dy1 = cy - goalLocal.y;
+                                  const d = dx1 * dx1 + dy1 * dy1;
+                                  if (d < bestD) { bestD = d; best = z; }
+                              }
+                              zone = best;
+                          }
+                      } catch (e) { zone = null; }
+                  }
+              } catch (e) { try { zone = this.goal.getZoneFromPosition(this.x, this.y); } catch (e) { zone = null; } }
           }
+          try { if (this.goalScoredCallback) this.goalScoredCallback(zone); } catch (e) {}
+          return;
+      }
 
           // Not a goal: ball is out or stopped outside net — ensure it's rendered beneath the goalkeeper
           try {
@@ -1280,12 +1309,11 @@ export default class Ball extends PIXI.Container {
           } catch (e) { console.warn('ball.ts: failed to re-layer ball on out', e); }
 
           if (this.outCallback) this.outCallback();
-      }
 
-      if (this.onBallDestroyed) {
-          setTimeout(this.onBallDestroyed, 1000);
+          if (this.onBallDestroyed) {
+              setTimeout(this.onBallDestroyed, 1000);
+          }
       }
-  }
 
   public destroy() {
       PIXI.Ticker.shared.remove(this.onEnterFrame);
