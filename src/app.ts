@@ -64,13 +64,15 @@ import SoundController from './ControllUI/SoundController.js';
 
   // Load assets
   try {
-    await Assets.load(['./arts/goal.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png', './sound/game-loop.mp3', './sound/click.mp3']);
+    await Assets.load(['./arts/goal.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png', './Assets/sound/game-loop.mp3', './Assets/sound/click.mp3']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update
   }
 
   // Defer creation of major UI until user selects mode on the StartScreen.
+  // Expose sound controller to console for quick debugging
+  try { (window as any).soundController = SoundController; } catch (e) {}
   let ground: Ground | null = null;
   let goal: Goal | null = null;
   let goalFrontLayer: any = null;
@@ -576,6 +578,8 @@ import SoundController from './ControllUI/SoundController.js';
     }
     
     currentBall = new Ball(gameState, goal, goalkeeper);
+    // Expose current ball for runtime debugging (console)
+    try { (window as any).currentBall = currentBall; } catch (e) {}
     
     // Set callback for when ball is destroyed
     currentBall.onBallDestroyed = () => {

@@ -3,7 +3,7 @@ export class SoundController {
   private _volume: number = 0.5;
 
   // Initialize audio element (idempotent)
-  public init(src: string = './sound/game-loop.mp3') {
+  public init(src: string = './Assets/sound/game-loop.mp3') {
     try {
       if (this.audio) return;
       this.audio = new Audio(src);
@@ -38,7 +38,7 @@ export class SoundController {
   }
 
   // Play a one-shot sound effect. `src` can be a path to the sound file.
-  public playSfx(src: string = './sound/click.mp3') {
+  public playSfx(src: string = './Assets/sound/click.mp3') {
     try {
       const s = new Audio(src);
       s.preload = 'auto';

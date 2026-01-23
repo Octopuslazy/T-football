@@ -567,9 +567,14 @@ export default class Ball extends PIXI.Container {
             this._forceScaleFrames -= 1;
             this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
         } else {
-            // Lerp toward target scale (0.18 gives a responsive but smooth transition)
-            // Use a smaller lerp factor for a slower, smoother scale transition
-            this._displayScale += (finalScale - this._displayScale) * 0.08;
+            // Lerp toward target scale.
+            // Use asymmetric lerp so the ball grows faster when moving downward
+            // (so players perceive it becoming larger quickly), but shrinks slowly.
+            const delta = finalScale - this._displayScale;
+            const growLerp = 0.28; // faster when increasing
+            const shrinkLerp = 0.06; // slower when decreasing
+            const lerpFactor = delta > 0 ? growLerp : shrinkLerp;
+            this._displayScale += delta * lerpFactor;
             this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
         }
 
@@ -693,15 +698,24 @@ export default class Ball extends PIXI.Container {
   public getVisualScale(): number {
       try {
           // Mirror the visual scale computation from update()
-          const yNorm = Math.max(0, Math.min(1, this.y / BASE_HEIGHT));
+          const yNorm = Math.max(0, Math.min(1.6, this.y / BASE_HEIGHT));
           const minFactor = 0.35;
-          const maxFactor = 1.0;
-          const visualFactor = maxFactor - (maxFactor - minFactor) * yNorm;
+          const maxFactor = 1.6;
+          const visualFactor = minFactor + (maxFactor - minFactor) * yNorm;
           const finalScale = this._baseScale * visualFactor;
           const display = this._displayScale === null ? finalScale : this._displayScale;
           return 0.8 * display;
       } catch (e) { return (this._baseScale || 1) * 0.8; }
   }
+
+    // Compute final scale (un-smoothed) for a given screen Y position
+    private computeFinalScaleForY(y: number): number {
+            const yNorm = Math.max(0, Math.min(1, y / BASE_HEIGHT));
+            const minFactor = 0.35;
+            const maxFactor = 1.6;
+            const visualFactor = minFactor + (maxFactor - minFactor) * yNorm;
+            return this._baseScale * visualFactor;
+    }
 
   // --- COLLISION LOGIC ---
 
@@ -895,6 +909,13 @@ export default class Ball extends PIXI.Container {
                       this._ignorePostCollisions = true;
                       this._lastPostCollisionTime = now;
                       this._state = 'HIT_BAR_UP';
+                      // Ensure displayed scale is near the expected visual size after deflection
+                      try {
+                          const expectedFinal = this.computeFinalScaleForY(this.y);
+                          this._displayScale = Math.max(this._displayScale || expectedFinal, expectedFinal);
+                          this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
+                          this._forceScaleFrames = 6;
+                      } catch (e) {}
                       if (this._debugLogs) console.log('BALL: CROSSBAR_HIT_UP', { x:this.x.toFixed(1), y:this.y.toFixed(1), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2), incoming:incoming.toFixed(2) });
                       return true;
                   }
@@ -957,6 +978,12 @@ export default class Ball extends PIXI.Container {
                   }
                   this._lastPostHitSide = side;
                   this._lastPostHitTime = now;
+                  try {
+                      const expectedFinal = this.computeFinalScaleForY(this.y);
+                      this._displayScale = Math.max(this._displayScale || expectedFinal, expectedFinal);
+                      this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
+                      this._forceScaleFrames = 6;
+                  } catch (e) {}
                   return true;
               }
 
@@ -982,6 +1009,13 @@ export default class Ball extends PIXI.Container {
               }
               this._lastPostCollisionTime = now;
               this._state = 'HIT_POST_OUT';
+              // Ensure displayed scale increases toward expected after bouncing off post
+              try {
+                  const expectedFinal = this.computeFinalScaleForY(this.y);
+                  this._displayScale = Math.max(this._displayScale || expectedFinal, expectedFinal);
+                  this.ballSprite.scale.set(0.8 * this._displayScale, 0.8 * this._displayScale);
+                  this._forceScaleFrames = 6;
+              } catch (e) {}
               if (this._debugLogs) console.log('BALL: POST_OUT', { side, x:this.x.toFixed(1), y:this.y.toFixed(1), oldVx:oldVx.toFixed(2), vx:this._vx.toFixed(2), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2) });
               // record side
               this._lastPostHitSide = side;
@@ -1186,7 +1220,7 @@ export default class Ball extends PIXI.Container {
                       const yNorm = Math.max(0, Math.min(1, this.y / BASE_HEIGHT));
                       const minFactor = 0.35;
                       const maxFactor = 1.0;
-                      const visualFactor = maxFactor - (maxFactor - minFactor) * yNorm;
+                      const visualFactor = minFactor + (maxFactor - minFactor) * yNorm;
                           const immediateScale = this._baseScale * visualFactor;
                           // Set the smoothed display scale and apply the same scale used in update()
                           this._displayScale = immediateScale;
