@@ -283,15 +283,12 @@ export default class Goal extends PIXI.Container {
     for (let i = 0; i < zones.length; i++) {
       const zone = zones[i];
 
-      // Convert world corner points into local coordinates
-      const tl = this.toLocal(new PIXI.Point(zone.x, zone.y));
-      const tr = this.toLocal(new PIXI.Point(zone.x + zone.width, zone.y));
-      const bl = this.toLocal(new PIXI.Point(zone.x, zone.y + zone.height));
-
-      const localX = tl.x;
-      const localY = tl.y;
-      const localW = tr.x - tl.x;
-      const localH = bl.y - tl.y;
+      // `getGoalZones()` returns coordinates in this container's local space
+      // so use them directly rather than converting again with `toLocal()`.
+      const localX = zone.x;
+      const localY = zone.y;
+      const localW = zone.width;
+      const localH = zone.height;
 
       if (this._showGrid) {
         this.zoneVisualization.lineStyle(2, 0x880000, 1);
@@ -348,17 +345,21 @@ export default class Goal extends PIXI.Container {
       */
     } catch (e) {}
 
-    // Draw blue net hitbox rectangle (local coords)
+    // Draw blue net hitbox rectangle using the visual net sprite bounds
+    // (use net sprite local coordinates so the rectangle matches what is drawn)
     try {
-      if (this._showNetHitbox) {
-        const tl = this.toLocal(new PIXI.Point(goalArea.x, goalArea.y));
-        const br = this.toLocal(new PIXI.Point(goalArea.x + goalArea.width, goalArea.y + goalArea.height));
-        const localX = tl.x;
-        const localY = tl.y;
-        const localW = br.x - tl.x;
-        const localH = br.y - tl.y;
+      if (this._showNetHitbox && this.netSprite) {
+        // netSprite uses anchor (0.5, 0) in updateScale; compute top-left from that
+        const netW = this.netSprite.width || 0;
+        const netH = this.netSprite.height || 0;
+        const netLeft = (this.netSprite.x || 0) - netW * (this.netSprite.anchor.x || 0);
+        const netTop = (this.netSprite.y || 0) - netH * (this.netSprite.anchor.y || 0);
+        const localX = Math.round(netLeft);
+        const localY = Math.round(netTop);
+        const localW = Math.round(netW);
+        const localH = Math.round(netH);
         this.zoneVisualization.lineStyle(2, 0x0077FF, 0.9);
-        this.zoneVisualization.beginFill(0x0077FF, 0.03);
+        this.zoneVisualization.beginFill(0x0077FF, 1);
         this.zoneVisualization.drawRect(localX, localY, localW, localH);
         this.zoneVisualization.endFill();
       }

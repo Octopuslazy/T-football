@@ -377,6 +377,8 @@ export default class Ball extends PIXI.Container {
         if (currentRendered !== null) this._displayScale = currentRendered;
         this._forceScaleFrames = 8; // hold scale for ~8 frames (~130ms at 60fps)
     } catch (e) {}
+        // Ensure ball renders above goalkeeper at shot start
+        try { this.setAboveKeeper(); } catch (e) {}
   };
 
     // Global pointer handlers so user can swipe anywhere on screen
@@ -496,6 +498,8 @@ export default class Ball extends PIXI.Container {
             try { this.onNetContact(scaleNow); } catch (e) {}
             // Only call once per crossing
             this.onNetContact = undefined;
+            // After contacting the net (goal plane), render the ball beneath the goalkeeper
+            try { this.setBelowKeeper(); } catch (e) {}
         }
     } catch (e) {}
 
@@ -713,6 +717,36 @@ export default class Ball extends PIXI.Container {
           const display = this._displayScale === null ? finalScale : this._displayScale;
           return 0.8 * display;
       } catch (e) { return (this._baseScale || 1) * 0.8; }
+  }
+
+  // Layering helpers: control whether the ball renders above or below the goalkeeper
+  public setAboveKeeper() {
+      try {
+          const p = this.parent as any;
+          const keeper = this.goalkeeper;
+          if (p && keeper && keeper.parent === p && typeof p.getChildIndex === 'function' && typeof p.setChildIndex === 'function') {
+              const keeperIndex = p.getChildIndex(keeper);
+              const topIndex = Math.max(0, Math.min(p.children.length - 1, keeperIndex + 1));
+              p.setChildIndex(this, topIndex);
+          }
+      } catch (e) { /* ignore layering errors */ }
+  }
+
+  public setBelowKeeper() {
+      try {
+          const p = this.parent as any;
+          const keeper = this.goalkeeper;
+          if (p && keeper && keeper.parent === p && typeof p.getChildIndex === 'function' && typeof p.setChildIndex === 'function') {
+              const keeperIndex = p.getChildIndex(keeper);
+              const newIndex = Math.max(0, keeperIndex - 1);
+              p.setChildIndex(this, newIndex);
+          }
+      } catch (e) { /* ignore layering errors */ }
+  }
+
+  // Reset layering state to default (ball should render above keeper until net contact)
+  public resetLayering() {
+      try { this.setAboveKeeper(); } catch (e) {}
   }
 
       // Compute final scale (un-smoothed) for a given screen/world Y position

@@ -654,6 +654,9 @@ import SoundController from './ControllUI/SoundController.js';
     
     addToLayer(container, currentBall, Layer.BALL);
 
+    // Ensure the newly spawned ball is rendered above the goalkeeper from the start
+    try { if (currentBall && typeof ((currentBall as any).resetLayering) === 'function') (currentBall as any).resetLayering(); } catch (e) {}
+
     // (Debug logging left disabled by default)
 
     // Update visual ball count when a new ball is spawned
@@ -686,6 +689,7 @@ import SoundController from './ControllUI/SoundController.js';
     
     // Create new ball
     createNewBall();
+    try { if (currentBall && typeof ((currentBall as any).resetLayering) === 'function') (currentBall as any).resetLayering(); } catch (e) {}
     console.log("Ball and goalkeeper reset!");
 
     // Update ball count display when manual reset
