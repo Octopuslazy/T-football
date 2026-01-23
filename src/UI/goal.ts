@@ -81,11 +81,11 @@ export default class Goal extends PIXI.Container {
     if (this.netSprite.texture && this.netSprite.texture.width) {
       this.netSprite.scale.set(s, s);
       this.netSprite.x = Math.round(BASE_WIDTH / 2);
-      this.netSprite.y = Math.round(BASE_HEIGHT * 1 / 6);
+      this.netSprite.y = Math.round(BASE_HEIGHT * 1 / 5.22);
     }
     // Center horizontally, place near top of screen (base coords)
     this.goalSprite.x = Math.round(BASE_WIDTH / 2);
-    this.goalSprite.y = Math.round(BASE_HEIGHT * 1 / 6);
+    this.goalSprite.y = Math.round(BASE_HEIGHT * 1 / 5.22);
     
     // Update goal posts to match scaled goal
     this.updateGoalPosts(s);
@@ -156,7 +156,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw left post (anchor: top-left)
     this.leftPost.clear();
-    this.leftPost.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.leftPost.fill(postColor, 1); // Alpha = 0 to make transparent
     this.leftPost.rect(0, 0, postWidth, postHeight);
     this.leftPost.fill();
     this.leftPost.pivot.set(0, 0); // anchor top-left
@@ -165,7 +165,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw right post (anchor: top-right)
     this.rightPost.clear();
-    this.rightPost.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.rightPost.fill(postColor, 1); // Alpha = 0 to make transparent
     this.rightPost.rect(0, 0, postWidth, postHeight);
     this.rightPost.fill();
     this.rightPost.pivot.set(postWidth, 0); // anchor top-right
@@ -174,7 +174,7 @@ export default class Goal extends PIXI.Container {
     
     // Clear and redraw crossbar (anchor: mid-top)
     this.crossbar.clear();
-    this.crossbar.fill(postColor, 0); // Alpha = 0 to make transparent
+    this.crossbar.fill(postColor, 1); // Alpha = 0 to make transparent
     this.crossbar.rect(0, 0, goalBounds.width, crossbarHeight);
     this.crossbar.fill();
     this.crossbar.pivot.set(goalBounds.width / 2, 0); // anchor mid-top
@@ -294,7 +294,7 @@ export default class Goal extends PIXI.Container {
       const localH = bl.y - tl.y;
 
       if (this._showGrid) {
-        this.zoneVisualization.lineStyle(2, 0x880000, 0);
+        this.zoneVisualization.lineStyle(2, 0x880000, 1);
         this.zoneVisualization.rect(localX, localY, localW, localH);
       }
 
@@ -358,7 +358,7 @@ export default class Goal extends PIXI.Container {
         const localW = br.x - tl.x;
         const localH = br.y - tl.y;
         this.zoneVisualization.lineStyle(2, 0x0077FF, 0.9);
-        this.zoneVisualization.beginFill(0x0077FF, 0.06);
+        this.zoneVisualization.beginFill(0x0077FF, 0.03);
         this.zoneVisualization.drawRect(localX, localY, localW, localH);
         this.zoneVisualization.endFill();
       }

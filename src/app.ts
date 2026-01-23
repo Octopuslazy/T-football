@@ -64,7 +64,7 @@ import SoundController from './ControllUI/SoundController.js';
 
   // Load assets
   try {
-    await Assets.load(['./arts/goal.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/goal3.png', './arts/startscreen.png', './Assets/sound/game-loop.mp3', './Assets/sound/click.mp3']);
+    await Assets.load(['./arts/goal.png', './arts/net.png', './arts/gkeeper.png', './arts/gkeeper2.png', './arts/goal2.png', './arts/bg2.png', './arts/bg1.png', './arts/goal3.png', './arts/startscreen.png', './Assets/sound/game-loop.mp3', './Assets/sound/click.mp3']);
   }
   catch (e) {
     // ignore load errors here; components will listen for texture update
@@ -85,6 +85,7 @@ import SoundController from './ControllUI/SoundController.js';
   let scoreDisplay2: ScoreDisplay2 | null = null;
   let ballCountDisplay: BallCountDisplay | null = null;
   let ballCountDisplay2: BallCountDisplay2 | null = null;
+  let bgSprite: PIXI.Sprite | null = null;
 
   // Show start screen to choose mode before spawning balls
   let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
@@ -165,6 +166,26 @@ import SoundController from './ControllUI/SoundController.js';
         } else if (!container.children.includes(ground)) {
           addToLayer(container, ground, Layer.GROUND);
         }
+
+        // Add bg1.png as the play-mode background (if available)
+        try {
+          if (!bgSprite) {
+            let tex: PIXI.Texture | null = null;
+            try { tex = Assets.get?.('./arts/bg1.png') as PIXI.Texture; } catch (e) {}
+            if (!tex) {
+              try { tex = PIXI.Texture.from('./arts/bg1.png'); } catch (e) { tex = null; }
+            }
+            if (tex) {
+              bgSprite = new PIXI.Sprite(tex);
+              bgSprite.anchor.set(0.5, 1);
+              bgSprite.x = BASE_WIDTH / 2;
+              bgSprite.y = BASE_HEIGHT;
+              addToLayer(container, bgSprite, Layer.GROUND);
+            }
+          } else if (!container.children.includes(bgSprite)) {
+            addToLayer(container, bgSprite, Layer.GROUND);
+          }
+        } catch (e) {}
 
         if (!goal) {
           goal = new Goal();
@@ -247,6 +268,9 @@ import SoundController from './ControllUI/SoundController.js';
       try { if (goal && container.children.includes(goal)) container.removeChild(goal); } catch (e) {}
       // Remove original ground/background so only the new background remains
       try { if (ground && container.children.includes(ground)) container.removeChild(ground); } catch (e) {}
+
+      // Remove play-mode background if present
+      try { if (bgSprite && container.children.includes(bgSprite)) container.removeChild(bgSprite); } catch (e) {}
 
       // Create reversed goal background if needed
       try {
