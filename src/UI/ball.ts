@@ -1243,6 +1243,41 @@ export default class Ball extends PIXI.Container {
               } catch (e) {
                   console.warn('ball.ts: failed to re-layer ball under goalkeeper', e);
               }
+              // If the ball overlaps the keeper's current position, nudge the keeper away
+              try {
+                  const p = this.parent;
+                  const keeper = this.goalkeeper;
+                  if (keeper && p && keeper.parent === p) {
+                      const kx = keeper.x;
+                      const ky = keeper.y;
+                      const bx = this.x;
+                      const by = this.y;
+                      const dx = bx - kx;
+                      const dy = by - ky;
+                      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                      const keeperRadius = (typeof keeper.getCollisionRadius === 'function') ? keeper.getCollisionRadius() : 40;
+                      const ballRadius = (this.ballSprite && this.ballSprite.width) ? this.ballSprite.width / 2 : 20;
+                      const PAD = 140; // keep this in sync with goalkeeper's KEEPER_SAFE_PADDING
+                      const minDist = keeperRadius + ballRadius * 0.8 + PAD;
+                      if (dist < minDist) {
+                          const nx = (kx - bx) / dist || 1;
+                          const ny = (ky - by) / dist || 0;
+                          const move = Math.max(minDist - dist + PAD * 0.2, PAD * 0.6);
+                          try {
+                              // move keeper container immediately to avoid overlap
+                              keeper.x = kx + nx * move;
+                              keeper.y = ky + ny * move;
+                              // temporarily update keeper initial resting pos so it doesn't snap back into the ball
+                              try {
+                                  const orig = (keeper as any)._initialPosition;
+                                  (keeper as any)._initialPosition = { x: keeper.x, y: keeper.y };
+                                  setTimeout(() => { try { (keeper as any)._initialPosition = orig; } catch (e) {} }, 1200);
+                              } catch (e) {}
+                              if (this._debugLogs) console.log('BALL: NUDGE_KEEPER_ON_MISS', { move, keeperX: keeper.x, keeperY: keeper.y, dist, minDist });
+                          } catch (e) {}
+                      }
+                  }
+              } catch (e) { /* ignore */ }
           }
       });
   }

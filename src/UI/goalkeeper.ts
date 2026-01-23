@@ -7,10 +7,11 @@ export default class Goalkeeper extends PIXI.Container {
   private _initialRotation: number = 0;
   private _isActive: boolean = true;
   private _isAnimating: boolean = false;
-  private _catchProbability: number = 0.5;
+  private _catchProbability: number = 0;
   private _goal: any = null;
   private _lastActionTime: number = 0; 
   private _actionCooldown: number = 3000; 
+  private readonly KEEPER_SAFE_PADDING: number = 140; // extra pixels to keep between keeper and ball on miss
   
   constructor() {
     super();
@@ -281,8 +282,28 @@ export default class Goalkeeper extends PIXI.Container {
 
       const rotationDiff = targetRotation - startRotation;
       // Giảm hệ số di chuyển để hạn chế bán kính quay
-        let positionDiffX = (targetPosition.x - startX) * 0.25;
-        let positionDiffY = (targetPosition.y - startY) * 0.25;
+        // If we're given a world position to avoid (the ball), bias the target away from it
+        if (avoidWorldPos) {
+          try {
+            const dx = targetPosition.x - avoidWorldPos.x;
+            const dy = targetPosition.y - avoidWorldPos.y;
+            const d = Math.sqrt(dx*dx + dy*dy) || 1;
+            const keeperRadius = (typeof this.getCollisionRadius === 'function') ? this.getCollisionRadius() : 40;
+            const ballRadiusEstimate = 40;
+            const safeDist = Math.max(keeperRadius + ballRadiusEstimate + this.KEEPER_SAFE_PADDING, keeperRadius * 0.9 + this.KEEPER_SAFE_PADDING);
+            if (d < safeDist) {
+              const nx = dx / d;
+              const ny = dy / d;
+              targetPosition.x = avoidWorldPos.x + nx * safeDist;
+              targetPosition.y = avoidWorldPos.y + ny * safeDist;
+            }
+          } catch (e) {}
+        }
+
+        // Movement multiplier: when avoiding the ball, move much closer to the target (more aggressive)
+        let moveMul = avoidWorldPos ? 0.9 : 0.25;
+        let positionDiffX = (targetPosition.x - startX) * moveMul;
+        let positionDiffY = (targetPosition.y - startY) * moveMul;
         // Clamp per-animation movement relative to goal size so keeper can traverse the whole goal
         try {
           const scale = this.scale?.x || 1;
@@ -319,12 +340,13 @@ export default class Goalkeeper extends PIXI.Container {
         // Resolve a deflect position at mid-dive so ball deflects visually on keeper body
         if (!resolved && progress >= 0.45) {
           resolved = true;
-          // For failed catch, return position near ball if provided
+          // For failed catch, return a deflect position that avoids the actual ball
           if (avoidWorldPos) {
-            
-            resolve({ x: avoidWorldPos.x, y: avoidWorldPos.y });
+            try {
+              const deflect = this.getRandomDeflectPosition(avoidWorldPos);
+              resolve(deflect);
+            } catch (e) { resolve({ x: avoidWorldPos.x + 60, y: avoidWorldPos.y }); }
           } else {
-            
             resolve({ x: this.x, y: this.y });
           }
         }
