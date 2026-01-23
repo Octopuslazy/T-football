@@ -30,7 +30,7 @@ export default class Ball extends PIXI.Container {
   
   // Constants
   private readonly GOAL_DISTANCE = 600; // Khoảng cách từ điểm sút đến khung thành
-  private readonly GRAVITY = 1.1;
+    private readonly GRAVITY = 0.9;
   private readonly FRICTION = 0.99;
   private readonly GROUND_Y_OFFSET = 100; // Điều chỉnh mặt đất
   // Collision tuning (Matter.js-like response helpers)
@@ -142,9 +142,9 @@ export default class Ball extends PIXI.Container {
     private _groundLevelY = 0;
         private _powerMultiplier = 1.4; // slightly reduced shot power per request
         // Velocity caps to avoid extremely large forces from long/fast swipes
-        private readonly MAX_VX = 20;
-        private readonly MAX_VY = 20;
-        private readonly MAX_VZ = 40;
+        private readonly MAX_VX = 28;
+        private readonly MAX_VY = 30;
+        private readonly MAX_VZ = 60;
         // Minimum velocity floors so weak swipes still reach the net
         private readonly MIN_VX = 10;
         private readonly MIN_VY = 12;
@@ -922,6 +922,12 @@ export default class Ball extends PIXI.Container {
                       this._state = 'HIT_BAR_DOWN';
                       this._lastPostCollisionTime = now;
                       if (this._debugLogs) console.log('BALL: CROSSBAR_HIT_DOWN', { x:this.x.toFixed(1), y:this.y.toFixed(1), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2), incoming:incoming.toFixed(2) });
+                      if (this._debugLogs) {
+                          try {
+                              const cb2 = this.goal.crossbar.getBounds();
+                              console.log('CROSSBAR_DEBUG', { crossbarTop: cb2.y, crossbarBottom: cb2.y + cb2.height, ballY: this.y, altitude: this._altitude, z: this._z });
+                          } catch (e) {}
+                      }
                       return true;
                   } else {
                       // Regular crossbar deflection (upwards) using normal-based reflection
@@ -946,6 +952,12 @@ export default class Ball extends PIXI.Container {
                           this._forceScaleFrames = 2;
                       } catch (e) {}
                       if (this._debugLogs) console.log('BALL: CROSSBAR_HIT_UP', { x:this.x.toFixed(1), y:this.y.toFixed(1), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2), incoming:incoming.toFixed(2) });
+                      if (this._debugLogs) {
+                          try {
+                              const cb2 = this.goal.crossbar.getBounds();
+                              console.log('CROSSBAR_DEBUG', { crossbarTop: cb2.y, crossbarBottom: cb2.y + cb2.height, ballY: this.y, altitude: this._altitude, z: this._z });
+                          } catch (e) {}
+                      }
                       return true;
                   }
               }

@@ -180,6 +180,16 @@ import SoundController from './ControllUI/SoundController.js';
               bgSprite.anchor.set(0.5, 1);
               bgSprite.x = BASE_WIDTH / 2;
               bgSprite.y = BASE_HEIGHT;
+              // Scale to cover the base design area (cover behavior)
+              const applyCover = () => {
+                try {
+                  const tw = (tex.width && tex.width > 0) ? tex.width : (tex.baseTexture && tex.baseTexture.width) || 1;
+                  const th = (tex.height && tex.height > 0) ? tex.height : (tex.baseTexture && tex.baseTexture.height) || 1;
+                  const s = Math.max(BASE_WIDTH / tw, BASE_HEIGHT / th);
+                  bgSprite!.scale.set(s, s);
+                } catch (e) {}
+              };
+              if (tex.width && tex.width > 0) applyCover(); else try { (tex as any).on('update', applyCover); } catch (e) { setTimeout(applyCover, 50); }
               addToLayer(container, bgSprite, Layer.GROUND);
             }
           } else if (!container.children.includes(bgSprite)) {

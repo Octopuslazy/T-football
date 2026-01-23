@@ -47,7 +47,7 @@ export default class Goalkeeper extends PIXI.Container {
   
   // Set initial position (called when positioning goalkeeper)
   public setInitialPosition(x: number, y: number) {
-    this._initialPosition = { x, y };
+    this._initialPosition = { x, y: 0.9 * y };
     this.x = x;
     this.y = y;
   }
