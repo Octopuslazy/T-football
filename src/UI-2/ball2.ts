@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js';
 import { BASE_WIDTH, BASE_HEIGHT, HIT_RADIUS, COLLIDE_SCALE_THRESHOLD, TWEEN_ARC_FACTOR_DEFAULT } from '../constant/global';
+import spawnImpactEffect from '../UI/impact';
 
 export default class Ball2 extends PIXI.Container {
   private sprite: PIXI.Sprite;
@@ -97,6 +98,7 @@ export default class Ball2 extends PIXI.Container {
               this._hasDeflected = true;
               this._suppressArrival = true;
               try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
+              try { if (this.parent) spawnImpactEffect(this.parent as PIXI.Container, this.x, this.y); } catch (e) {}
               try { (this.keeper as any)?.fallDown?.(); } catch(e) {}
               const inVx = endX - startX;
               const inVy = endY - startY;
@@ -388,6 +390,7 @@ export default class Ball2 extends PIXI.Container {
         if (this.y >= groundY) {
           // hit ground
           this.y = groundY;
+          try { if (this.parent) spawnImpactEffect(this.parent as PIXI.Container, this.x, this.y); } catch (e) {}
           vy = -vy * restitution;
           // if very small bounce velocity, finish
           if (Math.abs(vy) < minBounceV) {
