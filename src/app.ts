@@ -93,6 +93,7 @@ import SoundController from './ControllUI/SoundController.js';
   let cameraLoopId: number | null = null;
   let inputBlocker: PIXI.Graphics | null = null;
   let inputLocked = false;
+  let isNavigatingHome = false;
   const startScreen = new StartScreen();
    let shotTimeoutId: any = null;
   
@@ -500,9 +501,31 @@ import SoundController from './ControllUI/SoundController.js';
 
   // Home button and navigation helper: return to StartScreen and clear UI
   function goHome() {
-    try { startScreenVisible = true; } catch (e) {}
+    try {
+      // prevent re-entrant Home navigation from rapid clicks
+      if (isNavigatingHome) return;
+      isNavigatingHome = true;
+      startScreenVisible = true;
+    } catch (e) {}
     try { if (nextBallTimer) { clearTimeout(nextBallTimer); nextBallTimer = null; } } catch (e) {}
-    // Remove all stage children to reset UI, then re-add start screen
+    // Remove and destroy major UI instances to ensure no lingering animations/listeners
+    try {
+      try { stopKeeperAutoShoot(); } catch (e) {}
+      // clear any scheduled next-ball timers
+      try { if (nextBallTimer) { clearTimeout(nextBallTimer); nextBallTimer = null; } } catch (e) {}
+      try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
+
+      // Destroy ball and keeper objects if present to remove event listeners and animation frames
+      try { if (currentBall) { try { if (currentBall.parent) currentBall.parent.removeChild(currentBall); } catch(e){} try { currentBall.destroy(); } catch(e){} currentBall = null; } } catch (e) {}
+      try { if (ball2) { try { if (ball2.parent) ball2.parent.removeChild(ball2); } catch(e){} try { (ball2 as any).destroy?.(); } catch(e){} ball2 = null; } } catch (e) {}
+      try { if (goalkeeper) { try { if (goalkeeper.parent) goalkeeper.parent.removeChild(goalkeeper); } catch(e){} try { goalkeeper.destroy(); } catch(e){} goalkeeper = null; } } catch (e) {}
+      try { if (goalkeeper2) { try { if (goalkeeper2.parent) goalkeeper2.parent.removeChild(goalkeeper2); } catch(e){} try { goalkeeper2.destroy(); } catch(e){} goalkeeper2 = null; } } catch (e) {}
+      try { if (goal) { try { if (goal.parent) goal.parent.removeChild(goal); } catch(e){} try { goal.destroy(); } catch(e){} goal = null; } } catch (e) {}
+      try { if (ground) { try { if (ground.parent) ground.parent.removeChild(ground); } catch(e){} try { ground.destroy(); } catch(e){} ground = null; } } catch (e) {}
+      try { if (bgSprite) { try { if (bgSprite.parent) bgSprite.parent.removeChild(bgSprite); } catch(e){} try { bgSprite.destroy(); } catch(e){} bgSprite = null; } } catch (e) {}
+      try { if (goalFrontLayer) { try { if (goalFrontLayer.parent) goalFrontLayer.parent.removeChild(goalFrontLayer); } catch(e){} goalFrontLayer = null; } } catch (e) {}
+      try { if (frameSprite) { try { if (frameSprite.parent) frameSprite.parent.removeChild(frameSprite); } catch(e){} frameSprite = null; } } catch (e) {}
+    } catch (e) {}
     try { container.removeChildren(); } catch (e) {}
     try { gameState.gameOver = true; gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
     try { currentBall = null; } catch (e) {}
@@ -523,7 +546,7 @@ import SoundController from './ControllUI/SoundController.js';
     try { const rb = document.getElementById('reset-btn') as HTMLButtonElement | null; if (rb) rb.disabled = true; } catch (e) {}
     // Clear any pending shot scheduling timeouts
     try { if (shotTimeoutId) { clearTimeout(shotTimeoutId); shotTimeoutId = null; } } catch (e) {}
-    
+    try { isNavigatingHome = false; } catch (e) {}
   }
 
   function ensureHomeButton() {
