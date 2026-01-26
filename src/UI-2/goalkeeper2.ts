@@ -10,6 +10,8 @@ export default class Goalkeeper2 extends PIXI.Container {
   private _isAnimating: boolean = false;
   private _homeX: number = 0;
   private _homeY: number = 0;
+  private _isDown: boolean = false;
+  private _fallAnimHandle: any = null;
   private _currentTargetIndex: number | null = null;
   private _isDragging: boolean = false;
   private _dragTime: number = 0;
@@ -71,7 +73,7 @@ export default class Goalkeeper2 extends PIXI.Container {
 
   // Multiplier applied to movement durations (1 = default speed).
   // Values >1 make motions slower (longer durations); values <1 make them faster.
-  private _moveDurationMultiplier: number = 0.65;
+  private _moveDurationMultiplier: number = 0.70;
 
   public setMoveDurationMultiplier(m: number) {
     if (typeof m !== 'number' || !isFinite(m)) return;
@@ -131,6 +133,87 @@ export default class Goalkeeper2 extends PIXI.Container {
 
   public refresh() {
     this.resize();
+  }
+
+  // Perform a fall-down animation: lean and move downward, then remain down until reset.
+  // If `groundY` is provided, align keeper to that world Y when finishing the fall.
+  public fallDown(groundY?: number) {
+    try {
+      // cancel any existing fall animation
+      if (this._fallAnimHandle) { cancelAnimationFrame(this._fallAnimHandle); this._fallAnimHandle = null; }
+      const startY = this.y;
+      const startRot = this.sprite ? this.sprite.rotation || 0 : 0;
+      const drop = Math.max(60, Math.min(140, Math.round(Math.abs(startY - this._homeY) * 0.6)));
+      let targetY = (typeof groundY === 'number') ? groundY : (startY + drop);
+      // If no explicit groundY provided, compute a reasonable frame bottom and
+      // ensure keeper doesn't fall below it (prevent visual sinking then bouncing).
+      if (typeof groundY !== 'number') {
+        try {
+          const frameBottom = this._computeGoalFrameBottomY();
+          if (frameBottom != null) {
+            // match ball's groundFactor default (~0.95) so keeper lines up visually
+            const maxGround = frameBottom * 0.95;
+            if (targetY > maxGround) targetY = maxGround;
+          }
+        } catch (e) {}
+      }
+      // Never move the keeper upward when asked to fall: only animate when targetY > startY
+      if (targetY <= startY) {
+        // snap rotation to flat and mark as down without moving up
+        try {
+          if (this.sprite) {
+            // if zone 4 (index 3) selected, do not rotate
+            if (this._currentTargetIndex === 5) this.sprite.rotation = startRot;
+            else this.sprite.rotation = (startRot >= 0) ? Math.PI / 2 : -Math.PI / 2;
+          }
+        } catch (e) {}
+        this._isAnimating = false;
+        this._isDown = true;
+        // ensure y is not raised
+        if (this.y > targetY) this.y = targetY;
+        return;
+      }
+      // fall to lie flat: choose ±90 degrees (PI/2) based on current tilt sign
+      const FLAT_ANGLE = Math.PI / 2;
+      let targetRot = (startRot >= 0) ? FLAT_ANGLE : -FLAT_ANGLE;
+      // If current target is zone 4 (1-based index 4 => internal index 3), do not rotate
+      try { if (this._currentTargetIndex === 5) targetRot = startRot; } catch (e) {}
+      let dur = 400;
+      try {
+        // slow down fall animation for zones 3 and 6 (indices 2 and 5)
+        if (this._currentTargetIndex === 2 || this._currentTargetIndex === 5) {
+          dur = Math.round(dur * 1.8);
+        }
+      } catch (e) {}
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const tt = Math.min(1, (now - t0) / dur);
+        const ease = tt < 0.5 ? 2 * tt * tt : -1 + (4 - 2 * tt) * tt;
+        this.y = startY + (targetY - startY) * ease;
+        try { if (this.sprite) this.sprite.rotation = startRot + (targetRot - startRot) * ease; } catch (e) {}
+        if (tt < 1) this._fallAnimHandle = requestAnimationFrame(step);
+        else {
+          this._fallAnimHandle = null;
+          this._isAnimating = false; // no longer actively trying to catch
+          this._isDown = true;
+        }
+      };
+      this._fallAnimHandle = requestAnimationFrame(step);
+    } catch (e) { this._isAnimating = false; this._isDown = true; }
+  }
+
+  // Immediately reset keeper to home (used when ball resets)
+  public resetToHomeImmediate() {
+    try {
+      if (this._fallAnimHandle) { cancelAnimationFrame(this._fallAnimHandle); this._fallAnimHandle = null; }
+      try { this.sprite.texture = PIXI.Texture.from('./arts/gkeeper.png'); } catch (e) {}
+      if (this.sprite) this.sprite.rotation = 0;
+      this.x = this._homeX;
+      this.y = this._homeY;
+      this._isAnimating = false;
+      this._isDown = false;
+      this._currentTargetIndex = null;
+    } catch (e) {}
   }
 
   // Public API: set rotation (degrees) for a specific target index.
@@ -207,23 +290,14 @@ export default class Goalkeeper2 extends PIXI.Container {
 
     this._isAnimating = true;
     let toDuration = Math.max(440, Math.min(700, 300 + (100 - powerPercent) * 3));
-    let returnDuration = Math.max(300, 400 - Math.round(powerPercent * 1.2));
     // apply external multiplier to slow down / speed up animations
     toDuration = Math.round(toDuration * this._moveDurationMultiplier);
-    returnDuration = Math.round(returnDuration * this._moveDurationMultiplier);
 
     // switch to catch animation texture while moving to the target
     try { this.sprite.texture = PIXI.Texture.from('./arts/gkeeper2.png'); } catch (e) {}
+    // On arrival, perform a fall-down animation and remain down until reset
     this.animateTo(target.x, target.y, toDuration, () => {
-      // wait 1s so catch pose is visible, then reset keeper to home
-      setTimeout(() => {
-        try { this.sprite.texture = PIXI.Texture.from('./arts/gkeeper.png'); } catch (e) {}
-        if (this.sprite) this.sprite.rotation = 0;
-        this.x = this._homeX;
-        this.y = this._homeY;
-        this._isAnimating = false;
-        this._currentTargetIndex = null;
-      }, 400);
+      try { this.fallDown(); } catch (e) {}
     }, targetRot);
   }
 
@@ -361,6 +435,28 @@ export default class Goalkeeper2 extends PIXI.Container {
     const ry = headLocalX * sX * Math.sin(theta) + headLocalY * sY * Math.cos(theta);
 
     return { x: containerX + rx, y: containerY + ry };
+  }
+
+  // Compute the bottom Y coordinate (ground) of the displayed `goal3` frame.
+  // Mirrors the layout used by Ball2: frame center at y = 1.4 * h / 2
+  private _computeGoalFrameBottomY(): number | null {
+    try {
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
+      const bgTex = PIXI.Texture.from('./arts/bg2.png');
+      const frameTex = PIXI.Texture.from('./arts/goal3.png');
+      if (!bgTex || !bgTex.width || !bgTex.height) return null;
+      if (!frameTex || !frameTex.width || !frameTex.height) return null;
+      const sx = w / bgTex.width;
+      const sy = h / bgTex.height;
+      const s = Math.max(sx, sy);
+      const frameSx = (bgTex.width * s) / frameTex.width;
+      const frameSy = (bgTex.height * s) / frameTex.height;
+      const fs = Math.min(frameSx, frameSy) * 0.75; // match GoalBackground.frameScale default
+      const frameDisplayH = frameTex.height * fs;
+      const frameCenterY = 1.4 * h / 2;
+      return frameCenterY + frameDisplayH / 2;
+    } catch (e) { return null; }
   }
 
   private _nearestTargetToPoint(screenX: number, screenY: number): { x: number; y: number } | null {

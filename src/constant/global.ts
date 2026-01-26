@@ -17,7 +17,7 @@ export const BASE_HEIGHT = 1920; // design logical height (portrait)
 // Arcade / fake-physics tuning constants used for Penalty Shootout game feel.
 // These are intentionally simple, deterministically driven values for tween-based
 // ball flights and keeper hit detection.
-export const COLLIDE_SCALE_THRESHOLD = 1.8; // sprite scale multiplier to enable keeper collision checks
+export const COLLIDE_SCALE_THRESHOLD = 1.5; // sprite scale multiplier to enable keeper collision checks
 export const HIT_RADIUS = 48; // pixels: distance from keeper head required to count as a save
 
 export const OPP_DURATION_MIN = 450; // ms (fast shot)

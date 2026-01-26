@@ -97,6 +97,7 @@ export default class Ball2 extends PIXI.Container {
               this._hasDeflected = true;
               this._suppressArrival = true;
               try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
+              try { (this.keeper as any)?.fallDown?.(); } catch(e) {}
               const inVx = endX - startX;
               const inVy = endY - startY;
               const inLen = Math.sqrt(inVx * inVx + inVy * inVy) || 1;
@@ -187,8 +188,8 @@ export default class Ball2 extends PIXI.Container {
           this._suppressArrival = false;
             this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false, TWEEN_ARC_FACTOR_DEFAULT, arcSide);
         } else {
-          // Goal scored: fall to the goal frame bottom (ground) with physics-like motion
-            this._fallToGoalGround(screen.x, screen.y, () => {
+          // Goal scored: let ball compute groundY and then ask keeper to fall to that Y
+          this._fallToGoalGround(screen.x, screen.y, () => {
             try { if (typeof this.onGoal === 'function') this.onGoal(); } catch (e) {}
             this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false, TWEEN_ARC_FACTOR_DEFAULT, arcSide);
           });
@@ -291,6 +292,7 @@ export default class Ball2 extends PIXI.Container {
               this._hasDeflected = true;
               this._suppressArrival = true;
               try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
+              try { (this.keeper as any)?.fallDown?.(); } catch(e) {}
               const inVx = destX - startX;
               const inVy = destY - startY;
               const inLen = Math.sqrt(inVx * inVx + inVy * inVy) || 1;
@@ -349,7 +351,16 @@ export default class Ball2 extends PIXI.Container {
       if (groundYBase == null) { if (cb) cb(); return; }
       // ground factor controls how far above the absolute frame bottom the ball lands.
       // Increase this factor to lower the ground (larger Y). Default tuned to 0.95.
+
       const groundY = groundYBase * this._groundFactor;
+
+      // Ask keeper to fall aligned to this groundY if keeper is actively animating.
+      try {
+        const k = this.keeper as any;
+        if (k && k.isAnimating && typeof k.fallDown === 'function') {
+          try { k.fallDown(groundY); } catch (e) {}
+        }
+      } catch (e) {}
 
       // physics params
       const gravity = 2200; // px / s^2 (tuned)

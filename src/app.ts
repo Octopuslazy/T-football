@@ -129,7 +129,7 @@ import SoundController from './ControllUI/SoundController.js';
         } catch (e) {}
       };
 
-      try { (ball2 as any).onShotComplete = () => { shotTimeoutId = setTimeout(() => scheduleNext(), 1000); }; } catch (e) {}
+      try { (ball2 as any).onShotComplete = () => { try { goalkeeper2?.resetToHomeImmediate?.(); } catch (e) {} shotTimeoutId = setTimeout(() => scheduleNext(), 1000); }; } catch (e) {}
       scheduleNext();
     } catch (e) {}
   }
@@ -863,6 +863,7 @@ import SoundController from './ControllUI/SoundController.js';
         try { gameState.ballsRemaining = GAME_CONFIG.MAX_BALLS; } catch (e) {}
         try { if (ballCountDisplay2) ballCountDisplay2.setCount(Math.max(0, gameState.ballsRemaining)); } catch (e) {}
         try { shotTimeoutId = setTimeout(() => { try { startKeeperAutoShoot(); } catch (e) {} ; shotTimeoutId = null; }, 2000); } catch (e) {}
+        try { goalkeeper2?.resetToHomeImmediate?.(); } catch (e) {}
       });
     }
     const hb = document.getElementById('keeper-home');
@@ -871,6 +872,7 @@ import SoundController from './ControllUI/SoundController.js';
         try { SoundController.playSfx?.(); } catch (e) {}
         try { popup.remove(); } catch (e) {}
         try { const ov = document.getElementById('popup-overlay'); if (ov) ov.remove(); } catch (e) {}
+        try { goalkeeper2?.resetToHomeImmediate?.(); } catch (e) {}
         try { goHome(); } catch (e) {}
       });
     }
