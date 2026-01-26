@@ -144,7 +144,7 @@ export default class Ball extends PIXI.Container {
   private onEnterFrame!: () => void;
     private _baseScale = 0.6;
     private _groundLevelY = 0;
-        private _powerMultiplier = 1.4; // slightly reduced shot power per request
+        private _powerMultiplier = 2.8; // doubled shot power (user request: x2)
         // Velocity caps to avoid extremely large forces from long/fast swipes
         private readonly MAX_VX = 28;
         private readonly MAX_VY = 30;
@@ -909,6 +909,9 @@ export default class Ball extends PIXI.Container {
               this._lastNetContactTime = Date.now();
               this._lastNetContactZ = this._z;
               try { this.checkAndLogScale('NET_CONTACT'); } catch (e) {}
+              // Add effect when ball contacts net
+              spawnImpactEffect(this.parent || this, this.x, this.y);
+              if (this._debugLogs) console.log('EFFECT: NET_CONTACT', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
               try {
                   const scaleNow = this.getVisualScale();
                   if (this.onNetContact) {
@@ -1081,6 +1084,7 @@ export default class Ball extends PIXI.Container {
                   const hitPointY = this.y;
                   const edgeThreshold = centerY + bounds.height * 0.25;
                   spawnImpactEffect(this.parent || this, this.x, this.y);
+                  if (this._debugLogs) console.log('EFFECT: CROSSBAR_IMPACT', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
                   const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
                   if (hitPointY > edgeThreshold) {
                       // Bar-down: send downwards and mark pending for ground check
@@ -1190,6 +1194,8 @@ export default class Ball extends PIXI.Container {
                       this.x += (side === 'left' ? 15 : -15);
                   }
                   spawnImpactEffect(this.parent || this, this.x, this.y);
+                  if (this._debugLogs) console.log('EFFECT: POST_INNER_IMPACT', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
+                  if (this._debugLogs) console.log('EFFECT: CROSSBAR_IMPACT', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
                   const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
                   const nudge = Math.max(4, Math.min(28, incoming * 0.35));
                   this._vx = inwardSign * nudge;
@@ -1228,6 +1234,7 @@ export default class Ball extends PIXI.Container {
                   this.x += (sign > 0 ? 20 : -20);
               }
               spawnImpactEffect(this.parent || this, this.x, this.y);
+              if (this._debugLogs) console.log('EFFECT: POST_OUTER_IMPACT', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
               const oldVx = this._vx;
               // Post normal (approx): horizontal from post center toward ball
               const nx = Math.sign(this.x - postCenterX) || 1;
@@ -1278,6 +1285,7 @@ export default class Ball extends PIXI.Container {
           if (inNet && this._vz > -5) {
               try {
                   spawnImpactEffect(this.parent || this, this.x, this.y);
+                  if (this._debugLogs) console.log('EFFECT: PREVENT_REST_GOAL', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
                   soundController.playSfx('./Assets/sound/click.mp3');
               } catch (e) {}
               // Use existing goal handler which also computes zone and smooths into net
@@ -1306,6 +1314,7 @@ export default class Ball extends PIXI.Container {
                   this.x += (sign > 0 ? 25 : -25);
               }
               spawnImpactEffect(this.parent || this, this.x, this.y);
+              if (this._debugLogs) console.log('EFFECT: PREVENT_REST_NUDGE', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
               this._vx = sign * nudge;
               this._vz = Math.sign(this._vz || 1) * Math.max(2, Math.abs(this._vz) * 0.25);
               this._vy = Math.max(2, Math.abs(this._vy) * 0.25 + nudge * 0.04);
@@ -1323,6 +1332,7 @@ export default class Ball extends PIXI.Container {
       if (this._goalPending) return;
       this._goalPending = true;
       spawnImpactEffect(this.parent || this, this.x, this.y);
+      if (this._debugLogs) console.log('EFFECT: GOAL_IMPACT', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
       // Visually settle into the net (keep moving so update() will smooth into net)
       this._targetZ = Math.min(this._z, this.GOAL_DISTANCE);
       this._vz = Math.min(this._vz, 3);
@@ -1405,6 +1415,7 @@ export default class Ball extends PIXI.Container {
               this._keeperCooldown = true;
               
               spawnImpactEffect(this.parent || this, this.x, this.y);
+              if (this._debugLogs) console.log('EFFECT: GOALKEEPER_SAVE', { x: this.x.toFixed(1), y: this.y.toFixed(1), z: this._z.toFixed(2) });
               console.log("Saved by Keeper!");
               
               // Ensure ball renders above the goalkeeper when saved
