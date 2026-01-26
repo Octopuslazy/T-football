@@ -66,6 +66,7 @@ export default class Ball extends PIXI.Container {
     private _targetZ: number | null = null; // Smoothly move _z toward this target when set
     private _everOverBar: boolean = false; // true if during this shot the ball was seen over the crossbar
     private _keeperCooldown = false;  // Cooldown sau khi thủ môn chạm bóng
+    private _keeperRequestInFlight: boolean = false; // prevent concurrent keeper requests
     private _allowGoalAttract = true; // Per-shot flag: disable attraction for mostly-horizontal swipes
     private _displayScale: number | null = null; // Smoothed visual scale to avoid snapping
     private _forceScaleFrames: number = 0; // skip lerp for a few frames after forced scale
@@ -74,6 +75,9 @@ export default class Ball extends PIXI.Container {
     private _ignoreGoalkeeper: boolean = false; // when true, skip goalkeeper interactions for this shot
     private _goalPending: boolean = false; // defer final goal decision until stop
     private _savedPending: boolean = false; // defer keeper-save decision until stop
+    private _netContacted: boolean = false; // whether we've already reported net contact this shot
+    private _lastNetContactTime: number | null = null;
+    private _lastNetContactZ: number | null = null;
 
   // External Refs
   public goal: any;
@@ -365,9 +369,13 @@ export default class Ball extends PIXI.Container {
     this._state = 'FLYING';
     // Ensure we allow goalkeeper checks for the new shot by default
     this._ignoreGoalkeeper = false;
+    this._keeperRequestInFlight = false; // reset any pending keeper requests
     this._ballUsed = false;
     this._goalScored = false;
     this._goalConfirmed = false;
+    this._netContacted = false;
+    this._pushedOffByPost = false; // reset post collision flag
+    this._targetZ = null; // clear any goal settling
         this._everOverBar = false;
     this._pendingBarDown = false;
     this._lastPostHitSide = null;
@@ -418,9 +426,10 @@ export default class Ball extends PIXI.Container {
 
     // Gentle attraction toward the goal center: only apply when the ball
     // is approaching the goal (near goal depth) so early flight is unaffected.
+    // Also disable attraction if ball was pushed off by post collision.
     const approachStart = this.GOAL_DISTANCE * 0.5; // start applying at 50% of distance
     const approachEnd = this.GOAL_DISTANCE + 200;   // small margin past goal plane
-    if (this._allowGoalAttract && this.goal && this.goal.goalSprite && this._vz > 0 && this._z >= approachStart && this._z <= approachEnd) {
+    if (this._allowGoalAttract && !this._pushedOffByPost && this.goal && this.goal.goalSprite && this._vz > 0 && this._z >= approachStart && this._z <= approachEnd) {
         try {
             const nb = this.goal.goalSprite.getBounds();
             const worldCenterX = nb.x + nb.width / 2;
@@ -450,7 +459,16 @@ export default class Ball extends PIXI.Container {
     const speedModClamped = Math.max(0.85, Math.min(1.15, _speedMod));
 
     // Move positions (will apply speed modulation below)
+    const oldX = this.x;
     this.x += this._vx * speedModClamped;
+    // Log large position changes that could indicate teleportation
+    if (this._debugLogs && Math.abs(this.x - oldX) > 50) {
+        console.log('BALL: LARGE_X_CHANGE', { 
+            oldX: oldX.toFixed(1), newX: this.x.toFixed(1), 
+            deltaX: (this.x - oldX).toFixed(1), vx: this._vx.toFixed(2), 
+            speedMod: speedModClamped.toFixed(3), state: this._state 
+        });
+    }
     // If a target Z is set (e.g. we want the ball to settle into the net),
     // smoothly interpolate _z toward it to avoid snapping the visual scale.
     if (this._targetZ !== null) {
@@ -490,17 +508,9 @@ export default class Ball extends PIXI.Container {
         }
     } catch (e) {}
 
-    // Notify listeners of net contact (visual scale) when goal plane is crossed
+    // Visual net-contact detection: check overlap between ball and goal.netSprite
     try {
-        if (this._goalConfirmed && this.onNetContact) {
-            const scaleNow = this.getVisualScale();
-            try { this.checkAndLogScale('NET_CONTACT'); } catch (e) {}
-            try { this.onNetContact(scaleNow); } catch (e) {}
-            // Only call once per crossing
-            this.onNetContact = undefined;
-            // After contacting the net (goal plane), render the ball beneath the goalkeeper
-            try { this.setBelowKeeper(); } catch (e) {}
-        }
+        this.checkNetContact();
     } catch (e) {}
 
     // 2. Perspective Projection (2.5D)
@@ -530,7 +540,13 @@ export default class Ball extends PIXI.Container {
     const currentGroundVisualY = this._groundLevelY + (targetGroundY - this._groundLevelY) * Math.min(1, tDepth);
     
     // Final Screen Y = Ground - Altitude
-    this.y = currentGroundVisualY - this._altitude;
+    const newY = currentGroundVisualY - this._altitude;
+    // Only block truly invalid coordinates (NaN/Infinity), allow off-screen positions
+    if (Number.isFinite(newY)) {
+        this.y = newY;
+    } else {
+        if (this._debugLogs) console.log('BALL: INVALID_Y_COORD', { newY, currentGroundVisualY, altitude: this._altitude });
+    }
 
     // If ball is not in the net and has passed the visual bottom of the net,
     // move its display layer to be right after the goal container so it renders
@@ -633,11 +649,35 @@ export default class Ball extends PIXI.Container {
         if (this._pendingBarDown) {
             const goalLineZ = this.GOAL_DISTANCE;
             if (this._z >= goalLineZ) {
-                this.handleGoal();
-                this._pendingBarDown = false;
-                // keep moving so net settle works
-                this._isMoving = true;
-                return;
+                // Before treating bar-down as a goal, verify the ball's world point is inside the net
+                try {
+                    if (this.goal && this.goal.netSprite && typeof this.goal.netSprite.getBounds === 'function') {
+                        const converter = this.parent || this;
+                        const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                        const nb = this.goal.netSprite.getBounds();
+                        const inside = (worldPt.x >= nb.x && worldPt.x <= nb.x + nb.width && worldPt.y >= nb.y && worldPt.y <= nb.y + nb.height);
+                        if (inside) {
+                            this.handleGoal();
+                            this._pendingBarDown = false;
+                            // keep moving so net settle works
+                            this._isMoving = true;
+                            return;
+                        } else {
+                            // Not actually inside the net visually — treat as miss
+                            this._pushedOffByPost = true;
+                            this._pendingBarDown = false;
+                        }
+                    } else {
+                        // No reliable net sprite bounds — fall back to previous behavior
+                        this.handleGoal();
+                        this._pendingBarDown = false;
+                        this._isMoving = true;
+                        return;
+                    }
+                } catch (e) {
+                    this._pushedOffByPost = true;
+                    this._pendingBarDown = false;
+                }
             } else {
                 // Miss: mark as pushed off and proceed with normal bounce
                 this._pushedOffByPost = true;
@@ -689,6 +729,22 @@ export default class Ball extends PIXI.Container {
     // Stop conditions
     if (this._z > 1500 || (Math.abs(this._vx) < 0.1 && Math.abs(this._vz) < 0.1 && this._altitude === 0)) {
         this.finishTurn();
+    }
+
+    // Emergency state validation: only reset for truly invalid states (NaN, Infinity)
+    // Do NOT reset when ball legitimately flies off-screen after post collision
+    if (!Number.isFinite(this.x) || !Number.isFinite(this.y) || !Number.isFinite(this._z)) {
+        if (this._debugLogs) console.log('BALL: EMERGENCY_RESET_INVALID', { x: this.x, y: this.y, z: this._z });
+        // Reset to center field position
+        this.x = BASE_WIDTH / 2;
+        this.y = (BASE_HEIGHT * 3) / 4;
+        this._z = 0.1;
+        this._vx = 0.1;
+        this._vy = 0.1;
+        this._vz = 0.1;
+        this._keeperRequestInFlight = false;
+        this._ignoreGoalkeeper = true;
+        this.finishTurn(); // end the shot immediately
     }
 
     // store previous position for next frame (used by swept collision tests)
@@ -765,20 +821,47 @@ export default class Ball extends PIXI.Container {
 
       // Log current scale/state for debugging at important moments
       public checkAndLogScale(eventName: string) {
-          try {
-              const visual = this.getVisualScale();
-              console.log(`BALL_SCALE_${eventName}`, {
-                  visualScale: Number(visual.toFixed(4)),
-                  displayScale: this._displayScale,
-                  baseScale: this._baseScale,
-                  x: Number(this.x.toFixed(1)),
-                  y: Number(this.y.toFixed(1)),
-                  z: Number(this._z.toFixed(2)),
-                  altitude: Number(this._altitude.toFixed(2)),
-                  state: this._state,
-                  timestamp: Date.now()
-              });
-          } catch (e) { try { console.log('BALL_SCALE_LOG_ERROR', e); } catch (ee) {} }
+              try {
+                  const visual = this.getVisualScale();
+                  const visualScaleVal = Number.isFinite(visual) ? Number((visual as number).toFixed(3)) : Number(visual || 0);
+                  const info: any = { event: eventName, state: this._state, x: this.x.toFixed(1), y: this.y.toFixed(1), z: Number(this._z.toFixed(2)), visualScale: visualScaleVal };
+                  // compute simple overlap flags (world-space)
+                  try {
+                      const conv = this.parent || this;
+                      const ballB = this.ballSprite.getBounds();
+                      const bx = ballB.x + ballB.width/2;
+                      const by = ballB.y + ballB.height/2;
+                      const br = Math.max(ballB.width, ballB.height)/2 * 0.9;
+                      const overlaps: any = {};
+                      if (this.goal && this.goal.netSprite) {
+                          const nb = this.goal.netSprite.getBounds();
+                          const cx = Math.max(nb.x, Math.min(bx, nb.x + nb.width));
+                          const cy = Math.max(nb.y, Math.min(by, nb.y + nb.height));
+                          overlaps.net = ((bx - cx)*(bx - cx) + (by - cy)*(by - cy)) <= (br*br + 1e-6);
+                      }
+                      if (this.goal && this.goal.leftPost) {
+                          const pb = this.goal.leftPost.getBounds();
+                          overlaps.leftPost = !(bx + br < pb.x || bx - br > pb.x + pb.width || by + br < pb.y || by - br > pb.y + pb.height);
+                      }
+                      if (this.goal && this.goal.rightPost) {
+                          const pb = this.goal.rightPost.getBounds();
+                          overlaps.rightPost = !(bx + br < pb.x || bx - br > pb.x + pb.width || by + br < pb.y || by - br > pb.y + pb.height);
+                      }
+                      if (this.goal && this.goal.crossbar) {
+                          const cb = this.goal.crossbar.getBounds();
+                          overlaps.crossbar = !(bx + br < cb.x || bx - br > cb.x + cb.width || by + br < cb.y || by - br > cb.y + cb.height);
+                      }
+                      if (this.goalkeeper) {
+                          try {
+                              const kb = this.goalkeeper.getBounds();
+                              overlaps.keeper = !(bx + br < kb.x || bx - br > kb.x + kb.width || by + br < kb.y || by - br > kb.y + kb.height);
+                          } catch (e) { overlaps.keeper = false; }
+                      }
+                      info.overlaps = overlaps;
+                  } catch (e) { info.overlapsError = true; }
+
+                  try { console.log('COLLISION_LOG', info); } catch (e) {}
+              } catch (e) { try { console.log('BALL_SCALE_LOG_ERROR', e); } catch (ee) {} }
       }
 
   private checkGameCollisions() {
@@ -799,12 +882,58 @@ export default class Ball extends PIXI.Container {
       }
   }
 
+  // Check visual overlap between ball and goal net sprite and fire onNetContact once
+  private checkNetContact() {
+      try {
+          if (this._netContacted) return;
+          if (!this.goal || !this.goal.netSprite) return;
+          if (!this.parent) return;
+          // Use world bounds for ball (more accurate than approximating radius)
+          const ballBounds = this.ballSprite.getBounds();
+          const ballCenterX = ballBounds.x + ballBounds.width / 2;
+          const ballCenterY = ballBounds.y + ballBounds.height / 2;
+          const ballRadius = Math.max(ballBounds.width, ballBounds.height) / 2 * 0.9;
+
+          // Net visual bounds (world coords)
+          const netBounds = this.goal.netSprite.getBounds();
+
+          // Closest point on rect
+          const closestX = Math.max(netBounds.x, Math.min(ballCenterX, netBounds.x + netBounds.width));
+          const closestY = Math.max(netBounds.y, Math.min(ballCenterY, netBounds.y + netBounds.height));
+          const dx = ballCenterX - closestX;
+          const dy = ballCenterY - closestY;
+          const dist2 = dx * dx + dy * dy;
+
+          if (dist2 <= (ballRadius * ballRadius)) {
+              this._netContacted = true;
+              this._lastNetContactTime = Date.now();
+              this._lastNetContactZ = this._z;
+              try { this.checkAndLogScale('NET_CONTACT'); } catch (e) {}
+              try {
+                  const scaleNow = this.getVisualScale();
+                  if (this.onNetContact) {
+                      try { this.onNetContact(scaleNow); } catch (e) {}
+                      this.onNetContact = undefined as any;
+                  }
+              } catch (e) {}
+              try { this.setBelowKeeper(); } catch (e) {}
+          }
+      } catch (e) { /* ignore */ }
+  }
+
   private checkPostCollisions(): boolean {
       if (this._ignorePostCollisions) return false;
       if (!this.goal) return false;
       const r = (this.ballSprite.width / 2) * 0.8; // Reduced hitbox for realism
 
       const now = Date.now();
+      // Short cooldown to prevent repeated collision retriggers causing "stuck" behavior
+      if (now - this._lastPostCollisionTime < 300) {
+          if (this._debugLogs) {
+              try { console.log('SKIP_POST_COLLISION_COOLDOWN', { since: now - this._lastPostCollisionTime }); } catch (e) {}
+          }
+          return false;
+      }
 
     // Compute prev/current positions in WORLD coordinates so we're comparing apples->apples
     const converter = this.parent || this;
@@ -876,6 +1005,8 @@ export default class Ball extends PIXI.Container {
                       const goalLocalForCheck = this.goal.toLocal(new PIXI.Point(bx, by));
                       if (dx < 12 && dy < 18 && this.goal.isInGoalArea(goalLocalForCheck.x, goalLocalForCheck.y) && this._z >= this.GOAL_DISTANCE) {
                       // Perfect top-bin into left corner
+                      // Temporarily disabled STUCK_IN_NET handling per request
+                      /*
                       spawnImpactEffect(this.parent || this, this.x, this.y);
                       soundController.playSfx('./Assets/sound/click.mp3');
                       soundController.playSfx('./Assets/sound/click.mp3');
@@ -889,12 +1020,13 @@ export default class Ball extends PIXI.Container {
                       this._ignorePostCollisions = true;
                       setTimeout(() => {
                           // after being stuck, drop it down
-                          this._state = 'FLYING';
+                          this._state = 'FLYING';ư
                           this._ignorePostCollisions = false;
                           this._vz = Math.max(4, this._vz * 0.2);
                           this._vy = -6;
                       }, 1400);
                       return true;
+                      */
                   }
               }
               // Right side
@@ -907,6 +1039,8 @@ export default class Ball extends PIXI.Container {
                       const dy = Math.abs(by - (cb.y + cb.height + 4));
                       const goalLocalForCheck = this.goal.toLocal(new PIXI.Point(bx, by));
                       if (dx < 12 && dy < 18 && this.goal.isInGoalArea(goalLocalForCheck.x, goalLocalForCheck.y) && this._z >= this.GOAL_DISTANCE) {
+                      // Temporarily disabled STUCK_IN_NET handling for right-side perfect top-bin
+                      /*
                       spawnImpactEffect(this.parent || this, this.x, this.y);
                       soundController.playSfx('./Assets/sound/click.mp3');
                       soundController.playSfx('./Assets/sound/click.mp3');
@@ -923,6 +1057,7 @@ export default class Ball extends PIXI.Container {
                           this._vy = -6;
                       }, 1400);
                       return true;
+                      */
                   }
               }
           }
@@ -956,6 +1091,7 @@ export default class Ball extends PIXI.Container {
                       this._state = 'HIT_BAR_DOWN';
                       this._lastPostCollisionTime = now;
                       if (this._debugLogs) console.log('BALL: CROSSBAR_HIT_DOWN', { x:this.x.toFixed(1), y:this.y.toFixed(1), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2), incoming:incoming.toFixed(2) });
+                      try { this.checkAndLogScale('CROSSBAR_HIT_DOWN'); } catch (e) {}
                       if (this._debugLogs) {
                           try {
                               const cb2 = this.goal.crossbar.getBounds();
@@ -977,6 +1113,14 @@ export default class Ball extends PIXI.Container {
                       this._ignorePostCollisions = true;
                       this._lastPostCollisionTime = now;
                       this._state = 'HIT_BAR_UP';
+                      // Clear any goal settling to prevent teleportation back
+                      this._targetZ = null;
+                      this._goalPending = false;
+                      if (this._debugLogs) {
+                          try {
+                              console.log('CROSSBAR_HIT_UP_DEBUG', { prevGlobal, currGlobal, crossbarBounds: this.goal.crossbar.getBounds(), vx: this._vx, vy: this._vy, vz: this._vz, incoming });
+                          } catch (e) {}
+                      }
                       // Ensure displayed scale is near the expected visual size after deflection
                       try {
                           const worldPt = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
@@ -986,6 +1130,7 @@ export default class Ball extends PIXI.Container {
                           this._forceScaleFrames = 2;
                       } catch (e) {}
                       if (this._debugLogs) console.log('BALL: CROSSBAR_HIT_UP', { x:this.x.toFixed(1), y:this.y.toFixed(1), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2), incoming:incoming.toFixed(2) });
+                      try { this.checkAndLogScale('CROSSBAR_HIT_UP'); } catch (e) {}
                       if (this._debugLogs) {
                           try {
                               const cb2 = this.goal.crossbar.getBounds();
@@ -1036,7 +1181,14 @@ export default class Ball extends PIXI.Container {
                   const inwardX = postCenterX + inwardSign * (bounds.width / 2 + r + 6);
                   // convert world inwardX back into local coordinates
                   const localIn = converter.toLocal(new PIXI.Point(inwardX, currGlobal.y));
-                  this.x = localIn.x;
+                  // Only block truly invalid coordinates (NaN/Infinity), allow off-screen positions
+                  if (Number.isFinite(localIn.x)) {
+                      this.x = localIn.x;
+                  } else {
+                      if (this._debugLogs) console.log('BALL: INVALID_POST_IN_COORD', { localIn, inwardX, currGlobal });
+                      // Fallback: manual positioning
+                      this.x += (side === 'left' ? 15 : -15);
+                  }
                   spawnImpactEffect(this.parent || this, this.x, this.y);
                   const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
                   const nudge = Math.max(4, Math.min(28, incoming * 0.35));
@@ -1046,6 +1198,7 @@ export default class Ball extends PIXI.Container {
                   this._lastPostCollisionTime = now;
                   this._state = 'HIT_POST_IN';
                   if (this._debugLogs) console.log('BALL: POST_IN', { side, x:this.x.toFixed(1), y:this.y.toFixed(1), incoming:incoming.toFixed(2), vx:this._vx.toFixed(2), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2) });
+                  try { this.checkAndLogScale('POST_IN'); } catch (e) {}
                   // Post-to-post drama: if recent opposite side inner hit, escalate
                   if (this._lastPostHitSide && this._lastPostHitSide !== side && (now - this._lastPostHitTime) < 800) {
                       // strong horizontal transfer
@@ -1066,7 +1219,14 @@ export default class Ball extends PIXI.Container {
               // Outer-face hit: bounce out proportional to incoming energy
               const outX = postCenterX + sign * (bounds.width / 2 + r + 12);
               const localOut = converter.toLocal(new PIXI.Point(outX, currGlobal.y));
-              this.x = localOut.x;
+              // Only block truly invalid coordinates (NaN/Infinity), allow off-screen positions
+              if (Number.isFinite(localOut.x)) {
+                  this.x = localOut.x;
+              } else {
+                  if (this._debugLogs) console.log('BALL: INVALID_POST_OUT_COORD', { localOut, outX, currGlobal });
+                  // Fallback: manual positioning away from post
+                  this.x += (sign > 0 ? 20 : -20);
+              }
               spawnImpactEffect(this.parent || this, this.x, this.y);
               const oldVx = this._vx;
               // Post normal (approx): horizontal from post center toward ball
@@ -1095,6 +1255,7 @@ export default class Ball extends PIXI.Container {
                   this._forceScaleFrames = 2;
               } catch (e) {}
               if (this._debugLogs) console.log('BALL: POST_OUT', { side, x:this.x.toFixed(1), y:this.y.toFixed(1), oldVx:oldVx.toFixed(2), vx:this._vx.toFixed(2), vy:this._vy.toFixed(2), vz:this._vz.toFixed(2) });
+              try { this.checkAndLogScale('POST_OUT'); } catch (e) {}
               // record side
               this._lastPostHitSide = side;
               this._lastPostHitTime = now;
@@ -1112,9 +1273,9 @@ export default class Ball extends PIXI.Container {
   private preventRestOnPost(obj: any, incoming: number, inNet: boolean, side: 'left'|'right'): boolean {
       try {
           // We never want the ball to remain physically stuck on a post.
-          // If the ball is inside the net, treat this as a goal immediately and let
-          // the normal goal handling settle the ball into the net (visual only).
-          if (inNet) {
+          // If the ball is inside the net AND moving toward the goal, treat as goal.
+          // But if ball is flying away from goal (negative vz), don't force a goal.
+          if (inNet && this._vz > -5) {
               try {
                   spawnImpactEffect(this.parent || this, this.x, this.y);
                   soundController.playSfx('./Assets/sound/click.mp3');
@@ -1135,7 +1296,15 @@ export default class Ball extends PIXI.Container {
               const sign = Math.sign(this.x - postCenterX) || 1;
               // Small outward nudge proportional to incoming energy but clamped
               const nudge = Math.max(6, Math.min(28, incoming * 0.5 + 6));
-              this.x = postCenterX + sign * (bounds.width / 2 + (this.ballSprite.width/2) * 0.8 + 8);
+              const newX = postCenterX + sign * (bounds.width / 2 + (this.ballSprite.width/2) * 0.8 + 8);
+              // Only block truly invalid coordinates (NaN/Infinity), allow off-screen positions
+              if (Number.isFinite(newX)) {
+                  this.x = newX;
+              } else {
+                  if (this._debugLogs) console.log('BALL: INVALID_PREVENT_REST_COORD', { newX, postCenterX, sign, bounds });
+                  // Fallback: manual nudge away from post
+                  this.x += (sign > 0 ? 25 : -25);
+              }
               spawnImpactEffect(this.parent || this, this.x, this.y);
               this._vx = sign * nudge;
               this._vz = Math.sign(this._vz || 1) * Math.max(2, Math.abs(this._vz) * 0.25);
@@ -1163,6 +1332,9 @@ export default class Ball extends PIXI.Container {
   }
 
   private triggerGoalkeeper() {
+            // avoid concurrent keeper requests
+            if (this._keeperRequestInFlight) return;
+            this._keeperRequestInFlight = true;
             // Robust zone lookup for keeper logic (avoid null when ball sits on posts)
             let zone = null as any;
             if (this.goal) {
@@ -1204,8 +1376,24 @@ export default class Ball extends PIXI.Container {
       const ballRadius = this.ballSprite.width / 2;
 
       this.goalkeeper.attemptCatch(this.x, this.y, zone, ballRadius).then((result: any) => {
+          // If the keeper result comes back but the keeper is now far from the ball,
+          // treat it as stale (another later keeper attempt may have already handled it).
+          try {
+              const keeper = this.goalkeeper;
+              if (keeper) {
+                  const dxk = (this.x - keeper.x);
+                  const dyk = (this.y - keeper.y);
+                  const dist = Math.sqrt(dxk*dxk + dyk*dyk);
+                  // If the keeper is more than ~220px away from current ball, ignore stale result
+                  if (dist > 220) {
+                      if (this._debugLogs) console.log('KEEPER_RESULT_STALE', { dist });
+                      this._keeperRequestInFlight = false;
+                      return;
+                  }
+              }
+          } catch (e) {}
           if (result.caught) {
-              try { this.checkAndLogScale('KEEPER_CONTACT'); } catch (e) {}
+              try { this.checkAndLogScale('KEEPER_SAVE'); } catch (e) {}
               // When keeper saves, send ball out and disable post/crossbar collisions
               this._ignorePostCollisions = true;
               this._savedPending = true; // mark pending save; finalize when ball stops
@@ -1234,9 +1422,17 @@ export default class Ball extends PIXI.Container {
               // Physics Deflection: compute impulse proportional to incoming energy
               const incoming = Math.sqrt(this._vx * this._vx + this._vz * this._vz + this._vy * this._vy);
               const impact = Math.max(18, Math.min(110, incoming * 1.2));
-              this._vz = -Math.sign(this._vz || 1) * impact * 1.1;
-              this._vy = Math.max(6, Math.abs(this._vy) * 0.5 + impact * 0.22);
-              this._vx = (Math.random() > 0.5 ? 1 : -1) * impact * 0.9;
+              const oldVx = this._vx, oldVy = this._vy, oldVz = this._vz;
+              this._vz = -Math.sign(this._vz || 1) * impact * 0.7; // reduced from 1.1 to 0.7
+              this._vy = Math.max(6, Math.abs(this._vy) * 0.5 + impact * 0.15); // reduced from 0.22 to 0.15
+              this._vx = (Math.random() > 0.5 ? 1 : -1) * impact * 0.4; // reduced from 0.9 to 0.4
+              if (this._debugLogs) {
+                  console.log('KEEPER_SAVE_VELOCITY_CHANGE', { 
+                      oldV: { x: oldVx.toFixed(2), y: oldVy.toFixed(2), z: oldVz.toFixed(2) },
+                      newV: { x: this._vx.toFixed(2), y: this._vy.toFixed(2), z: this._vz.toFixed(2) },
+                      impact: impact.toFixed(2), incoming: incoming.toFixed(2)
+                  });
+              }
               // Ensure further post collisions don't re-intercept the ball
               this._ignorePostCollisions = true;
 
@@ -1260,23 +1456,29 @@ export default class Ball extends PIXI.Container {
               // do not call saveCallback here; finalization occurs in finishTurn()
               
               setTimeout(() => this._keeperCooldown = false, 1000);
+              this._keeperRequestInFlight = false;
           }
           else {
-              try { this.checkAndLogScale('KEEPER_CONTACT'); } catch (e) {}
+              // Log a keeper miss distinctly so we can differentiate in the console
+              try {
+                  // include keeper->ball distance for diagnostics
+                  const keeper = this.goalkeeper;
+                  let kbInfo: any = { distance: null };
+                  try {
+                      if (keeper) {
+                          const dx = (this.x - keeper.x);
+                          const dy = (this.y - keeper.y);
+                          kbInfo.distance = Math.sqrt(dx*dx + dy*dy);
+                      }
+                  } catch (e) {}
+                  this.checkAndLogScale('KEEPER_MISS');
+                  try { console.log('KEEPER_MISS_INFO', kbInfo, result); } catch (e) {}
+              } catch (e) {}
+              this._keeperRequestInFlight = false;
               // Keeper missed: ignore future goalkeeper collisions for this shot
               this._ignoreGoalkeeper = true;
-
-              // Keeper missed: ensure the ball is rendered beneath the goalkeeper
-              try {
-                  const p = this.parent;
-                  if (p && this.goalkeeper && this.goalkeeper.parent === p && typeof (p as any).getChildIndex === 'function' && typeof (p as any).setChildIndex === 'function') {
-                      const keeperIndex = (p as any).getChildIndex(this.goalkeeper);
-                      const newIndex = Math.max(0, keeperIndex - 1);
-                      (p as any).setChildIndex(this, newIndex);
-                  }
-              } catch (e) {
-                  console.warn('ball.ts: failed to re-layer ball under goalkeeper', e);
-              }
+              // Keeper missed: do NOT change layering here — keep ball above goalkeeper
+              // until the ball actually contacts the net. This avoids visual tunnelling.
               // If the ball overlaps the keeper's current position, nudge the keeper away
               try {
                   const p = this.parent;
@@ -1332,9 +1534,49 @@ export default class Ball extends PIXI.Container {
       }
 
       // If a goal was previously requested to settle, finalize it now
-      const inNet = this.goal && (this._potentialGoal || this.goal.isInGoalArea(this.x, this.y)) && this._altitude < this.MAX_GOAL_HEIGHT;
-      if (this._goalPending || inNet) {
-          // finalize goal
+      // Finalize goal only if ball has stopped and its final position is inside the drawn goal area
+      // Also require that a goal candidate existed for this shot to avoid teleport/coordinate-mapping false positives.
+      let finalInDrawnArea = false;
+      try {
+          if (this.goal) {
+              // Prefer a world-space check using the ball's world point so transforms are consistent
+              try {
+                  if (this.goal.netSprite && typeof this.goal.netSprite.getBounds === 'function') {
+                      const nb = this.goal.netSprite.getBounds();
+                      const converter = this.parent || this;
+                      const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                      finalInDrawnArea = (worldPt.x >= nb.x && worldPt.x <= nb.x + nb.width && worldPt.y >= nb.y && worldPt.y <= nb.y + nb.height);
+                  }
+              } catch (e) { finalInDrawnArea = false; }
+
+              // Fallback to existing local goal area conversion if netSprite bounds unavailable
+              if (!finalInDrawnArea) {
+                  try {
+                      const converter = this.parent || this;
+                      const worldPt = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                      const localPt = this.goal.toLocal(worldPt);
+                      const ga = this.goal.getGoalArea();
+                      finalInDrawnArea = !!(localPt.x >= ga.x && localPt.x <= ga.x + ga.width && localPt.y >= ga.y && localPt.y <= ga.y + ga.height);
+                  } catch (e) { finalInDrawnArea = false; }
+              }
+          }
+      } catch (e) { finalInDrawnArea = false; }
+
+      // Only finalize goal if we actually had a robust goal candidate/confirmation during flight.
+      // Exclude transient `_potentialGoal` (which may be set briefly while flying) to avoid
+      // teleport/false-positive goals when the ball later leaves the net area.
+      // Allow scoring if we had an explicit pending goal/plane confirmation or if we contacted
+      // the net and remain at/behind the goal plane.
+      const now = Date.now();
+      const recentNetContact = !!(this._lastNetContactTime && (now - this._lastNetContactTime) < 2000 && (this._lastNetContactZ !== null && this._lastNetContactZ >= (this.GOAL_DISTANCE - 5)));
+      const hadGoalCandidate = !!(
+          this._goalPending ||
+          this._goalConfirmed ||
+          recentNetContact
+      );
+
+      if (finalInDrawnArea && hadGoalCandidate) {
+          // finalize goal only when ball stopped inside the drawn goal area
           this._goalPending = false;
           this._potentialGoal = false;
           this._goalScored = true;
@@ -1379,7 +1621,7 @@ export default class Ball extends PIXI.Container {
           return;
       }
 
-          // Not a goal: ball is out or stopped outside net — ensure it's rendered beneath the goalkeeper
+      // Not a goal: ball is out or stopped outside net — ensure it's rendered beneath the goalkeeper
           try {
               const p = this.parent;
               if (p && this.goalkeeper && this.goalkeeper.parent === p && typeof (p as any).getChildIndex === 'function' && typeof (p as any).setChildIndex === 'function') {
