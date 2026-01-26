@@ -162,7 +162,7 @@ export default class Goalkeeper2 extends PIXI.Container {
         // snap rotation to flat and mark as down without moving up
         try {
           if (this.sprite) {
-            // if zone 4 (index 3) selected, do not rotate
+            // preserve no-rotation for zone 5 (internal index 4)
             if (this._currentTargetIndex === 5) this.sprite.rotation = startRot;
             else this.sprite.rotation = (startRot >= 0) ? Math.PI / 2 : -Math.PI / 2;
           }
@@ -176,12 +176,15 @@ export default class Goalkeeper2 extends PIXI.Container {
       // fall to lie flat: choose ±90 degrees (PI/2) based on current tilt sign
       const FLAT_ANGLE = Math.PI / 2;
       let targetRot = (startRot >= 0) ? FLAT_ANGLE : -FLAT_ANGLE;
-      // If current target is zone 4 (1-based index 4 => internal index 3), do not rotate
+      // preserve no-rotation for zone 5 (internal index 4)
       try { if (this._currentTargetIndex === 5) targetRot = startRot; } catch (e) {}
       let dur = 400;
       try {
-        // slow down fall animation for zones 3 and 6 (indices 2 and 5)
-        if (this._currentTargetIndex === 2 || this._currentTargetIndex === 5) {
+        // slow down fall animation for zones 3 and 4 (indices 2 and 3)
+        if (this._currentTargetIndex === 3 || this._currentTargetIndex === 4) {
+          dur = Math.round(dur * 1.8);
+        }
+        if (this._currentTargetIndex === 1 || this._currentTargetIndex === 2 || this._currentTargetIndex === 6) {
           dur = Math.round(dur * 1.8);
         }
       } catch (e) {}
@@ -247,6 +250,12 @@ export default class Goalkeeper2 extends PIXI.Container {
   }
 
   private onDragStart(event: PIXI.FederatedPointerEvent) {
+    // Block player input until app's zoom/pivot sequence finishes in goalkeeper mode.
+    try { if ((window as any).__keeperModeZooming) return; } catch (e) {}
+    try {
+      const hb = document.getElementById('home-btn') as HTMLButtonElement | null;
+      if (hb && hb.disabled) return;
+    } catch (e) {}
     if (this._isAnimating) return;
     this._isDragging = true;
     this._dragTime = Date.now();
@@ -255,10 +264,20 @@ export default class Goalkeeper2 extends PIXI.Container {
 
   private onDragMove(event: PIXI.FederatedPointerEvent) {
     // optional: could show preview or adjust sprite while dragging
+    try { if ((window as any).__keeperModeZooming) return; } catch (e) {}
+    try {
+      const hb = document.getElementById('home-btn') as HTMLButtonElement | null;
+      if (hb && hb.disabled) return;
+    } catch (e) {}
     if (!this._isDragging || this._isAnimating) return;
   }
 
   private onDragEnd(event: PIXI.FederatedPointerEvent) {
+    try { if ((window as any).__keeperModeZooming) return; } catch (e) {}
+    try {
+      const hb = document.getElementById('home-btn') as HTMLButtonElement | null;
+      if (hb && hb.disabled) return;
+    } catch (e) {}
     if (!this._isDragging || this._isAnimating) return;
     this._isDragging = false;
     const endPos = { x: event.global.x, y: event.global.y };

@@ -337,6 +337,7 @@ import SoundController from './ControllUI/SoundController.js';
       // block all player input while zooming setup is pending
       try {
         inputLocked = true;
+        try { (window as any).__keeperModeZooming = true; } catch (e) {}
         if (!inputBlocker) {
           inputBlocker = new PIXI.Graphics();
           inputBlocker.beginFill(0x000000, 0);
@@ -451,6 +452,7 @@ import SoundController from './ControllUI/SoundController.js';
                                     if (inputBlocker) { try { container.removeChild(inputBlocker); } catch (e) {} ; try { inputBlocker.destroy(); } catch (e) {} inputBlocker = null; }
                                   } catch (e) {}
                                   try { inputLocked = false; } catch (e) {}
+                                  try { (window as any).__keeperModeZooming = false; } catch (e) {}
                                   // Start keeper auto-shoot chain now that zoom+follow began
                                   try { startKeeperAutoShoot(); } catch (e) {}
                     } catch (e) {}

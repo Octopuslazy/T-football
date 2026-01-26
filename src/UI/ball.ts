@@ -278,6 +278,7 @@ export default class Ball extends PIXI.Container {
   // --- INPUT HANDLING ---
 
   private _onPointerDown = (e: any) => {
+        try { if ((window as any).__gameInputLocked) return; } catch (e) {}
     if (this._isMoving || this._ballUsed) return;
     this._isDragging = true;
     this._dragPath = [];
@@ -290,6 +291,7 @@ export default class Ball extends PIXI.Container {
   };
 
   private _onPointerMove = (e: any) => {
+        try { if ((window as any).__gameInputLocked) return; } catch (e) {}
     if (!this._isDragging) return;
     const p = e.data.global;
     this._dragPath.push({ x: p.x, y: p.y });
@@ -309,6 +311,7 @@ export default class Ball extends PIXI.Container {
   };
 
   private _onPointerUp = (e: any) => {
+        try { if ((window as any).__gameInputLocked) return; } catch (e) {}
     if (!this._isDragging) return;
     this._isDragging = false;
     this._previewGraphics?.clear();
