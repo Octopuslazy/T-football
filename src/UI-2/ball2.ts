@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
+import { BASE_WIDTH, BASE_HEIGHT, HIT_RADIUS, COLLIDE_SCALE_THRESHOLD, TWEEN_ARC_FACTOR_DEFAULT } from '../constant/global';
 
 export default class Ball2 extends PIXI.Container {
   private sprite: PIXI.Sprite;
@@ -17,7 +17,7 @@ export default class Ball2 extends PIXI.Container {
   private _suppressArrival: boolean = false;
   private _tweenCancelled: boolean = false;
   private _hasDeflected: boolean = false;
-  private _collideScaleThreshold = 1.8; // scale multiplier to enable collision deflection (larger so snap is more visible)
+  private _collideScaleThreshold = COLLIDE_SCALE_THRESHOLD; // scale multiplier to enable collision deflection (larger so snap is more visible)
 
   // normalized target points (match goalkeeper2 targets ordering)
   private _targets = [
@@ -83,37 +83,39 @@ export default class Ball2 extends PIXI.Container {
         if (this.sprite && this.sprite.scale) this.sprite.scale.set(s, s);
       } catch (e) {}
 
-      // keeper collision: spatial overlap triggers deflect
+      // keeper collision: require precise head position match to save
       try {
         const keeperObj = this.keeper as any;
-        if (!this._hasDeflected && keeperObj && keeperObj.isAnimating && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
-          const ballB = this.getBounds();
-          const keeperB = keeperObj.getBounds();
-          const overlap = ballB.x < keeperB.x + keeperB.width && ballB.x + ballB.width > keeperB.x &&
-                          ballB.y < keeperB.y + keeperB.height && ballB.y + ballB.height > keeperB.y;
-          if (overlap) {
-            this._tweenCancelled = true;
-            this._hasDeflected = true;
-            this._suppressArrival = true;
-            try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
-            const inVx = endX - startX;
-            const inVy = endY - startY;
-            const inLen = Math.sqrt(inVx * inVx + inVy * inVy) || 1;
-            const revNx = -inVx / inLen;
-            const revNy = -inVy / inLen;
-            const deflectDist = Math.max(120, inLen * 0.5);
-            const deflectTargetX = this.x + revNx * deflectDist;
-            const deflectTargetY = this.y + revNy * deflectDist;
-            // short deflect tween (straight), then return home
-            this._tweenTo(deflectTargetX, deflectTargetY, 300, () => {
-              this._tweenTo(this._homeX, this._homeY, 400, () => {
-                try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(this._homeScale, this._homeScale); } catch(e){}
-                this._hasDeflected = false;
-                this._currentTargetIndex = null;
-                try { if (typeof this.onSave === 'function') this.onSave(); } catch (e) {}
+        if (!this._hasDeflected && keeperObj && keeperObj.isAnimating) {
+          const headPos = (typeof keeperObj.getActiveHeadPosition === 'function') ? keeperObj.getActiveHeadPosition() : null;
+          if (headPos && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
+            const dxh = headPos.x - this.x;
+            const dyh = headPos.y - this.y;
+            const dist = Math.sqrt(dxh * dxh + dyh * dyh);
+            if (dist <= HIT_RADIUS) {
+              this._tweenCancelled = true;
+              this._hasDeflected = true;
+              this._suppressArrival = true;
+              try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
+              const inVx = endX - startX;
+              const inVy = endY - startY;
+              const inLen = Math.sqrt(inVx * inVx + inVy * inVy) || 1;
+              const revNx = -inVx / inLen;
+              const revNy = -inVy / inLen;
+              const deflectDist = Math.max(120, inLen * 0.5);
+              const deflectTargetX = this.x + revNx * deflectDist;
+              const deflectTargetY = this.y + revNy * deflectDist;
+              // short deflect tween (straight), then return home
+              this._tweenTo(deflectTargetX, deflectTargetY, 300, () => {
+                this._tweenTo(this._homeX, this._homeY, 400, () => {
+                  try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(this._homeScale, this._homeScale); } catch(e){}
+                  this._hasDeflected = false;
+                  this._currentTargetIndex = null;
+                  try { if (typeof this.onSave === 'function') this.onSave(); } catch (e) {}
+                }, false, 0);
               }, false, 0);
-            }, false, 0);
-            return;
+              return;
+            }
           }
         }
       } catch (e) {}
@@ -122,7 +124,7 @@ export default class Ball2 extends PIXI.Container {
         // finished
         try { if (typeof this.onGoal === 'function') this.onGoal(); } catch (e) {}
         // return home
-        this._tweenTo(this._homeX, this._homeY, 200, () => { try { if (typeof this.onShotComplete === 'function') this.onShotComplete(); } catch (e) {} }, false, 1.8, 0);
+        this._tweenTo(this._homeX, this._homeY, 200, () => { try { if (typeof this.onShotComplete === 'function') this.onShotComplete(); } catch (e) {} }, false, TWEEN_ARC_FACTOR_DEFAULT, 0);
       }
     };
     requestAnimationFrame(animate);
@@ -183,15 +185,16 @@ export default class Ball2 extends PIXI.Container {
         } else if (this._suppressArrival) {
           // suppressed by external callback — just return home
           this._suppressArrival = false;
-            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false, 1.8, arcSide);
+            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false, TWEEN_ARC_FACTOR_DEFAULT, arcSide);
         } else {
           // Goal scored: fall to the goal frame bottom (ground) with physics-like motion
-          this._fallToGoalGround(screen.x, screen.y, () => {
+            this._fallToGoalGround(screen.x, screen.y, () => {
             try { if (typeof this.onGoal === 'function') this.onGoal(); } catch (e) {}
-            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false, 1.8, arcSide);
+            this._tweenTo(this._homeX, this._homeY, 200, () => this._finishShoot(), false, TWEEN_ARC_FACTOR_DEFAULT, arcSide);
           });
         }
-      }, true, 1.8, arcSide);
+      }, true, TWEEN_ARC_FACTOR_DEFAULT, arcSide);
+      // end tweenTo call
     }, 0);
   }
 
@@ -223,7 +226,7 @@ export default class Ball2 extends PIXI.Container {
     } catch (e) { return null; }
   }
 
-  private _tweenTo(destX: number, destY: number, duration: number, cb?: () => void, scaleUp?: boolean, arcFactor: number = 1.8, arcSide: number = 0) {
+  private _tweenTo(destX: number, destY: number, duration: number, cb?: () => void, scaleUp?: boolean, arcFactor: number = TWEEN_ARC_FACTOR_DEFAULT, arcSide: number = 0) {
     // Quadratic Bezier arc from current (start) to dest with a single control point.
     const startX = this.x;
     const startY = this.y;
@@ -273,56 +276,40 @@ export default class Ball2 extends PIXI.Container {
         if (this.sprite && this.sprite.scale) this.sprite.scale.set(s, s);
       } catch (e) {}
 
-      // collision detection: if keeper provided and ball is scaled beyond threshold
+      // collision detection: require keeper head to be at the impact point
       try {
         const keeperObj = this.keeper as any;
-        // Collision detection now relies on actual overlap (spatial), not on matching target indices.
         if (!this._hasDeflected && keeperObj && keeperObj.isAnimating && (this.sprite.scale.x >= this._homeScale * this._collideScaleThreshold)) {
-          const ballB = this.getBounds();
-          const keeperB = keeperObj.getBounds();
-          const overlap = ballB.x < keeperB.x + keeperB.width && ballB.x + ballB.width > keeperB.x &&
-                          ballB.y < keeperB.y + keeperB.height && ballB.y + ballB.height > keeperB.y;
-          if (overlap) {
-            console.log('Ball2 collision: overlap detected', {
-              ballScale: this.sprite?.scale?.x,
-              homeScale: this._homeScale,
-              scaleThreshold: this._homeScale * this._collideScaleThreshold,
-              ballPos: { x: this.x, y: this.y },
-              keeperBounds: keeperB,
-              ballBounds: ballB,
-              keeperAnimating: !!keeperObj.isAnimating,
-            });
-            // cancel the current tween and perform a deflection away from keeper center
-            this._tweenCancelled = true;
-            this._hasDeflected = true;
-            // suppress any arrival/pass-through animation and notify listener
-            this._suppressArrival = true;
-            try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
-            // compute reverse of incoming trajectory (start->dest) and send ball back along that line
-            const inVx = destX - startX;
-            const inVy = destY - startY;
-            const inLen = Math.sqrt(inVx * inVx + inVy * inVy) || 1;
-            const revNx = -inVx / inLen;
-            const revNy = -inVy / inLen;
-            // deflect distance and duration (send back a moderate distance)
-            const deflectDist = Math.max(120, inLen * 0.5);
-            const deflectTargetX = this.x + revNx * deflectDist;
-            const deflectTargetY = this.y + revNy * deflectDist;
-            // short deflect tween (straight), then return home
-            this._tweenTo(deflectTargetX, deflectTargetY, 300, () => {
-              this._tweenTo(this._homeX, this._homeY, 400, () => {
-                // reset scale and flags
-                try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(this._homeScale, this._homeScale); } catch(e){}
-                this._hasDeflected = false;
-                this._currentTargetIndex = null;
-                try { if (typeof this.onSave === 'function') this.onSave(); } catch (e) {}
-                if (cb) cb();
+          const headPos = (typeof keeperObj.getActiveHeadPosition === 'function') ? keeperObj.getActiveHeadPosition() : null;
+          if (headPos) {
+            const dxh = headPos.x - this.x;
+            const dyh = headPos.y - this.y;
+            const dist = Math.sqrt(dxh * dxh + dyh * dyh);
+            if (dist <= HIT_RADIUS) {
+              // cancel the current tween and perform a deflection away from keeper head
+              this._tweenCancelled = true;
+              this._hasDeflected = true;
+              this._suppressArrival = true;
+              try { if (typeof this.onDeflect === 'function') this.onDeflect(); } catch(e) {}
+              const inVx = destX - startX;
+              const inVy = destY - startY;
+              const inLen = Math.sqrt(inVx * inVx + inVy * inVy) || 1;
+              const revNx = -inVx / inLen;
+              const revNy = -inVy / inLen;
+              const deflectDist = Math.max(120, inLen * 0.5);
+              const deflectTargetX = this.x + revNx * deflectDist;
+              const deflectTargetY = this.y + revNy * deflectDist;
+              this._tweenTo(deflectTargetX, deflectTargetY, 300, () => {
+                this._tweenTo(this._homeX, this._homeY, 400, () => {
+                  try { if (this.sprite && this.sprite.scale) this.sprite.scale.set(this._homeScale, this._homeScale); } catch(e){}
+                  this._hasDeflected = false;
+                  this._currentTargetIndex = null;
+                  try { if (typeof this.onSave === 'function') this.onSave(); } catch (e) {}
+                  if (cb) cb();
+                }, false, 0);
               }, false, 0);
-            }, false, 0);
-            // reduce deflect arc curvature (use smaller arcFactor)
-            // (note: arcFactor is the 6th parameter of _tweenTo)
-            // replaced above call to include arcFactor=0.25
-            return;
+              return;
+            }
           }
         }
       } catch (e) {}

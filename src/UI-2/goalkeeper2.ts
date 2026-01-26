@@ -24,6 +24,8 @@ export default class Goalkeeper2 extends PIXI.Container {
           { x: 0.50, y: 0.63 },
           { x: 0.78, y: 0.63 },
   ];
+  // Optional per-target rotation overrides (radians). If a slot is null, fallback to computed rotation.
+  private _targetRotations: Array<number|null> = [];
 
   constructor() {
     super();
@@ -44,6 +46,9 @@ export default class Goalkeeper2 extends PIXI.Container {
     window.addEventListener('resize', this._onResize);
 
     this.resize();
+    // Default per-target rotations (degrees) mapped to internal targets [0..6]
+    // Order: [idx0,bottom-left, idx1,bottom-right, idx2,middle-left, idx3,middle-right, idx4,top-left, idx5,top-center, idx6,top-right]
+    try { this.setAllTargetRotations([-90, 90, -45, 45, -60, 0, 60]); } catch (e) {}
   }
 
   // Allow external code to provide the goal frame sprite so we can size
@@ -66,7 +71,7 @@ export default class Goalkeeper2 extends PIXI.Container {
 
   // Multiplier applied to movement durations (1 = default speed).
   // Values >1 make motions slower (longer durations); values <1 make them faster.
-  private _moveDurationMultiplier: number = 1;
+  private _moveDurationMultiplier: number = 0.65;
 
   public setMoveDurationMultiplier(m: number) {
     if (typeof m !== 'number' || !isFinite(m)) return;
@@ -126,6 +131,36 @@ export default class Goalkeeper2 extends PIXI.Container {
 
   public refresh() {
     this.resize();
+  }
+
+  // Public API: set rotation (degrees) for a specific target index.
+  public setTargetRotation(index: number, degrees: number | null) {
+    try {
+      if (typeof index !== 'number' || index < 0 || index >= this._targets.length) return;
+      if (!this._targetRotations) this._targetRotations = [];
+      this._targetRotations[index] = (degrees === null) ? null : (degrees * Math.PI / 180);
+    } catch (e) {}
+  }
+
+  // Public API: bulk set rotations (degrees). Array length should match targets; use null to clear.
+  public setAllTargetRotations(degreesArr: Array<number|null>) {
+    try {
+      this._targetRotations = degreesArr.map(d => d === null ? null : (d * Math.PI / 180));
+    } catch (e) { this._targetRotations = []; }
+  }
+
+  // Get configured rotation (radians) for a target index, or null if none
+  public getTargetRotation(index: number): number | null {
+    try { return (this._targetRotations && this._targetRotations[index] != null) ? this._targetRotations[index] : null; } catch (e) { return null; }
+  }
+
+  // Return the current head position in container (world) coordinates when animating.
+  // Returns null if not animating or on error.
+  public getActiveHeadPosition(): { x: number; y: number } | null {
+    try {
+      if (!this._isAnimating) return null;
+      return this._getHeadWorldPos(this.x, this.y, this.sprite.rotation || 0);
+    } catch (e) { return null; }
   }
 
   private onDragStart(event: PIXI.FederatedPointerEvent) {
@@ -218,7 +253,8 @@ export default class Goalkeeper2 extends PIXI.Container {
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d < bestDist) { bestDist = d; bestIdx = i; }
       }
-      if (bestDist > Math.max(80, Math.min(w, h) * 0.12)) return null;
+      // Increase acceptance radius slightly so side targets (esp. middle-right) are easier to hit
+      if (bestDist > Math.max(120, Math.min(w, h) * 0.16)) return null;
       return bestIdx;
     } catch (e) { return null; }
   }
@@ -257,16 +293,54 @@ export default class Goalkeeper2 extends PIXI.Container {
       // ignore and assume provided coords are normalized
     }
 
-    // center-ish target -> no rotation (jump only)
-    if (Math.abs(nx - 0.5) < 0.06) return 0;
-    // sign: left negative, right positive (mirror) — inverted per request
-    const sign = nx < 0.5 ? -1 : 1;
-    // decide magnitude by vertical zone (bottom, mid, top)
-    let deg = 35;
-    if (ny >= 0.57) deg = 90; // bottom
-    else if (ny >= 0.44) deg = 35; // mid
-    else deg = 50; // top
-    return sign * deg * Math.PI / 180;
+    // If the target is near center, use small/no rotation
+    if (Math.abs(nx - 0.5) < 0.06 && Math.abs(ny - 0.5) < 0.06) return 0;
+
+    // Convert normalized target to screen coords so we can compute a realistic vector
+    try {
+      const w = BASE_WIDTH;
+      const h = BASE_HEIGHT;
+      const tex = PIXI.Texture.from('./arts/bg2.png');
+      const sx = tex && tex.width ? w / tex.width : 1;
+      const sy = tex && tex.height ? h / tex.height : 1;
+      const s = Math.max(sx, sy);
+      const imgW = (tex && tex.width) ? tex.width * s : w;
+      const imgH = (tex && tex.height) ? tex.height * s : h;
+      const imgLeft = w / 2 - imgW / 2;
+      const imgTop = h / 2 - imgH / 2;
+      const tx = imgLeft + nx * imgW;
+      const ty = imgTop + ny * imgH;
+
+      // If a per-target rotation is configured, prefer it.
+      const idx = this._indexForScreenTarget(tx, ty);
+      if (idx !== null) {
+        const preset = (this._targetRotations && this._targetRotations[idx] != null) ? this._targetRotations[idx] : null;
+        if (preset != null) return preset;
+      }
+
+      // Vector from keeper home to target
+      const vx = tx - this._homeX;
+      const vy = ty - this._homeY;
+      const vlen = Math.sqrt(vx * vx + vy * vy) || 1;
+      // angle toward target (radians)
+      const ang = Math.atan2(vy, vx);
+      // scale down so rotation is not full-body over-rotation
+      const scale = 0.55; // tuning: how much the keeper leans toward the target
+      let rot = ang * scale;
+      // clamp to reasonable human-like tilt (±75 degrees)
+      const MAX_DEG = 75 * Math.PI / 180;
+      if (rot > MAX_DEG) rot = MAX_DEG;
+      if (rot < -MAX_DEG) rot = -MAX_DEG;
+      // add a small random nuance so movements feel less mechanical
+      const nuance = (Math.random() - 0.5) * (6 * Math.PI / 180); // ±6 degrees
+      rot += nuance;
+      return rot;
+    } catch (e) {
+      // fallback conservative behavior
+      const sign = nx < 0.5 ? -1 : 1;
+      const deg = 40;
+      return sign * deg * Math.PI / 180;
+    }
   }
 
   // compute head world position for a given container position and rotation
@@ -313,7 +387,8 @@ export default class Goalkeeper2 extends PIXI.Container {
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d < bestDist) { bestDist = d; best = { x: tx, y: ty }; }
       }
-      if (bestDist > Math.max(80, Math.min(w, h) * 0.12)) return null;
+      // Make point-based nearest-target selection more forgiving (wider radius)
+      if (bestDist > Math.max(120, Math.min(w, h) * 0.16)) return null;
       return best;
     } catch (e) { return null; }
   }
@@ -350,8 +425,9 @@ export default class Goalkeeper2 extends PIXI.Container {
         const dot = nx * sx + ny * sy;
         if (dot > bestDot) { bestDot = dot; best = { x: tx, y: ty }; }
       }
-      // require reasonably aligned swipe (dot ~ cos(angle)); 0.4 ~= ~66deg
-      if (bestDot < 0.35) return null;
+      // require reasonably aligned swipe (dot ~ cos(angle)). Lower the bar slightly
+      // so off-angle swipes can still select nearby side targets.
+      if (bestDot < 0.25) return null;
       return best;
     } catch (e) { return null; }
   }
