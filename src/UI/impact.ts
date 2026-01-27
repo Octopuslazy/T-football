@@ -4,7 +4,11 @@ import * as PIXI from 'pixi.js';
  * Spawn a short-lived impact burst effect at (x,y) inside `parent`.
  * Uses GSAP if available on `window.gsap`, otherwise falls back to a PIXI.Ticker tween.
  */
+// Toggle to enable/disable impact effects globally (set false to disable)
+export let impactsEnabled = false;
+
 export function spawnImpactEffect(parent: PIXI.Container, x: number, y: number, options?: { color?: number, durationMs?: number }) {
+  if (!impactsEnabled) return;
   const color = options?.color ?? 0xFFEE88;
   const duration = options?.durationMs ?? 300; // ms
 
