@@ -31,7 +31,15 @@ export default class Ball extends PIXI.Container {
     private readonly VANISHING_POINT_Z = 870;
     private readonly GRAVITY = 0.9;
     private readonly FRICTION = 0.96; // Tăng ma sát lên xíu để bóng bay đầm hơn
-    private readonly MAX_GOAL_HEIGHT = 140;
+    private readonly FALLBACK_MAX_GOAL_HEIGHT = 140;
+    private get MAX_GOAL_HEIGHT(): number {
+        try {
+            if (this.goal && this.goal.goalSprite && typeof this.goal.goalSprite.y === 'number') {
+                return this.goal.goalSprite.y;
+            }
+        } catch (e) {}
+        return this.FALLBACK_MAX_GOAL_HEIGHT;
+    }
 
     // Physics Helpers
     private dot3 = (ax:number,ay:number,az:number, bx:number,by:number,bz:number) => ax*bx + ay*by + az*bz;
@@ -237,12 +245,12 @@ export default class Ball extends PIXI.Container {
         const now = performance.now();
         const duration = now - this._chargeStartTime;
         
-        // [FIX 1]: Thêm điểm cuối NGAY LẬP TỨC
+        // [QUAN TRỌNG]: Luôn thêm điểm cuối vào mảng TRƯỚC KHI kiểm tra
         const endPos = e.data.global;
         if (!this._dragPath) this._dragPath = [];
         this._dragPath.push({ x: endPos.x, y: endPos.y });
 
-        // [FIX 2]: Fallback nếu mảng thiếu điểm
+        // Tạo dữ liệu giả nếu mảng thiếu điểm (tránh lỗi logic)
         if (this._dragPath.length < 2) {
              const p = {x: endPos.x, y: endPos.y};
              this._dragPath = [p, {x: p.x, y: p.y - 10}];
@@ -253,9 +261,10 @@ export default class Ball extends PIXI.Container {
         const dy = endPos.y - startPos.y; 
         const dist = Math.sqrt(dx*dx + dy*dy);
 
-        // Deadzone
+        // Nếu vuốt quá ngắn (<10px) thì bỏ qua
         if (dist < 10) return;
 
+        // --- TÍNH TOÁN LỰC ---
         const screenW = window.innerWidth || BASE_WIDTH;
         const screenH = window.innerHeight || BASE_HEIGHT;
 
@@ -263,30 +272,21 @@ export default class Ball extends PIXI.Container {
         const dxPercent = dx / screenW;
         const dyPercent = dy / screenH;
 
-        // [FIX 3]: Điều chỉnh lực sút vừa phải (Không quá 55 như cũ)
-        // Hệ số 18000 sẽ cho ra tốc độ khoảng 25-35, vừa đủ đẹp
-        let speed = (distPercent / Math.max(duration, 140)) * 18000; 
-
-        // [FIX 4]: Kẹp tốc độ trong khoảng [22, 38]
-        // 22: Đủ để thắng ma sát lăn tới gôn
-        // 38: Không quá nhanh để mắt kịp nhìn thấy
-        speed = Math.max(22, Math.min(speed, 38));
+        let speed = (distPercent / Math.max(duration, 140)) * 20000; 
+        // Tốc độ tối thiểu 24 để thắng ma sát
+        speed = Math.max(5, Math.min(speed, 40));
 
         this._curveFactor = this.calculateCurveFactor(startPos, endPos, this._dragPath);
-        this._vx = dxPercent * 75 + this._curveFactor * 7;
-        
-        // [FIX 5]: Tăng độ bổng tối thiểu (Min VY = 1)
-        this._vy = Math.max(1, Math.abs(dyPercent) * 30); 
-
+        this._vx = dxPercent * 80 + this._curveFactor * 10;
+        this._vy = Math.max(6, Math.abs(dyPercent) * 34); 
         this._vz = speed;
 
-        // Start Moving
+        // Reset trạng thái
         this._z = 0;
         this._altitude = 0;
         this._isMoving = true;
         this._state = 'FLYING';
         
-        // Reset flags
         this._ignoreGoalkeeper = false;
         this._keeperRequestInFlight = false;
         this._ballUsed = false;
@@ -300,14 +300,8 @@ export default class Ball extends PIXI.Container {
         this._lastPostHitSide = null;
 
         try { this.setAboveKeeper(); } catch (e) {}
-
-        if (this._debugLogs) {
-            console.log('✅ SHOT FIRED! Valid.', {
-                speed: speed.toFixed(2),
-                vy: this._vy.toFixed(2),
-                dist: dist.toFixed(0)
-            });
-        }
+        
+        if (this._debugLogs) console.log('SHOT FIRED', {speed, vy: this._vy});
     };
 
     private calculateCurveFactor(start: {x:number, y:number}, end: {x:number, y:number}, path: any[]) {
@@ -425,6 +419,22 @@ export default class Ball extends PIXI.Container {
                 }
             }
         } catch (e) {}
+        this.checkInnerBarCollision();
+        try { this.checkNetContact(); } catch (e) {}
+
+        // 3. Layering
+        try {
+            if (this.parent && this.goal) {
+                if (this._z > this.GOAL_DISTANCE - 22 || this._netContacted) {
+                    const goalIndex = this.parent.getChildIndex(this.goal);
+                    this.parent.setChildIndex(this, Math.max(0, goalIndex - 1));
+                } else {
+                    if (!this._savedPending && !this._ignoreGoalkeeper) {
+                         this.setAboveKeeper();
+                    }
+                }
+            }
+        } catch (e) {}
 
         // 4. Scale
         let finalScale = typeof (this as any).finalScaleNow !== 'undefined' ? (this as any).finalScaleNow : this.computeFinalScaleForY((this.parent||this).toGlobal(new PIXI.Point(this.x, this.y)).y);
@@ -432,8 +442,7 @@ export default class Ball extends PIXI.Container {
         let vanishingAlpha = 1.0;
         let vanishingScaleFactor = 1.0;
 
-        // [LOGIC MỚI]: Chỉ áp dụng tan biến nếu bóng KHÔNG PHẢI là bàn thắng
-        // Bóng bàn thắng (vào lưới) sẽ giữ nguyên scale/alpha để nhìn thấy rõ
+        // Xác định bóng có phải là bàn thắng không
         const isGoal = this._netContacted || 
                        this._goalPending || 
                        this._goalConfirmed || 
@@ -441,16 +450,17 @@ export default class Ball extends PIXI.Container {
                        this._goalScored ||
                        (this.goal && this.goal.isInGoalArea(this.x, this.y) && this._altitude < this.MAX_GOAL_HEIGHT);
 
+        // [QUAN TRỌNG]: Nếu bóng đã qua vạch vôi VÀ KHÔNG PHẢI bàn thắng
+        // thì áp dụng hiệu ứng biến mất, BẤT KỂ ĐỘ CAO (Altitude/Y) là bao nhiêu.
         if (this._z > this.GOAL_DISTANCE && !isGoal) {
-            // Bóng ra ngoài (xa hơn gôn) -> Áp dụng hiệu ứng biến mất
             const totalVanishingDist = this.VANISHING_POINT_Z - this.GOAL_DISTANCE;
             const distPastGoal = this._z - this.GOAL_DISTANCE;
             
             // Tỷ lệ biến mất (0 -> 1)
             const vanishingRatio = Math.min(1, Math.max(0, distPastGoal / totalVanishingDist));
             
-            // Mờ dần
-            vanishingAlpha = 1.0 - Math.pow(vanishingRatio, 1.5);
+            // Mờ dần (Dùng mũ 1.2 để mờ nhanh hơn ở đoạn đầu)
+            vanishingAlpha = 1.0 - Math.pow(vanishingRatio, 1.2);
             // Nhỏ dần thêm
             vanishingScaleFactor = 1.0 - (vanishingRatio * 0.7);
 
@@ -461,7 +471,6 @@ export default class Ball extends PIXI.Container {
                 return; 
             }
         } else {
-            // Bóng chưa qua vạch vôi HOẶC là bàn thắng -> Hiển thị bình thường
             vanishingAlpha = 1.0;
             vanishingScaleFactor = 1.0;
         }
@@ -476,7 +485,7 @@ export default class Ball extends PIXI.Container {
             finalScale = Math.min(finalScale, zScale);
         }
 
-        // Nhân thêm scale biến mất (chỉ tác dụng khi ra ngoài)
+        // Nhân thêm scale biến mất
         finalScale *= vanishingScaleFactor;
 
         let dScale: number = (this._displayScale !== null) ? this._displayScale : finalScale;
@@ -496,7 +505,7 @@ export default class Ball extends PIXI.Container {
         
         // 5. Collisions
         try { this.checkNetContact(); } catch (e) {}
-        this.checkInnerBarCollision();
+        
 
         if (this._altitude <= 0) {
             this._altitude = 0;
@@ -722,28 +731,63 @@ export default class Ball extends PIXI.Container {
 
     private checkInnerBarCollision() {
         if (!this.goal || !this.goal.frontLeftVis || !this.goal.frontRightVis) return;
-        if (this._z < this.GOAL_DISTANCE + 15) return;
-        if (this._z > 850) return;
+        
+        // 1. Chỉ check khi bóng đã qua vạch vôi
+        if (this._z < this.GOAL_DISTANCE + 10) return;
+        
+        // 2. Nếu bóng bay quá xa (đã tan biến) thì thôi
+        if (this._z > 900) return;
+
+        // 3. Nếu bóng bay cao hơn xà ngang thì thôi
         if (this._altitude > this.MAX_GOAL_HEIGHT) return;
 
         const checkHit = (obj: PIXI.Graphics) => {
             if (!obj || !obj.visible) return false;
             try {
                 const b = obj.getBounds();
-                const ballB = this.ballSprite.getBounds();
-                const pad = ballB.width * 0.2; 
-                return (ballB.x + ballB.width - pad > b.x && ballB.x + pad < b.x + b.width && ballB.y + ballB.height - pad > b.y && ballB.y + pad < b.y + b.height);
+                
+                // Lấy vị trí bóng hiện tại (Global)
+                const ballPos = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
+                
+                // [QUAN TRỌNG] Dùng bán kính cố định để check thay vì getBounds() của Sprite
+                // Lý do: Sprite có thể bị scale nhỏ xíu do hiệu ứng vanishing, làm hỏng va chạm.
+                // Ta giả định bán kính vật lý của bóng khoảng 15-20px trên màn hình.
+                const ballRadius = 20; 
+
+                // Kiểm tra va chạm hình chữ nhật (AABB) với hình tròn
+                const closestX = Math.max(b.x, Math.min(ballPos.x, b.x + b.width));
+                const closestY = Math.max(b.y, Math.min(ballPos.y, b.y + b.height));
+                
+                const dx = ballPos.x - closestX;
+                const dy = ballPos.y - closestY;
+                
+                return (dx * dx + dy * dy) < (ballRadius * ballRadius);
             } catch (e) { return false; }
         };
 
+        // A. Chạm thanh TRÁI
         if (checkHit(this.goal.frontLeftVis)) {
-            this._vx = 9.5; this._vy = -6.0; this._vz *= 0.1; this.ballSprite.rotation += 0.5;
-            this._state = 'STUCK_IN_NET'; this._netContacted = true;
+            this._vx = 9.5; 
+            this._vy = -6.0; 
+            this._vz *= 0.1; 
+            this.ballSprite.rotation += 0.5;
+            
+            // Đánh dấu va chạm ĐỂ NGĂN CHẶN BÓNG BIẾN MẤT
+            this._state = 'STUCK_IN_NET'; 
+            this._netContacted = true;
+            
             try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch(e){}
         }
+        // B. Chạm thanh PHẢI
         else if (checkHit(this.goal.frontRightVis)) {
-            this._vx = -9.5; this._vy = -6.0; this._vz *= 0.1; this.ballSprite.rotation -= 0.5;
-            this._state = 'STUCK_IN_NET'; this._netContacted = true;
+            this._vx = -9.5; 
+            this._vy = -6.0; 
+            this._vz *= 0.1; 
+            this.ballSprite.rotation -= 0.5;
+            
+            this._state = 'STUCK_IN_NET'; 
+            this._netContacted = true;
+            
             try { spawnImpactEffect(this.parent || this, this.x, this.y); } catch(e){}
         }
     }
