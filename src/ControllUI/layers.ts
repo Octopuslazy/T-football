@@ -1,38 +1,30 @@
-import { Container} from 'pixi.js';
+import { Container } from 'pixi.js';
 import * as PIXI from 'pixi.js';
 
 export const Layer = {
   GROUND: 0,
-  NET: 1,
-  BALL: 3,
-  GOAL_FRONT: 2,
-  OVERLAY: 4,
+  NET: 1,           // Lưới (Thấp nhất)
+  BALL_IN_GOAL: 2,  // Bóng (Khi đã chui vào gôn)
+  KEEPER: 3,        // Thủ môn
+  GOAL_FRONT: 4,    // Cột dọc, Xà ngang (Cao nhất để che tất cả)
+  BALL_FLYING: 5,   // Bóng (Khi đang bay ở ngoài)
+  OVERLAY: 6,
 };
 
 export function setLayer(obj: PIXI.Container, layer: number) {
   (obj as any).__layer = layer;
+  obj.zIndex = layer; // PixiJS v8 hỗ trợ zIndex trực tiếp, dùng luôn cho mượt
 }
 
 export function addToLayer(container: Container, child: PIXI.Container, layer: number) {
   setLayer(child, layer);
   container.addChild(child);
-  applyLayerOrder(container);
+  container.sortableChildren = true; // Bật tính năng tự sắp xếp của Pixi
 }
 
+// Hàm này có thể không cần gọi thủ công nữa nếu dùng sortableChildren = true
 export function applyLayerOrder(container: Container) {
-  const sorted = [...container.children].sort((a, b) => {
-    const la = (a as any).__layer ?? 0;
-    const lb = (b as any).__layer ?? 0;
-    return la - lb;
-  });
-  for (let i = 0; i < sorted.length; i++) {
-    container.setChildIndex(sorted[i] as any, i);
-  }
+  container.sortChildren();
 }
 
-export default {
-  Layer,
-  setLayer,
-  addToLayer,
-  applyLayerOrder,
-};
+export default { Layer, setLayer, addToLayer, applyLayerOrder };

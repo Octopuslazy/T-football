@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js';
 import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
+import { addToLayer, Layer } from '../ControllUI/layers';
 
 export default class Goal extends PIXI.Container {
   public goalSprite: PIXI.Sprite; // Chuyển sang public để Ball truy cập nếu cần
@@ -9,9 +10,9 @@ export default class Goal extends PIXI.Container {
   public leftPost: PIXI.Graphics;
   public rightPost: PIXI.Graphics;
   public crossbar: PIXI.Graphics;
-  // Front visuals (visible red rectangles)
-  public frontLeftVis: PIXI.Graphics;
-  public frontRightVis: PIXI.Graphics;
+  // Front debug visuals (visible guides in front of net)
+  public frontLeftVis: PIXI.Graphics | null = null;
+  public frontRightVis: PIXI.Graphics | null = null;
   
   private zoneVisualization: PIXI.Graphics;
   private _circleAlpha: number = 0.22;
@@ -28,6 +29,8 @@ export default class Goal extends PIXI.Container {
     const tex = PIXI.Texture.from('./arts/goal.png');
     this.goalSprite = new PIXI.Sprite(tex);
     this.goalSprite.anchor.set(0.5, 0); 
+    // Hide visual goal sprite (keep net visible)
+    this.goalSprite.alpha = 0;
     
     // 2. Net Sprite (Lưới)
     const netTex = PIXI.Texture.from('./arts/net.png');
@@ -39,20 +42,20 @@ export default class Goal extends PIXI.Container {
     this.leftPost = new PIXI.Graphics();
     this.rightPost = new PIXI.Graphics();
     this.crossbar = new PIXI.Graphics();
-
-    // 3b. Front visible post rectangles (red) — shown as visual guides
-    this.frontLeftVis = new PIXI.Graphics();
-    this.frontRightVis = new PIXI.Graphics();
-    this.frontLeftVis.visible = true;
-    this.frontRightVis.visible = true;
     
     // Debug Hitbox: Để alpha = 0.5 khi dev để thấy, = 0 khi release
     // Hitbox này sẽ nằm cùng layer với Goal, giúp Ball tính toán va chạm đúng toạ độ
-    this.leftPost.alpha = 0; 
-    this.rightPost.alpha = 0;
-    this.crossbar.alpha = 0;
+    this.leftPost.alpha = 1; 
+    this.rightPost.alpha = 1;
+    this.crossbar.alpha = 1;
 
     this.zoneVisualization = new PIXI.Graphics();
+    // Front visuals container (for drawing debug guides in front of the net)
+    this.frontLeftVis = new PIXI.Graphics();
+    this.frontRightVis = new PIXI.Graphics();
+    // Make them visible by default for debugging; set alpha lower so they don't fully cover art
+    this.frontLeftVis.alpha = 0.45;
+    this.frontRightVis.alpha = 0.45;
     
     // --- THÊM VÀO CONTAINER (QUAN TRỌNG) ---
     // Thứ tự vẽ:
@@ -64,7 +67,7 @@ export default class Goal extends PIXI.Container {
     this.addChild(this.leftPost);
     this.addChild(this.rightPost);
     this.addChild(this.crossbar);
-    // 3b. Add front visuals above goal frame so they are visible
+    // Front visuals are intentionally added last so they appear above the net/goal visuals
     this.addChild(this.frontLeftVis);
     this.addChild(this.frontRightVis);
     // 4. Debug Zone
@@ -82,12 +85,17 @@ export default class Goal extends PIXI.Container {
   }
   public getFrontLayer(): PIXI.Container {
     const frontLayer = new PIXI.Container();
-    
-    const frontLeft = new PIXI.Graphics();
-    const frontRight = new PIXI.Graphics();
-    const frontBar = new PIXI.Graphics();
-    
-    return frontLayer; 
+    // Create lightweight visuals that mirror the frontLeftVis/frontRightVis so callers
+    // that attach a separate front layer can still display guides.
+    const left = new PIXI.Graphics();
+    const right = new PIXI.Graphics();
+    left.name = 'frontLeft';
+    right.name = 'frontRight';
+    left.alpha = 0.45;
+    right.alpha = 0.45;
+    frontLayer.addChild(left);
+    frontLayer.addChild(right);
+    return frontLayer;
   }
 
   updateScale() {
@@ -135,7 +143,7 @@ export default class Goal extends PIXI.Container {
     this.leftPost.clear();
     this.leftPost.beginFill(0xFF0000, 0.5); // Màu đỏ debug
     // Vị trí cột trái tính từ tâm: x = gx - w/2
-    this.leftPost.drawRect(0, 0, postThickness, h); 
+    this.leftPost.drawRect(1, 1, postThickness, h); 
     this.leftPost.endFill();
     this.leftPost.x = gx - w/2;
     this.leftPost.y = gy;
@@ -144,7 +152,7 @@ export default class Goal extends PIXI.Container {
     this.rightPost.clear();
     this.rightPost.beginFill(0xFF0000, 0.5);
     // Vị trí cột phải: x = gx + w/2 - thickness
-    this.rightPost.drawRect(0, 0, postThickness, h);
+    this.rightPost.drawRect(1, 1, postThickness, h);
     this.rightPost.endFill();
     this.rightPost.x = gx + w/2 - postThickness;
     this.rightPost.y = gy;
@@ -152,31 +160,44 @@ export default class Goal extends PIXI.Container {
     // 3. Crossbar Hitbox
     this.crossbar.clear();
     this.crossbar.beginFill(0xFF0000, 0.5);
-    this.crossbar.drawRect(0, 0, w, barHeight);
+    this.crossbar.drawRect(1, 1, w, barHeight);
     this.crossbar.endFill();
     this.crossbar.x = gx - w/2;
     this.crossbar.y = gy;
 
-    // 4. Front visible rectangles (match left/right post positions)
+    // 4. Front visual guides (thin slanted rectangles in front of the net)
     try {
-      // Draw slanted red bars: draw rect centered at pivot then rotate
-      this.frontLeftVis.clear();
-      this.frontLeftVis.beginFill(0xFF0000, 0.95);
-      // draw rect around origin so pivot rotation keeps it aligned
-      this.frontLeftVis.drawRect(-postThickness / 2.3, -h / 2.3, postThickness, h/1.3);
-      this.frontLeftVis.endFill();
-      // position pivot at visual center of the left post
-      this.frontLeftVis.x = gx - w / 2.4 + postThickness / 2;
-      this.frontLeftVis.y = gy + h / 2;
-      this.frontLeftVis.rotation = -0.15; // ~-20 degrees
+      const fw = Math.max(6, Math.round(postThickness * 0.6));
+      const angleDeg = -12;
+      const angle = (angleDeg * Math.PI) / 180;
 
-      this.frontRightVis.clear();
-      this.frontRightVis.beginFill(0xFF0000, 0.95);
-      this.frontRightVis.drawRect(-postThickness / 2.3, -h / 2.3, postThickness, h/1.3);
-      this.frontRightVis.endFill();
-      this.frontRightVis.x = gx + w / 2.42 - postThickness / 1.3;
-      this.frontRightVis.y = gy + h / 2;
-      this.frontRightVis.rotation = 0.15; // ~20 degrees
+      // LEFT slanted guide (leans toward center)
+      if (this.frontLeftVis) {
+        this.frontLeftVis.clear();
+        this.frontLeftVis.beginFill(0xFF4444, 1);
+        // draw rectangle with top at y=0; center horizontally on pivot
+        this.frontLeftVis.drawRect(-fw / 2, 0, fw, h*0.82);
+        this.frontLeftVis.endFill();
+        this.frontLeftVis.pivot.set(0, 0);
+        // place just inside the left post inner edge
+        const leftInnerX = gx - w / 2 + postThickness; // inner edge
+        this.frontLeftVis.x = 1.4*leftInnerX + Math.round(fw * 0.2);
+        this.frontLeftVis.y = gy;
+        this.frontLeftVis.rotation = angle; // lean inward
+      }
+
+      // RIGHT slanted guide (leans toward center)
+      if (this.frontRightVis) {
+        this.frontRightVis.clear();
+        this.frontRightVis.beginFill(0xFF4444, 1);
+        this.frontRightVis.drawRect(-fw / 2, 0, fw, h*0.82);
+        this.frontRightVis.endFill();
+        this.frontRightVis.pivot.set(0, 0);
+        const rightInnerX = gx + w / 2 - postThickness; // inner edge
+        this.frontRightVis.x = 0.96*rightInnerX - Math.round(fw * 0.2);
+        this.frontRightVis.y = gy;
+        this.frontRightVis.rotation = -angle; // lean inward toward center
+      }
     } catch (e) {}
   }
   
@@ -315,34 +336,8 @@ export default class Goal extends PIXI.Container {
       const gh = goalArea.height;
 
 
-      // Green (outside posts) - draw visible guide rectangles - COMMENTED OUT
-      /*
-      const greenW = Math.max(24, Math.min(60, gw * 0.08));
-      const greenLeft = { x: gx - greenW + 6, y: gy, w: greenW-40, h: gh-40 };
-      const greenRight = { x: gx + gw - 2, y: gy, w: greenW-40, h: gh-40 };
-      this.zoneVisualization.fill(0x00FF00, 0.18);
-      this.zoneVisualization.rect(greenLeft.x, greenLeft.y, greenLeft.w, greenLeft.h);
-      this.zoneVisualization.rect(greenRight.x, greenRight.y, greenRight.w, greenRight.h);
-      this.zoneVisualization.fill();
-      */
-
-      // Yellow (inside near posts) - COMMENTED OUT
-      /*
-      const yellowH = Math.max(8, gh * 0.12);
-      const yellowWSide = Math.max(3, gw * 0.1);
-      const yellowWSideSmall = Math.max(10, Math.round(yellowWSide * 0.5));
-      const yellowShiftX = -5;
-      const yellowLeft = { x: gx +13 + Math.max(1, gw * 0.03)-30 + yellowShiftX, y: gy + Math.max(6, gh * 0.03), w: yellowWSideSmall-20, h: yellowH+300 };
-      const yellowRight = { x: gx +12 + gw - yellowWSideSmall - Math.max(6, gw * 0.03) + yellowShiftX, y: gy + Math.max(6, gh * 0.03), w: yellowWSideSmall-20, h: yellowH+300 };
-      // Yellow crossbar: draw a thin yellow rect just inside the red crossbar
-      
-      this.zoneVisualization.fill(0xFFFF00, 0.35);
-      this.zoneVisualization.rect(yellowLeft.x, yellowLeft.y, yellowLeft.w, yellowLeft.h);
-      this.zoneVisualization.rect(yellowRight.x, yellowRight.y, yellowRight.w, yellowRight.h);
-      // Draw the yellow crossbar inset slightly so it's visibly inside the red crossbar
-      this.zoneVisualization.rect(yellowCrossbar.x, yellowCrossbar.y, yellowCrossbar.w, yellowCrossbar.h);
-      this.zoneVisualization.fill();
-      */
+    
+     
     } catch (e) {}
 
     // Draw blue net hitbox rectangle using the visual net sprite bounds

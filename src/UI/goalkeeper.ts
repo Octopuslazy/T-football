@@ -10,8 +10,8 @@ export default class Goalkeeper extends PIXI.Container {
   private _catchProbability: number = 0;
   private _goal: any = null;
   private _lastActionTime: number = 0; 
-  private _actionCooldown: number = 3000; 
-  private readonly KEEPER_SAFE_PADDING: number = 140; // extra pixels to keep between keeper and ball on miss
+  private _actionCooldown: number = 4500; 
+  private readonly KEEPER_SAFE_PADDING: number = 80; // extra pixels to keep between keeper and ball on miss
   
   constructor() {
     super();
@@ -34,7 +34,7 @@ export default class Goalkeeper extends PIXI.Container {
   // Reset goalkeeper to initial position and state
   public reset() {
     this.x = this._initialPosition.x;
-    this.y = this._initialPosition.y;
+    this.y = this._initialPosition.y*1.06;
     this.rotation = this._initialRotation;
     
     // Reset to normal goalkeeper sprite

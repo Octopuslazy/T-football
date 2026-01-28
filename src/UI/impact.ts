@@ -7,8 +7,8 @@ import * as PIXI from 'pixi.js';
 // Toggle to enable/disable impact effects globally (set false to disable)
 export let impactsEnabled = false;
 
-export function spawnImpactEffect(parent: PIXI.Container, x: number, y: number, options?: { color?: number, durationMs?: number }) {
-  if (!impactsEnabled) return;
+export function spawnImpactEffect(parent: PIXI.Container, x: number, y: number, options?: { color?: number, durationMs?: number, force?: boolean }) {
+  if (!impactsEnabled && !options?.force) return;
   const color = options?.color ?? 0xFFEE88;
   const duration = options?.durationMs ?? 300; // ms
 
