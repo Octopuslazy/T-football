@@ -120,7 +120,7 @@ export default class Goalkeeper extends PIXI.Container {
     const baseX = this._initialPosition.x;
     const baseY = this._initialPosition.y;
     
-    // Tăng khoảng cách nhảy (giảm để giảm bán kính quay khi xoay)
+    // Increase dive distance (controls rotation radius)
       const diveDistance = 90; 
     
     let targetX = baseX;
@@ -172,14 +172,14 @@ export default class Goalkeeper extends PIXI.Container {
   // Attempt to catch ball at specific zone
   public attemptCatch(ballX: number, ballY: number, targetZone: any, ballRadius: number = 20): Promise<{ caught: boolean; catchZone?: any; catchPos?: { x: number; y: number } }> {
     return new Promise((resolve) => {
-      // 1. Check trạng thái Active và Animating
+      // 1. Check Active and Animating state
       if (!this._isActive || this._isAnimating) {
         resolve({ caught: false });
         return;
       }
 
-      // 2. CHECK COOLDOWN (Fix lỗi nhảy 2 lần)
-      // Nếu vừa mới nhảy trong vòng 1.5 giây, không nhảy nữa
+      // 2. CHECK COOLDOWN (prevent double-dive bug)
+      // If the keeper has just dived within 1.5s, skip
       const now = Date.now();
       if (now - this._lastActionTime < this._actionCooldown) {
       
@@ -209,7 +209,7 @@ export default class Goalkeeper extends PIXI.Container {
         return;
       }
 
-      // Set cooldown start time ngay khi quyết định nhảy (successful roll)
+      // Set cooldown start time when deciding to dive (successful roll)
       this._lastActionTime = now;
       this._isAnimating = true;
       this._isActive = false;
@@ -220,11 +220,11 @@ export default class Goalkeeper extends PIXI.Container {
         catchZone = this.getRandomZone();
       }
       
-      // Khi willAttemptCatch đã thành công, luôn thực hiện catch animation
-      // không cần kiểm tra canReachZone nữa để tránh animation sai
+      // When willAttemptCatch succeeds, always perform catch animation
+      // no need to check canReachZone to avoid animation mismatch
       
       
-      // Truyền tọa độ bóng chính xác để thủ môn bay tới
+      // Pass the exact ball coordinates so keeper dives to them
       this.performCatchAnimation(catchZone, { x: ballX, y: ballY }).then((pos) => {
         
         resolve({ caught: true, catchZone, catchPos: pos });
@@ -242,7 +242,7 @@ export default class Goalkeeper extends PIXI.Container {
     const ballToGoalCenterX = Math.abs(ballX - (goalArea.x + goalArea.width / 2));
     const ballToGoalCenterY = Math.abs(ballY - (goalArea.y + goalArea.height / 2));
     
-    // Làm cho canReachZone khoan dung hơn vì giờ chỉ dùng để validation
+    // Make canReachZone more tolerant since it's used only for validation
     const maxDistanceX = goalArea.width * 2.5;
     const maxDistanceY = goalArea.height * 2.5;
     
@@ -257,9 +257,9 @@ export default class Goalkeeper extends PIXI.Container {
       const targetRotation = this.getRotationForZone(zone.id);
       let targetPosition = this.getPositionForZone(zone.id);
 
-      // Với các zone giữa (2,3,6,7,10,11), trên miss ta chuyển mục tiêu sang ô bên cạnh
-      // Mong muốn: nếu hụt ở 2 thì thủ môn nên nhảy tới vị trí của 3; 6 -> 7; 10 -> 11
-      // và ngược lại: 3 -> 2; 7 -> 6; 11 -> 10
+      // For middle zones (2,3,6,7,10,11), on miss shift target to neighboring zone
+      // Intent: if missing at 2 then keeper may dive toward 3; 6 -> 7; 10 -> 11
+      // and vice versa: 3 -> 2; 7 -> 6; 11 -> 10
       const missNeighborMap: { [key: number]: number } = {
         2: 4, 6: 8, 10: 12,
         3: 1, 7: 5, 11: 9
@@ -267,9 +267,9 @@ export default class Goalkeeper extends PIXI.Container {
       if (missNeighborMap[zone.id]) {
         const neighborId = missNeighborMap[zone.id];
         const neighborPos = this.getPositionForZone(neighborId);
-        // Chỉ lấy X của ô lân cận để tránh thay đổi Y (không giảm Y)
+        // Only take neighbor's X to avoid lowering Y (keep height unchanged)
         targetPosition.x = neighborPos.x;
-        // giữ nguyên targetPosition.y để không giảm chiều cao đột ngột
+        // keep targetPosition.y unchanged to avoid sudden height drop
       }
 
       const catchTexture = PIXI.Texture.from('./arts/gkeeper2.png');
@@ -281,7 +281,7 @@ export default class Goalkeeper extends PIXI.Container {
       const startY = this.y;
 
       const rotationDiff = targetRotation - startRotation;
-      // Giảm hệ số di chuyển để hạn chế bán kính quay
+      // Reduce movement multiplier to limit orbital radius
         // If we're given a world position to avoid (the ball), bias the target away from it
         if (avoidWorldPos) {
           try {
@@ -410,7 +410,7 @@ export default class Goalkeeper extends PIXI.Container {
       return pos;
     }
   
-  // LOGIC BẮT BÓNG MỚI (Bay thẳng tới bóng & Độ dài tay)
+  // NEW CATCH LOGIC (fly directly to ball & arm length)
   private performCatchAnimation(zone: any, catchWorldPos?: { x: number; y: number }): Promise<{ x: number; y: number }> {
     return new Promise((resolve) => {
       this._isAnimating = true;
@@ -419,30 +419,30 @@ export default class Goalkeeper extends PIXI.Container {
       const catchTexture = PIXI.Texture.from('./arts/gkeeper2.png');
       this.goalkeeperSprite.texture = catchTexture;
 
-      // 1. Xác định đích đến (Vị trí bóng)
+      // 1. Determine destination (ball position)
       let targetX = 0;
       let targetY = 0;
 
       if (catchWorldPos) {
-        // Sử dụng trực tiếp world coordinates vì thủ môn và bóng đang ở cùng coordinate system
+        // Use world coordinates since keeper and ball share the same coordinate system
         targetX = catchWorldPos.x;
         targetY = catchWorldPos.y;
       } else {
           const defaultPosition = this.getPositionForZone(zone.id);
-          // giảm multiplier để thủ môn không bay quá xa khi bắt mặc định
+          // reduce multiplier so keeper doesn't fly too far when using default catch
           targetX = this.x + (defaultPosition.x - this.x) * 1.1; 
         targetY = defaultPosition.y;
       }
 
-      // 2. Tính toán vị trí cơ thể dựa trên Độ Dài Tay (Arm Length)
-      // Giảm arm length để thủ môn bay gần hơn đến bóng
+      // 2. Compute body position based on Arm Length
+      // Reduce arm length so keeper moves closer to the ball
       const armLength = 20 * (this.scale.x || 1); 
 
       const dx = targetX - this.x;
       const dy = targetY - this.y;
       const angle = Math.atan2(dy, dx);
 
-      // Cơ thể bay tới gần bóng, trừ đi độ dài tay (nhưng giữ khoảng cách nhỏ)
+      // Body moves toward ball, subtract arm length (keep a small separation)
       const finalBodyX = targetX - Math.cos(angle) * armLength;
       const finalBodyY = targetY - Math.sin(angle) * armLength;
 
@@ -450,7 +450,7 @@ export default class Goalkeeper extends PIXI.Container {
       const startY = this.y;
       const startRotation = this.goalkeeperSprite.rotation || 0;
 
-      // Góc xoay hướng về bóng
+      // Rotation angle facing the ball
       let targetRotation = angle; 
       if (zone.id <= 4) targetRotation = -0.5 * Math.sign(dx); 
       else if (zone.id >= 9) targetRotation = 0.2 * Math.sign(dx); 
@@ -479,7 +479,7 @@ export default class Goalkeeper extends PIXI.Container {
       const startTime = Date.now();
       let resolved = false;
 
-      // Tăng chiều cao nhảy để thủ môn nhảy cao hơn
+      // Increase jump height so keeper jumps higher
       const jumpHeight = 60 * (this.scale.x || 1); 
 
       const animateDive = () => {
@@ -490,7 +490,7 @@ export default class Goalkeeper extends PIXI.Container {
         this.x = startX + (distBodyX * easedProgress);
 
         const linearY = startY + (distBodyY * easedProgress);
-        // Tại progress=1, arc=0 => Thủ môn đáp đúng vị trí đã tính
+        // At progress=1, arc=0 => keeper lands at calculated position
         const arc = Math.sin(progress * Math.PI) * jumpHeight; 
         this.y = linearY - arc; 
 
@@ -515,7 +515,7 @@ export default class Goalkeeper extends PIXI.Container {
         if (progress < 1) {
           requestAnimationFrame(animateDive);
         } else {
-          // Xong animation, chờ rồi ngã
+          // After animation, wait then fall
           setTimeout(() => { try { this.fallToGround(); } catch (e) {} }, 150);
         }
       };
@@ -529,8 +529,8 @@ export default class Goalkeeper extends PIXI.Container {
       const currentX = this.x;
       const currentY = this.y;
       
-      // Lúc bay ta xoay Sprite, nhưng lúc ngã ta xoay cả Container nên cần lấy góc hiện tại
-      // Tuy nhiên để đơn giản, ta sẽ animate Container về 0, và quan trọng nhất là reset Sprite ở cuối
+      // While flying we rotate the Sprite; when falling we rotate the Container, so capture current angle
+      // However, to simplify, animate the Container back to 0 and reset the Sprite at the end
       const currentRotation = this.goalkeeperSprite.rotation || 0; 
       
       // Target position: back to initial position (ground level)
@@ -571,9 +571,9 @@ export default class Goalkeeper extends PIXI.Container {
           const normalTexture = PIXI.Texture.from('./arts/gkeeper.png');
           this.goalkeeperSprite.texture = normalTexture;
 
-          // --- SỬA LỖI Ở ĐÂY ---
-          // Bắt buộc reset góc xoay của Sprite ảnh về 0
-          // Vì lúc bay ta đã xoay nó, nếu không reset nó sẽ bị nghiêng vĩnh viễn
+          // --- FIX HERE ---
+          // Must reset sprite rotation to 0
+          // Because we rotated it during flight, if not reset it will remain tilted permanently
           this.goalkeeperSprite.rotation = 0; 
           // ---------------------
 

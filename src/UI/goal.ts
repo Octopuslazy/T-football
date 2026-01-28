@@ -3,79 +3,103 @@ import { BASE_WIDTH, BASE_HEIGHT } from '../constant/global';
 import { addToLayer, Layer } from '../ControllUI/layers';
 
 export default class Goal extends PIXI.Container {
-  public goalSprite: PIXI.Sprite; // Chuyển sang public để Ball truy cập nếu cần
+ 
+  public goalSprite: PIXI.Sprite; // Exposed as public so Ball can access if needed
   public netSprite: PIXI.Sprite;
   
-  // Các hitbox vật lý (Sẽ được add vào Goal để đi theo toạ độ)
+  // Physical hitboxes (added to Goal so they follow its coordinates)
   public leftPost: PIXI.Graphics;
   public rightPost: PIXI.Graphics;
   public crossbar: PIXI.Graphics;
   // Front debug visuals (visible guides in front of net)
-  public frontLeftVis: PIXI.Graphics | null = null;
-  public frontRightVis: PIXI.Graphics | null = null;
+  public frontLeftVis!: PIXI.Graphics;
+  public frontRightVis!: PIXI.Graphics;
+  // Horizontal front guides (left/right)
+  public frontLeftHorVis!: PIXI.Graphics;
+  public frontRightHorVis!: PIXI.Graphics;
+  // Second pair of horizontal guides placed slightly higher (Y * 1.1)
+  public frontLeftHorVis2!: PIXI.Graphics;
+  public frontRightHorVis2!: PIXI.Graphics;
   
   private zoneVisualization: PIXI.Graphics;
   private _circleAlpha: number = 0.22;
   private _onResize: () => void;
   private _showGrid: boolean = false;
-  private showZones: boolean = false; // Mặc định tắt debug zone
+  private showZones: boolean = false; // Debug zones are off by default
   private _showNetHitbox: boolean = false; 
   private _interactionZones: Array<{ type: 'green'|'yellow'; rectLocal: { x:number;y:number;w:number;h:number }; gfx?: PIXI.Graphics | null }> = [];
 
   constructor() {
     super();
     
-    // 1. Goal Sprite (Khung thành dính liền)
+   
+    // 1. Goal Sprite (visual frame)
     const tex = PIXI.Texture.from('./arts/goal.png');
     this.goalSprite = new PIXI.Sprite(tex);
     this.goalSprite.anchor.set(0.5, 0); 
     // Hide visual goal sprite (keep net visible)
     this.goalSprite.alpha = 0;
     
-    // 2. Net Sprite (Lưới)
+   
+    // 2. Net Sprite (net)
     const netTex = PIXI.Texture.from('./arts/net.png');
     this.netSprite = new PIXI.Sprite(netTex);
     this.netSprite.anchor.set(0.5, 0); 
-    this.netSprite.alpha = 1; // Hiện lưới bình thường (nằm sau bóng)
+    this.netSprite.alpha = 1; // Show net normally (sits behind the ball)
     
-    // 3. Tạo các HITBOX Cột/Xà (Quan trọng: Phải add vào Goal)
+    // 3. Create HITBOX for posts/crossbar (Important: add to Goal)
     this.leftPost = new PIXI.Graphics();
     this.rightPost = new PIXI.Graphics();
     this.crossbar = new PIXI.Graphics();
     
-    // Debug Hitbox: Để alpha = 0.5 khi dev để thấy, = 0 khi release
-    // Hitbox này sẽ nằm cùng layer với Goal, giúp Ball tính toán va chạm đúng toạ độ
-    this.leftPost.alpha = 1; 
-    this.rightPost.alpha = 1;
-    this.crossbar.alpha = 1;
+    // Debug hitbox: set alpha=0.5 during dev to see, =0 on release
+    // This hitbox lives in the same container as Goal so Ball collision math uses consistent coordinates
+    this.leftPost.alpha = 0; 
+    this.rightPost.alpha = 0;
+    this.crossbar.alpha = 0;
 
     this.zoneVisualization = new PIXI.Graphics();
     // Front visuals container (for drawing debug guides in front of the net)
     this.frontLeftVis = new PIXI.Graphics();
     this.frontRightVis = new PIXI.Graphics();
-    // Make them visible by default for debugging; set alpha lower so they don't fully cover art
-    this.frontLeftVis.alpha = 0.45;
-    this.frontRightVis.alpha = 0.45;
+    this.frontLeftHorVis = new PIXI.Graphics();
+    this.frontRightHorVis = new PIXI.Graphics();
+    this.frontLeftHorVis2 = new PIXI.Graphics();
+    this.frontRightHorVis2 = new PIXI.Graphics();
+    // Make them invisible by default (alpha=0) for release; enable during debug if needed
+    this.frontLeftVis.alpha = 0;
+    this.frontRightVis.alpha = 0;
+    this.frontLeftHorVis.alpha = 0;
+    this.frontRightHorVis.alpha = 0;
+    this.frontLeftHorVis2.alpha = 0;
+    this.frontRightHorVis2.alpha = 0;
     
-    // --- THÊM VÀO CONTAINER (QUAN TRỌNG) ---
-    // Thứ tự vẽ:
-    // 1. Lưới (Dưới cùng)
+    // --- ADD TO CONTAINER (IMPORTANT) ---
+    // Draw order:
+    // 1. Net (bottom)
     this.addChild(this.netSprite);
-    // 2. Khung thành visual (Dưới bóng hoặc trên tuỳ logic layer của bạn)
+    // 2. Goal frame (below/above ball depending on layer logic)
     this.addChild(this.goalSprite);
-    // 3. Các Hitbox (Vô hình)
+    // 3. Hitboxes (invisible)
     this.addChild(this.leftPost);
     this.addChild(this.rightPost);
     this.addChild(this.crossbar);
     // Front visuals are intentionally added last so they appear above the net/goal visuals
     this.addChild(this.frontLeftVis);
     this.addChild(this.frontRightVis);
+    // Add horizontal front guides (above slanted guides so they remain visible)
+    this.addChild(this.frontLeftHorVis);
+    this.addChild(this.frontRightHorVis);
+    // Add second horizontal guides (slightly higher)
+    this.addChild(this.frontLeftHorVis2);
+    this.addChild(this.frontRightHorVis2);
     // 4. Debug Zone
     this.addChild(this.zoneVisualization);
 
     this._onResize = this.updateScale.bind(this);
     window.addEventListener('resize', this._onResize);
 
+    // Init Scale
     // Init Scale
     if (this.goalSprite.texture && this.goalSprite.texture.width) {
       this.updateScale();
@@ -85,6 +109,8 @@ export default class Goal extends PIXI.Container {
   }
   public getFrontLayer(): PIXI.Container {
     const frontLayer = new PIXI.Container();
+    // Create lightweight visuals that mirror the frontLeftVis/frontRightVis so callers
+    // that attach a separate front layer can still display guides.
     // Create lightweight visuals that mirror the frontLeftVis/frontRightVis so callers
     // that attach a separate front layer can still display guides.
     const left = new PIXI.Graphics();
@@ -115,23 +141,23 @@ export default class Goal extends PIXI.Container {
       this.netSprite.y = this.goalSprite.y;
     }
 
-    // Cập nhật Hitbox Cột/Xà
+    // Update posts/crossbar hitbox
     this.updateGoalPostsHitbox(s);
     
     this.drawZoneVisualization();
     try { this.setupInteractionZones(); } catch (e) {}
   }
 
-  // Vẽ lại Hitbox hình chữ nhật khớp với hình ảnh cột gôn
+  // Redraw rectangular hitboxes to match goal art
   private updateGoalPostsHitbox(scale: number) {
-    // Kích thước ước lượng của cột trên hình ảnh (cần tinh chỉnh cho khớp art)
-    const postThickness = 15 * scale; // Độ dày cột
-    const barHeight = 12 * scale;     // Độ dày xà
+    // Estimated post size in the art (may need tuning)
+       const postThickness = 15 * scale; // post thickness
+       const barHeight = 12 * scale;     // crossbar thickness
     
-    const goalBounds = this.goalSprite.getLocalBounds(); // Lấy bounds gốc chưa scale
-    // Vì goalSprite anchor (0.5, 0), toạ độ local:
-    // x từ -width/2 đến width/2
-    // y từ 0 đến height
+    const goalBounds = this.goalSprite.getLocalBounds(); // Get original (unscaled) bounds
+       // With goalSprite anchor (0.5, 0), local coordinates are:
+       // x from -width/2 to width/2
+       // y from 0 to height
     
     const w = goalBounds.width * scale;
     const h = goalBounds.height * scale;
@@ -141,8 +167,8 @@ export default class Goal extends PIXI.Container {
 
     // 1. Left Post Hitbox
     this.leftPost.clear();
-    this.leftPost.beginFill(0xFF0000, 0.5); // Màu đỏ debug
-    // Vị trí cột trái tính từ tâm: x = gx - w/2
+    this.leftPost.beginFill(0xFF0000, 0.5); // Debug red fill
+    // Left post position from center: x = gx - w/2
     this.leftPost.drawRect(1, 1, postThickness, h); 
     this.leftPost.endFill();
     this.leftPost.x = gx - w/2;
@@ -151,13 +177,14 @@ export default class Goal extends PIXI.Container {
     // 2. Right Post Hitbox
     this.rightPost.clear();
     this.rightPost.beginFill(0xFF0000, 0.5);
-    // Vị trí cột phải: x = gx + w/2 - thickness
+    // Right post position: x = gx + w/2 - thickness
     this.rightPost.drawRect(1, 1, postThickness, h);
     this.rightPost.endFill();
     this.rightPost.x = gx + w/2 - postThickness;
     this.rightPost.y = gy;
 
     // 3. Crossbar Hitbox
+      // 3. Crossbar Hitbox
     this.crossbar.clear();
     this.crossbar.beginFill(0xFF0000, 0.5);
     this.crossbar.drawRect(1, 1, w, barHeight);
@@ -181,7 +208,7 @@ export default class Goal extends PIXI.Container {
         this.frontLeftVis.pivot.set(0, 0);
         // place just inside the left post inner edge
         const leftInnerX = gx - w / 2 + postThickness; // inner edge
-        this.frontLeftVis.x = 1.4*leftInnerX + Math.round(fw * 0.2);
+        this.frontLeftVis.x = 1.3*leftInnerX + Math.round(fw * 0.2);
         this.frontLeftVis.y = gy;
         this.frontLeftVis.rotation = angle; // lean inward
       }
@@ -198,20 +225,136 @@ export default class Goal extends PIXI.Container {
         this.frontRightVis.y = gy;
         this.frontRightVis.rotation = -angle; // lean inward toward center
       }
+      // Horizontal guides (thin horizontal bars placed slightly below mid-height)
+      try {
+        const hhW = Math.max(24, Math.round(w * 0.18));
+        const hhH = Math.max(4, Math.round(postThickness * 0.4));
+        const hhY = gy + Math.round(h * 0.5);
+
+        if (this.frontLeftHorVis) {
+          this.frontLeftHorVis.clear();
+          this.frontLeftHorVis.beginFill(0xFF6666, 1);
+          this.frontLeftHorVis.drawRect(0, 0, hhW*0.6, hhH*3);
+          this.frontLeftHorVis.endFill();
+          // center pivot for clean rotation
+          this.frontLeftHorVis.pivot.set(Math.round(hhW / 2), Math.round(hhH / 2));
+          // place slightly inside the left inner edge (compute center X)
+          const leftInnerX = gx - w / 2 + postThickness;
+          const centerX = Math.round(leftInnerX + 6 + hhW / 2);
+          // Align Y to the lower (greater Y) between the slanted vis bottom and the post bottom
+          try {
+            const visB = this.frontLeftVis.getBounds(); // global bounds
+            const postB = this.leftPost.getBounds(); // global bounds
+            const visBottomGlobal = visB.y + visB.height;
+            const postBottomGlobal = postB.y + postB.height;
+            const targetGlobalY = Math.max(visBottomGlobal, postBottomGlobal);
+            const localPt = this.toLocal(new PIXI.Point(visB.x, targetGlobalY));
+            const centerY = Math.round(localPt.y);
+            this.frontLeftHorVis.x = centerX*0.9;
+            this.frontLeftHorVis.y = centerY*0.8;
+          } catch (e) {
+            this.frontLeftHorVis.x = centerX;
+            this.frontLeftHorVis.y = hhY;
+          }
+          // rotate 45deg around Z (lean inward)
+          this.frontLeftHorVis.rotation = -Math.PI / 4;
+        }
+
+        if (this.frontRightHorVis) {
+          this.frontRightHorVis.clear();
+          this.frontRightHorVis.beginFill(0xFF6666, 1);
+          this.frontRightHorVis.drawRect(0, 0, hhW*0.6, hhH*3);
+          this.frontRightHorVis.endFill();
+          // center pivot for clean rotation
+          this.frontRightHorVis.pivot.set(Math.round(hhW / 2), Math.round(hhH / 2));
+          const rightInnerX = gx + w / 2 - postThickness;
+          // position so the bar's right edge sits a bit inside the inner edge -> compute center X
+          const centerX = Math.round(rightInnerX - hhW / 2 - 6);
+          // Align Y to the lower (greater Y) between the slanted vis bottom and the post bottom
+          try {
+            const visB = this.frontRightVis.getBounds();
+            const postB = this.rightPost.getBounds();
+            const visBottomGlobal = visB.y + visB.height;
+            const postBottomGlobal = postB.y + postB.height;
+            const targetGlobalY = Math.max(visBottomGlobal, postBottomGlobal);
+            const localPt = this.toLocal(new PIXI.Point(visB.x, targetGlobalY));
+            const centerY = Math.round(localPt.y);
+            this.frontRightHorVis.x = centerX*1.06;
+            this.frontRightHorVis.y = centerY*0.9;
+          } catch (e) {
+            this.frontRightHorVis.x = centerX;
+            this.frontRightHorVis.y = hhY;
+          }
+          // rotate -45deg around Z (lean inward)
+          this.frontRightHorVis.rotation = Math.PI / 4;
+        }
+        // --- second pair (higher Y by factor 1.1) ---
+        try {
+          if (this.frontLeftHorVis2) {
+            this.frontLeftHorVis2.clear();
+            this.frontLeftHorVis2.beginFill(0xFF6666, 1);
+            this.frontLeftHorVis2.drawRect(0, 0, hhW*0.5, hhH*3);
+            this.frontLeftHorVis2.endFill();
+            this.frontLeftHorVis2.pivot.set(Math.round(hhW / 2), Math.round(hhH / 2));
+            const leftInnerX2 = gx - w / 2 + postThickness;
+            const centerX2 = Math.round(leftInnerX2 + 6 + hhW / 2);
+            try {
+              const visB = this.frontLeftVis.getBounds();
+              const postB = this.leftPost.getBounds();
+              const visBottomGlobal = visB.y + visB.height;
+              const postBottomGlobal = postB.y + postB.height;
+              const targetGlobalY = Math.max(visBottomGlobal, postBottomGlobal);
+              const localPt = this.toLocal(new PIXI.Point(visB.x, targetGlobalY));
+              const centerY = Math.round(localPt.y * 0.65);
+              this.frontLeftHorVis2.x = centerX2 * 0.93;
+              this.frontLeftHorVis2.y = centerY;
+            } catch (e) {
+              this.frontLeftHorVis2.x = centerX2;
+              this.frontLeftHorVis2.y = Math.round(hhY * 1.1);
+            }
+            this.frontLeftHorVis2.rotation = -Math.PI / 4;
+          }
+
+          if (this.frontRightHorVis2) {
+            this.frontRightHorVis2.clear();
+            this.frontRightHorVis2.beginFill(0xFF6666, 1);
+            this.frontRightHorVis2.drawRect(0, 0, hhW*0.5, hhH*3);
+            this.frontRightHorVis2.endFill();
+            this.frontRightHorVis2.pivot.set(Math.round(hhW / 2), Math.round(hhH / 2));
+            const rightInnerX2 = gx + w / 2 - postThickness;
+            const centerX2 = Math.round(rightInnerX2 - hhW / 2 - 6);
+            try {
+              const visB = this.frontRightVis.getBounds();
+              const postB = this.rightPost.getBounds();
+              const visBottomGlobal = visB.y + visB.height;
+              const postBottomGlobal = postB.y + postB.height;
+              const targetGlobalY = Math.max(visBottomGlobal, postBottomGlobal);
+              const localPt = this.toLocal(new PIXI.Point(visB.x, targetGlobalY));
+              const centerY = Math.round(localPt.y * 0.75);
+              this.frontRightHorVis2.x = centerX2 * 1.06;
+              this.frontRightHorVis2.y = centerY;
+            } catch (e) {
+              this.frontRightHorVis2.x = centerX2;
+              this.frontRightHorVis2.y = Math.round(hhY * 1.1);
+            }
+            this.frontRightHorVis2.rotation = Math.PI / 4;
+          }
+        } catch (e) {}
+      } catch (e) {}
     } catch (e) {}
   }
   
   // Get goal area for scoring (inside the goal)
+    // Get goal area for scoring (inside the goal)
   public getGoalArea() {
-    // Dùng Hitbox đã setup chuẩn ở trên để tính vùng gôn
-    const lx = this.leftPost.x + this.leftPost.width; // Mép trong cột trái
-    const rx = this.rightPost.x; // Mép trong cột phải
-    const by = this.crossbar.y + this.crossbar.height; // Mép dưới xà
+    // Use the hitbox set up above to compute the goal area
+      const lx = this.leftPost.x + this.leftPost.width; // Inner edge of the left post
+      const rx = this.rightPost.x; // Inner edge of the right post
+      const by = this.crossbar.y + this.crossbar.height; // Bottom edge of the crossbar
     const bottom = this.leftPost.y + this.leftPost.height;
 
-    // Chuyển sang Local của Goal Container (thực ra hitbox đã là con trực tiếp nên x,y là local rồi)
-    // Nhưng getGoalArea thường trả về Global hoặc Local tuỳ logic game. 
-    // Code cũ của bạn có vẻ muốn trả về Local Relative to Goal Container.
+    // Coordinates are local to Goal container (hitboxes are direct children).
+    // getGoalArea returns local coords relative to the Goal container.
     
     return {
         x: lx,
@@ -277,7 +420,7 @@ export default class Goal extends PIXI.Container {
        const gw = goalArea.width;
        const gh = goalArea.height;
 
-       // Ví dụ: Tạo vùng xanh lá cây bên ngoài cột
+      // Example: create green zones outside the posts
        const greenW = Math.max(24, Math.min(60, gw * 0.08));
        const gLeft = { x: -greenW - 6, y: 0, w: greenW, h: gh };
        const gRight = { x: gw + 6, y: 0, w: greenW, h: gh };

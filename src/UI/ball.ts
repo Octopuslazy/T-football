@@ -30,7 +30,7 @@ export default class Ball extends PIXI.Container {
     private readonly GOAL_DISTANCE = 600; 
     private readonly VANISHING_POINT_Z = 870;
     private readonly GRAVITY = 0.99;
-    private readonly FRICTION = 0.99; // Tăng ma sát lên xíu để bóng bay đầm hơn
+    private readonly FRICTION = 0.99; // Increase friction slightly so the ball flies steadier
     private readonly FALLBACK_MAX_GOAL_HEIGHT = 160;
     private get MAX_GOAL_HEIGHT(): number {
         try {
@@ -52,7 +52,7 @@ export default class Ball extends PIXI.Container {
     };
 
     private _isMoving = false;
-    private _debugLogs: boolean = true; // Bật log để debug
+    private _debugLogs: boolean = true; // Enable logs for debugging
     
     // Input variables
     private _isCharging = false;
@@ -104,7 +104,7 @@ export default class Ball extends PIXI.Container {
     private _debugOverlayEnabled: boolean = false;
 
     private onEnterFrame!: () => void;
-    private _baseScale = 0.6;
+    private _baseScale = 1;
     private _groundLevelY = 0;
     
     // Global Handlers
@@ -165,7 +165,7 @@ export default class Ball extends PIXI.Container {
     }
 
     private createVisuals() {
-        const baseRadius = 38;
+        const baseRadius = 45;
         const canvas = document.createElement('canvas');
         canvas.width = baseRadius * 2;
         canvas.height = baseRadius * 2;
@@ -238,7 +238,7 @@ export default class Ball extends PIXI.Container {
         }
     };
 
-    // [FIXED] Hàm PointerUp đã được sửa lỗi logic thứ tự và lực sút
+    // [FIXED] PointerUp handler: corrected order and force logic
     private _onPointerUp = (e: any) => {
         try { if ((window as any).__gameInputLocked) return; } catch (e) {}
         if (!this._isCharging) return;
@@ -247,12 +247,12 @@ export default class Ball extends PIXI.Container {
         const now = performance.now();
         const duration = now - this._chargeStartTime;
         
-        // [QUAN TRỌNG]: Luôn thêm điểm cuối vào mảng TRƯỚC KHI kiểm tra
+        // [IMPORTANT]: Always push the final point into the array BEFORE checking
         const endPos = e.data.global;
         if (!this._dragPath) this._dragPath = [];
         this._dragPath.push({ x: endPos.x, y: endPos.y });
 
-        // Tạo dữ liệu giả nếu mảng thiếu điểm (tránh lỗi logic)
+        // Create fallback data if the array lacks points (avoid logic errors)
         if (this._dragPath.length < 2) {
              const p = {x: endPos.x, y: endPos.y};
              this._dragPath = [p, {x: p.x, y: p.y - 10}];
@@ -263,10 +263,10 @@ export default class Ball extends PIXI.Container {
         const dy = endPos.y - startPos.y; 
         const dist = Math.sqrt(dx*dx + dy*dy);
 
-        // Nếu vuốt quá ngắn (<10px) thì bỏ qua
+        // Ignore swipe if it's too short (<10px)
         if (dist < 10) return;
 
-        // --- TÍNH TOÁN LỰC ---
+        // --- COMPUTE FORCE ---
         const screenW = window.innerWidth || BASE_WIDTH;
         const screenH = window.innerHeight || BASE_HEIGHT;
 
@@ -275,21 +275,21 @@ export default class Ball extends PIXI.Container {
         const dyPercent = dy / screenH;
 
         let speed = (distPercent / Math.max(duration, 140)) * 7000; 
-        // Tốc độ tối thiểu 24 để thắng ma sát
+        // Minimum speed 24 to overcome friction
         speed = Math.max(5, Math.min(speed, 48));
 
         this._curveFactor = this.calculateCurveFactor(startPos, endPos, this._dragPath);
         this._vx = dxPercent * 70 + this._curveFactor * 8;
-        if (speed < 20) {
-             // Sút nhẹ -> Bóng lăn hoặc nảy cực thấp (1-3 đơn vị)
+        if (speed < 16) {
+             // Soft shot -> ball rolls or bounces very low (1-3 units)
              this._vy = Math.max(2, Math.abs(dyPercent) * 5);
         } else {
-             // Sút mạnh -> Bóng bổng (tối thiểu 6 để bay lên)
+             // Strong shot -> ball lifts (minimum 6 to rise)
              this._vy = Math.max(6, Math.abs(dyPercent) * 20); 
         }
         this._vz = speed;
 
-        // Reset trạng thái
+        // Reset state
         this._z = 0;
         this._altitude = 0;
         this._isMoving = true;
@@ -342,7 +342,7 @@ export default class Ball extends PIXI.Container {
         if (!this._isMoving) return;
         const prevZ = this._z;
 
-        // Debug Log Position (Để kiểm tra bóng có bay không)
+        // Debug Log Position (to verify the ball is flying)
         if (this._debugLogs && this._z < 100) {
              // console.log(`FLYING: Z=${this._z.toFixed(1)} Alt=${this._altitude.toFixed(1)}`);
         }
@@ -379,18 +379,18 @@ export default class Ball extends PIXI.Container {
 
 
         
-        // Va chạm thanh đỏ (Inner)
+        // Inner bar collision (front guides)
         this.checkInnerBarCollision(prevZ, this._z); 
         
-        // Va chạm cột ngoài & Xà (Outer)
+        // Outer posts & crossbar collisions
         if (this._z >= this.GOAL_DISTANCE - 50 && !this._ballUsed) {
             this.checkPostCollisions(); 
         }
 
-        // Va chạm lưới
+        // Net collision
         try { this.checkNetContact(); } catch (e) {}
         
-        // Va chạm game (Bàn thắng)
+        // Game collision (Goal)
         if (this._z >= this.GOAL_DISTANCE && !this._ballUsed) {
              this.checkGameCollisions();
         }
@@ -406,7 +406,7 @@ export default class Ball extends PIXI.Container {
             }
         } catch (e) {}
 
-        // Perspective Calculation (Tính Y trên màn hình)
+        // Perspective Calculation (compute screen Y)
         const tDepth = this._z / this.GOAL_DISTANCE;
         let targetGroundY = this._groundLevelY - 200; 
         if (this.goal && this.goal.goalSprite) {
@@ -435,7 +435,7 @@ export default class Ball extends PIXI.Container {
             this.y = newY;
         }
 
-        // Layering (Bóng trên/dưới thủ môn)
+        // Layering (ball above/below keeper)
         try {
             if (this.parent && this.goal) {
                 if (this._z > this.GOAL_DISTANCE - 22 || this._netContacted) {
@@ -508,7 +508,7 @@ export default class Ball extends PIXI.Container {
         }
         this.updateShadow(currentGroundVisualY, finalScale);
         
-        // 4. Ground Check (Nảy đất)
+        // 4. Ground Check (bounce)
         if (this._altitude <= 0) {
             this._altitude = 0;
             if (this._pendingBarDown) this.resolveBarDown();
@@ -562,34 +562,35 @@ export default class Ball extends PIXI.Container {
     private preventRestOnPost(obj: any, incoming: number, inNet: boolean, side: 'left' | 'right'): boolean {
         try {
             // ----------------------------------------------------------------------
-            // [FIX QUAN TRỌNG]: LOGIC BẢO VỆ VÙNG TRONG GÔN
-            // Nếu bóng đã qua vạch vôi và nằm lọt thỏm giữa 2 cột dọc
-            // Thì cấm hàm này can thiệp. Vì hàm này có chức năng đẩy bóng ra (Snap).
-            // Nếu để nó chạy, nó sẽ đẩy bóng "dịch chuyển tức thời" vào giữa gôn.
+            // [IMPORTANT FIX]: Protect inside-goal region logic
+            // If the ball has crossed the goal line and is between the two posts
+            // then prevent this function from interfering. This function pushes the ball out (snap).
+            // If allowed, it would teleport the ball to the center of the goal.
             // ----------------------------------------------------------------------
             if (this.goal && this._z >= this.GOAL_DISTANCE - 5) {
-                // Lấy toạ độ Global của mép trong 2 cột
+                // Get global coordinates of the inner edges of both posts
                 const leftPostBounds = this.goal.leftPost.getBounds();
                 const rightPostBounds = this.goal.rightPost.getBounds();
                 
-                // Mép phải của cột trái
+                // Right edge of the left post
                 const innerLeft = leftPostBounds.x + leftPostBounds.width; 
-                // Mép trái của cột phải
+                // Left edge of the right post
                 const innerRight = rightPostBounds.x; 
 
-                // Lấy vị trí bóng hiện tại (Global)
+                // Get current ball position (global)
                 const ballPos = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
 
-                // Nếu bóng nằm trong khoảng giữa 2 cột (cộng thêm chút padding an toàn 5px)
+                // If the ball lies between the two posts (+5px safety padding)
                 if (ballPos.x > innerLeft + 5 && ballPos.x < innerRight - 5) {
-                    return false; // DỪNG NGAY LẬP TỨC
+                    return false; // STOP IMMEDIATELY
                 }
             }
             // ----------------------------------------------------------------------
 
-            // Nếu bóng đã vào lưới rồi thì bỏ qua va chạm cột ngoài
+            // If the ball is already in the net, ignore outer post collisions
             if (inNet && this._vz > -5) {
                 try { spawnImpactEffect(this.parent || this, this.x, this.y, { force: true }); } catch (e) { }
+                try { this.debugCollision('POST_HIT_IN_NET', { side, x:this.x, y:this.y }); } catch(e){}
                 try { this.handleGoal(); } catch (e) { }
                 this._ignorePostCollisions = true;
                 this._pushedOffByPost = false;
@@ -602,11 +603,11 @@ export default class Ball extends PIXI.Container {
                 
                 const sign = (side === 'left') ? -1 : 1; 
 
-                // 1. Tính lực bật (Đã tinh chỉnh cho mềm)
+                // 1. Compute bounce force (tuned for softness)
                 let bounceForce = incoming * 0.4;
                 bounceForce = Math.max(2, Math.min(15, bounceForce));
 
-                // 2. Tính vị trí mới (Snap) - Đây là đoạn gây ra lỗi nếu không có "Fix Quan Trọng" ở trên
+                // 2. Compute new snap position - this caused issues before without the IMPORTANT fix above
                 const pushOutDist = (bounds.width / 2 + (this.ballSprite.width / 2) * 0.8) + 2;
                     const newX = postCenterX + (Math.sign(this.x - postCenterX) || sign) * pushOutDist;
 
@@ -616,8 +617,9 @@ export default class Ball extends PIXI.Container {
                 }
                 
                 spawnImpactEffect(this.parent || this, this.x, this.y);
+                try { this.debugCollision('POST_SNAP', { side, newX, bounceForce, x:this.x, y:this.y }); } catch(e){}
 
-                // 3. Cập nhật vận tốc
+                // 3. Update velocity
                 this._vx = (Math.sign(this.x - postCenterX) || sign) * bounceForce;
                 this._vz *= 0.3; 
                 this._vy = Math.max(2, Math.abs(this._vy) * 0.5); 
@@ -632,65 +634,108 @@ export default class Ball extends PIXI.Container {
     }
 
     private checkPostCollisions(): boolean {
-        // Nếu đã chạm má trong rồi thì bỏ qua
+        // If already hit the inner guide, skip
         if (this._ignorePostCollisions) return false;
         
-        // Nếu không có goal
+        // If there's no goal
         if (!this.goal) return false;
 
-        // [FIX 1]: NẾU BÓNG BAY CAO HƠN HẲN XÀ NGANG -> KHÔNG BAO GIỜ VA CHẠM
-        // Thêm 10 đơn vị dư ra cho bán kính bóng, còn lại là bay qua luôn
+        // [FIX 1]: IF BALL IS SIGNIFICANTLY ABOVE THE CROSSBAR -> SKIP COLLISIONS
+        // Add 10 units margin for the ball radius; otherwise it's considered to pass over
         if (this._altitude > this.MAX_GOAL_HEIGHT + 10) return false;
 
         const r = (this.ballSprite.width / 2) * 0.8; 
         const now = Date.now();
-        if (now - this._lastPostCollisionTime < 300) return false;
+        if (now - this._lastPostCollisionTime < 500) return false;
         
         const impactSpeed = Math.abs(this._vx) + 2;
 
         const converter = this.parent || this;
         const currGlobal = converter.toGlobal(new PIXI.Point(this.x, this.y));
 
-        // Helper check va chạm 2D
+        // Helper: 2D collision check
         const checkHit = (obj: any) => {
             if (!obj) return false;
             try {
                 const bounds = obj.getBounds();
-                // Check va chạm AABB đơn giản có mở rộng bán kính r
+                // Simple AABB collision check expanded by radius r
                 const dx = currGlobal.x - (bounds.x + bounds.width/2);
                 const dy = currGlobal.y - (bounds.y + bounds.height/2);
                 return (Math.abs(dx) < bounds.width/2 + r && Math.abs(dy) < bounds.height/2 + r);
             } catch(e) { return false; }
         };
 
-        // --- PHÂN LOẠI VA CHẠM THEO ĐỘ CAO ---
+        // --- CLASSIFY COLLISIONS BY ALTITUDE ---
 
-        // 1. Check XÀ NGANG (Crossbar)
-        // Điều kiện: Bóng phải ở độ cao tiệm cận xà ngang
-        // (Ví dụ: Từ 85% chiều cao gôn trở lên mới được tính là chạm xà)
+        // 1. Crossbar check
+        // Condition: ball must be near crossbar height
+        // (e.g. within top ~85% of the goal area to count as a bar hit)
         const isHighEnoughForBar = this._altitude > this.MAX_GOAL_HEIGHT - 25;
-        
-        if (isHighEnoughForBar && checkHit(this.goal.crossbar)) {
+
+        // screen-space overlap fallback: if ball's global Y overlaps the crossbar bounds
+        // when near the goal Z, treat it as a candidate for bar collision (helps fast shots)
+        let screenOverlapForBar = false;
+        try {
+            const barB = this.goal.crossbar.getBounds();
+            const ballGForBar = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
+            const dyBar = Math.abs(ballGForBar.y - (barB.y + barB.height / 2));
+            screenOverlapForBar = dyBar < (barB.height / 2 + r);
+        } catch (e) { screenOverlapForBar = false; }
+
+        if ((isHighEnoughForBar || (this._z >= this.GOAL_DISTANCE - 20 && screenOverlapForBar)) && checkHit(this.goal.crossbar)) {
              const falling = this._vy < 0 || this._vz > 0;
              if (falling) {
                  spawnImpactEffect(this.parent || this, this.x, this.y);
-                 // Nảy lên hay nảy xuống tuỳ vào việc bóng đập mép trên hay mép dưới xà
-                 // Logic đơn giản: Đập xà thì nảy xuống đất (hoặc nảy vát lên nếu đang bay lên)
-                 this._vy = -Math.abs(this._vy) + 5; 
-                 
+                try { this.debugCollision('CROSSBAR_HIT', { x: this.x, y: this.y, vz: this._vz, vy: this._vy }); } catch(e){}
+                 // Improve crossbar bounce: reduce sideways deflection and push the ball
+                 // backward (toward the player) so it doesn't diagonally continue into the goal.
+                 try {
+                     // Deflect inward toward goal center (instead of pushing back to player)
+                     const converter = this.parent || this;
+                     const ballG = converter.toGlobal(new PIXI.Point(this.x, this.y));
+                     try {
+                         const gb = this.goal.goalSprite.getBounds();
+                         const goalCenterX = gb.x + gb.width / 2;
+                         const deltaX = goalCenterX - ballG.x;
+                         // Compute a stronger push magnitude based on how far from center the hit occurred
+                         const pushMag = Math.max(12, Math.min(40, Math.abs(deltaX) * 0.2 + Math.abs(this._vz) * 0.3));
+                         // Force direction explicitly: positive vx moves right on screen
+                         const dir = deltaX >= 0 ? 1 : -1;
+                         this._vx = dir * pushMag;
+                         if (this._debugLogs) {
+                             const titleStyle = 'color: #7B3FE4; font-weight:700; background: #fffbe6; padding:2px 6px; border-radius:4px;';
+                             try {
+                                 console.groupCollapsed('%c CROSSBAR DEFLECT', titleStyle);
+                                 console.log('ballGX:', ballG.x, 'goalCenterX:', goalCenterX, 'deltaX:', deltaX);
+                                 console.log('pushMag:', pushMag, 'vx:', this._vx, 'vzBefore:', this._vz);
+                                 console.groupEnd();
+                             } catch (e) {
+                                 console.log('CROSSBAR DEFLECT', { ballGX: ballG.x, goalCenterX, deltaX, pushMag, vx: this._vx, vzBefore: this._vz });
+                             }
+                         }
+                     } catch (e) {
+                         // Fallback: if goal sprite not available, nudge toward center based on sign of current vx
+                         this._vx = (Math.sign(this._vx) || 1) * Math.max(6, Math.abs(this._vx) * 0.5);
+                     }
+                     // Keep some forward momentum so the ball trends into the goal area
+                     this._vz = Math.max(8, Math.abs(this._vz) * 0.8);
+                     // Slight upward bounce then drop so it falls into the net area
+                     this._vy = -Math.abs(this._vy) * 0.5 + 2;
+                 } catch (e) {}
+
                  this._pendingBarDown = true;
                  this._lastPostCollisionTime = now;
                  return true;
              }
         }
         
-        // [FIX 2]: CHECK CỘT DỌC (Left/Right Posts)
-        // Điều kiện: Bóng phải THẤP HƠN xà ngang thì mới đập vào thân cột được.
-        // Nếu bóng đang ở tầm cao của xà, nó sẽ đập xà (đã check ở trên) hoặc bay qua.
+        // [FIX 2]: CHECK VERTICAL POSTS (Left/Right)
+        // Condition: ball must be lower than the crossbar to strike the post body.
+        // If the ball is at crossbar height, it will hit the bar (handled above) or pass over.
         const isLowEnoughForPost = this._altitude < this.MAX_GOAL_HEIGHT - 5;
 
         if (isLowEnoughForPost) {
-            // Nếu bóng đang nằm giữa mép trong của 2 cột thì KHÔNG gọi preventRestOnPost
+            // If the ball is between the inner edges of the two posts then DO NOT call preventRestOnPost
             let insidePosts = false;
             try {
                 if (this.goal && this.goal.leftPost && this.goal.rightPost) {
@@ -706,14 +751,16 @@ export default class Ball extends PIXI.Container {
                 }
             } catch (e) { insidePosts = false; }
 
-            // Cột Trái
-            if (!insidePosts && checkHit(this.goal.leftPost)) { 
+            // Left Post
+                if (!insidePosts && checkHit(this.goal.leftPost)) { 
+                try { this.debugCollision('POST_HIT', { side: 'left', impactSpeed, x: this.x, y: this.y }); } catch(e){}
                 this.preventRestOnPost(this.goal.leftPost, impactSpeed, false, 'left'); 
                 return true; 
             }
             
-            // Cột Phải
+            // Right Post
             if (!insidePosts && checkHit(this.goal.rightPost)) { 
+                try { this.debugCollision('POST_HIT', { side: 'right', impactSpeed, x: this.x, y: this.y }); } catch(e){}
                 this.preventRestOnPost(this.goal.rightPost, impactSpeed, false, 'right'); 
                 return true; 
             }
@@ -731,7 +778,7 @@ export default class Ball extends PIXI.Container {
     }
 
     private checkNetContact() {
-        // ... (Giữ nguyên logic chạm lưới)
+        // ... (keep existing net contact logic)
         if (this._netContacted) return;
         if (!this.goal || !this.goal.netSprite) return;
         if (this._z < this.GOAL_DISTANCE - 20) return;
@@ -744,15 +791,16 @@ export default class Ball extends PIXI.Container {
         const dy = ballG.y - centerNet.y;
         const dx = ballG.x - centerNet.x;
         
-        // Nếu bóng nằm trong vùng lưới
-        if (Math.abs(dx) < netBounds.width/2 - 10 && Math.abs(dy) < netBounds.height/2 - 10) {
+        // If the ball is within the net area
+          if (Math.abs(dx) < netBounds.width/2 - 10 && Math.abs(dy) < netBounds.height/2 - 10) {
              this._netContacted = true;
              this._vz = 0.5;
              this._vx *= 0.1;
              this._vy = -3;
              this._state = 'STUCK_IN_NET';
-                spawnImpactEffect(this.parent || this, this.x, this.y, { force: true });
-             try { this.setBelowKeeper(); } catch (e) {}
+                     spawnImpactEffect(this.parent || this, this.x, this.y, { force: true });
+                 try { this.debugCollision('NET_CONTACT', { ballG, netBounds }); } catch(e){}
+                 try { this.setBelowKeeper(); } catch (e) {}
         }
     }
 
@@ -764,19 +812,30 @@ export default class Ball extends PIXI.Container {
         this._vx *= 0.2;
         this._vy = -6;
         this._isMoving = true;
+        try { this.debugCollision('GOAL_PENDING', { x:this.x, y:this.y, z:this._z }); } catch(e){}
     }
 
     private triggerGoalkeeper() {
         if (this._keeperRequestInFlight) return;
         this._keeperRequestInFlight = true;
         let zone = null;
-        try { if(this.goal) zone = this.goal.getZoneFromPosition(this.x, this.y); } catch(e){}
+        try {
+            if (this.goal && typeof this.goal.getZoneFromPosition === 'function') {
+                zone = this.goal.getZoneFromPosition(this.x, this.y);
+            }
+        } catch (e) { zone = null; }
+
+        if (!this.goalkeeper || typeof this.goalkeeper.attemptCatch !== 'function') {
+            this._keeperRequestInFlight = false;
+            return;
+        }
+
         this.goalkeeper.attemptCatch(this.x, this.y, zone, 20).then((res:any) => {
              if (res.caught) {
                  this._savedPending = true;
-                 this._vx = (Math.random()-0.5)*30;
+                 this._vx = (Math.random()-0.5)*40;
                  this._vz = -20;
-                 this._vy = 10;
+                 this._vy = 20;
                  this._keeperCooldown = true;
                  setTimeout(() => this._keeperCooldown = false, 1000);
              }
@@ -821,7 +880,7 @@ export default class Ball extends PIXI.Container {
     private computeFinalScaleForY(worldY: number, screenHeight?: number): number {
         const sh = screenHeight || BASE_HEIGHT;
         const yNorm = Math.max(0, Math.min(1, worldY / sh));
-        return this._baseScale * (0.4 + (1.4 - 0.4) * Math.pow(yNorm, 1.5));
+        return this._baseScale * (0.6 + (1.4 - 0.6) * Math.pow(yNorm, 1.5));
     }
 
     private updateShadow(groundY: number, scale: number) {
@@ -834,21 +893,27 @@ export default class Ball extends PIXI.Container {
     }
 
     private checkInnerBarCollision(prevZ: number, currZ: number) {
-        if (!this.goal || !this.goal.frontLeftVis || !this.goal.frontRightVis) return;
+        if (!this.goal) return;
 
-        // 1. Chỉ check khi bóng vừa qua vạch vôi
+        // 1. Only check when the ball has just passed the goal line
         if (currZ < this.GOAL_DISTANCE) return;
         if (currZ > this.GOAL_DISTANCE + 50) return;
         if (this._altitude > this.MAX_GOAL_HEIGHT) return;
 
-        const checkHit = (obj: PIXI.Graphics) => {
+        // Throttle inner-guide collisions to avoid repeated triggers
+        try {
+            const now = Date.now();
+            if (now - this._lastPostCollisionTime < 500) return;
+        } catch (e) {}
+
+        const checkHit = (obj: PIXI.Graphics | null | undefined) => {
             if (!obj) return null;
             try {
                 const b = obj.getBounds();
                 const ballPos = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
                 
-                // Giữ padding nhỏ để va chạm chính xác
-                const padding = 8; 
+                // Keep small padding for hit accuracy
+                const padding = 20; 
 
                 const isHitX = ballPos.x > b.x - padding && ballPos.x < b.x + b.width + padding;
                 const isHitY = ballPos.y > b.y - padding && ballPos.y < b.y + b.height + padding;
@@ -857,87 +922,91 @@ export default class Ball extends PIXI.Container {
             } catch (e) { return null; }
         };
 
-        // --- XỬ LÝ VA CHẠM (ĐÃ LÀM MỀM LỰC NẢY) ---
+        // --- HANDLE COLLISIONS (soft bounce tuned) ---
 
         const hitLeft = checkHit(this.goal.frontLeftVis);
-        if (hitLeft) {
+        const hitRight = checkHit(this.goal.frontRightVis);
+        const hitLeftHor = checkHit(this.goal.frontLeftHorVis);
+        const hitRightHor = checkHit(this.goal.frontRightHorVis);
+
+        if (hitLeft || hitRight || hitLeftHor || hitRightHor) {
             this._z = this.GOAL_DISTANCE; 
             
             
-            // [FIX QUAN TRỌNG]: Bật cờ này lên để hàm checkPostCollisions bên dưới không chạy nữa
-            // Ngăn chặn việc nó "snap" bóng đi chỗ khác
+            // [IMPORTANT FIX]: Set this flag so checkPostCollisions below doesn't run
+            // Prevent it from snapping the ball elsewhere
             this._ignorePostCollisions = true; 
-
-            // Vật lý nảy vào (Giữ nguyên logic mềm mại nãy tôi gửi)
-            this._vx = Math.abs(this._vx) * 0.4 + 3; 
-            this._vz = Math.max(2, this._vz * 0.4); 
+            // Internal bounce physics (keep soft bounce behavior)
+            this._vx = Math.abs(this._vx) * 0.4 + 3;
+            this._vz = Math.max(2, this._vz * 0.4);
             this._vy = -Math.abs(this._vy * 0.5);
-            
-            this.ballSprite.rotation += 0.5;
-            this._state = 'STUCK_IN_NET'; 
-            this._netContacted = true; 
-            try {
-                const converter = this.parent || this;
-                const ballG = converter.toGlobal(new PIXI.Point(this.x, this.y));
-                const desiredGlobalX = hitLeft.x + hitLeft.width + 18;
-                const desiredLocal = converter.toLocal(new PIXI.Point(desiredGlobalX, ballG.y));
-                // Debug logging to inspect coordinate spaces when issues occur
-                try { console.log('INNER HIT LEFT', { hitLeft, ballG, desiredGlobalX, desiredLocal, parent: converter }); } catch(e) {}
-                this._vx = 0; this._vz = 0; this._vy = 0;
-                this._snapTargetX = desiredLocal.x;
-                this._snapLerpFrames = 12;
-                spawnImpactEffect(this.parent || this, this.x, this.y, { force: true });
-            } catch(e) { try { console.warn('inner-left snap failed', e); } catch(_) {} }
-            return;
-            try {
-                const converter = this.parent || this;
-                const ballG = converter.toGlobal(new PIXI.Point(this.x, this.y));
-                const desiredGlobalX = hitRight.x - 18;
-                const desiredLocal = converter.toLocal(new PIXI.Point(desiredGlobalX, ballG.y));
-                try { console.log('INNER HIT RIGHT', { hitRight, ballG, desiredGlobalX, desiredLocal, parent: converter }); } catch(e) {}
-                this._vx = 0; this._vz = 0; this._vy = 0;
-                this._snapTargetX = desiredLocal.x;
-                this._snapLerpFrames = 12;
-                spawnImpactEffect(this.parent || this, this.x, this.y, { force: true });
-            } catch(e) { try { console.warn('inner-right snap failed', e); } catch(_) {} }
-            this.ballSprite.rotation -= 0.5;
-            this._state = 'STUCK_IN_NET'; 
+
+            // mark as net contact / stuck
+            this._state = 'STUCK_IN_NET';
             this._netContacted = true;
+
             try {
                 const converter = this.parent || this;
                 const ballG = converter.toGlobal(new PIXI.Point(this.x, this.y));
-                const desiredGlobalX = hitRight.x - 18;
-                const desiredLocal = converter.toLocal(new PIXI.Point(desiredGlobalX, ballG.y));
-                this._snapTargetX = desiredLocal.x;
-                this._snapLerpFrames = 10;
-                this._vx = 0;
-                this._vz = 0;
-                this._vy = 0;
-                this._snapTargetX = desiredLocal.x;
-                this._snapLerpFrames = 12;
-                spawnImpactEffect(this.parent || this, this.x, this.y, { force: true });
-            } catch(e){}
+
+                let desiredGlobalX = null as number | null;
+                let rotationDelta = 0.5;
+
+                if (hitLeft || hitLeftHor) {
+                    const h = hitLeft || hitLeftHor as any;
+                    desiredGlobalX = h.x + h.width + 18;
+                    rotationDelta = 0.5;
+                    try { this.debugCollision('INNER_HIT', { side: 'left', hit: h, ballG, desiredGlobalX }); } catch(e) {}
+                } else if (hitRight || hitRightHor) {
+                    const h = hitRight || hitRightHor as any;
+                    desiredGlobalX = h.x - 18;
+                    rotationDelta = -0.5;
+                    try { this.debugCollision('INNER_HIT', { side: 'right', hit: h, ballG, desiredGlobalX }); } catch(e) {}
+                }
+
+                if (desiredGlobalX !== null) {
+                    const desiredLocal = converter.toLocal(new PIXI.Point(desiredGlobalX, ballG.y));
+                    this._vx = 0; this._vz = 0; this._vy = 0;
+                    this._snapTargetX = desiredLocal.x;
+                    this._snapLerpFrames = 12;
+                    this.ballSprite.rotation += rotationDelta;
+                    spawnImpactEffect(this.parent || this, this.x, this.y, { force: true });
+                    try { this._lastPostCollisionTime = Date.now(); } catch(e) {}
+                }
+            } catch (e) { try { console.warn('inner snap failed', e); } catch(_) {} }
+            return;
         }
     }
     private setAboveKeeper() {
         try {
             if (this.parent && this.goalkeeper) {
                 const idx = this.parent.getChildIndex(this.goalkeeper);
-                // Đặt index của bóng = index thủ môn + 1
+                // Set ball index = keeper index + 1
                 this.parent.setChildIndex(this, Math.min(this.parent.children.length - 1, idx + 1));
             }
         } catch (e) {}
     }
 
-    // Đưa bóng xuống nằm DƯỚI thủ môn (khi bóng lăn vào lưới)
+    // Place the ball BELOW the keeper (when ball rolls into the net)
     private setBelowKeeper() {
         try {
             if (this.parent && this.goalkeeper) {
                 const idx = this.parent.getChildIndex(this.goalkeeper);
-                // Đặt index của bóng = index thủ môn - 1
+                // Set ball index = keeper index - 1
                 this.parent.setChildIndex(this, Math.max(0, idx - 1));
             }
         } catch (e) {}
+    }
+
+    // Themed collision logger for consistent debug output
+    private debugCollision(type: string, info?: any) {
+        if (!this._debugLogs) return;
+        try {
+            const titleStyle = 'color: #ffffff; font-weight:700; background: linear-gradient(90deg,#6a11cb,#2575fc); padding:2px 6px; border-radius:4px;';
+            console.groupCollapsed(`%c COLLISION: ${type}`, titleStyle);
+            try { console.log(info); } catch (e) { console.log(type, info); }
+            console.groupEnd();
+        } catch (e) { try { console.log('COLLISION', type, info); } catch (_) {} }
     }
     
     // API Public
