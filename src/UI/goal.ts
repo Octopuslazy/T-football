@@ -62,17 +62,17 @@ export default class Goal extends PIXI.Container {
     // Front visuals container (for drawing debug guides in front of the net)
     this.frontLeftVis = new PIXI.Graphics();
     this.frontRightVis = new PIXI.Graphics();
-    this.frontLeftHorVis = new PIXI.Graphics();
-    this.frontRightHorVis = new PIXI.Graphics();
-    this.frontLeftHorVis2 = new PIXI.Graphics();
-    this.frontRightHorVis2 = new PIXI.Graphics();
+    // this.frontLeftHorVis = new PIXI.Graphics(); // disabled
+    // this.frontRightHorVis = new PIXI.Graphics(); // disabled
+    // this.frontLeftHorVis2 = new PIXI.Graphics(); // disabled
+    // this.frontRightHorVis2 = new PIXI.Graphics(); // disabled
     // Make them invisible by default (alpha=0) for release; enable during debug if needed
     this.frontLeftVis.alpha = 0;
     this.frontRightVis.alpha = 0;
-    this.frontLeftHorVis.alpha = 0;
-    this.frontRightHorVis.alpha = 0;
-    this.frontLeftHorVis2.alpha = 0;
-    this.frontRightHorVis2.alpha = 0;
+    // this.frontLeftHorVis.alpha = 0; // disabled
+    // this.frontRightHorVis.alpha = 0; // disabled
+    // this.frontLeftHorVis2.alpha = 0; // disabled
+    // this.frontRightHorVis2.alpha = 0; // disabled
     
     // --- ADD TO CONTAINER (IMPORTANT) ---
     // Draw order:
@@ -88,11 +88,11 @@ export default class Goal extends PIXI.Container {
     this.addChild(this.frontLeftVis);
     this.addChild(this.frontRightVis);
     // Add horizontal front guides (above slanted guides so they remain visible)
-    this.addChild(this.frontLeftHorVis);
-    this.addChild(this.frontRightHorVis);
+    // this.addChild(this.frontLeftHorVis); // disabled
+    // this.addChild(this.frontRightHorVis); // disabled
     // Add second horizontal guides (slightly higher)
-    this.addChild(this.frontLeftHorVis2);
-    this.addChild(this.frontRightHorVis2);
+    // this.addChild(this.frontLeftHorVis2); // disabled
+    // this.addChild(this.frontRightHorVis2); // disabled
     // 4. Debug Zone
     this.addChild(this.zoneVisualization);
 

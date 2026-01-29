@@ -71,6 +71,9 @@ export default class Ball extends PIXI.Container {
     private _forceScaleFrames: number = 0; 
     private _lastPostCollisionTime: number = 0;
     private _ignorePostCollisions: boolean = false; 
+    // Prevent double-applying impulses from post hit/snap within a short window
+    private _postImpulseAppliedTime: number = 0;
+    private _postImpulseDebounceMs: number = 100; // ms window to ignore duplicate impulses
     private _ignoreGoalkeeper: boolean = false; 
     private _goalPending: boolean = false; 
     private _savedPending: boolean = false; 
@@ -480,7 +483,8 @@ export default class Ball extends PIXI.Container {
         this.ballSprite.alpha = vanishingAlpha;
         if (this.shadowSprite) this.shadowSprite.alpha = vanishingAlpha * 0.3;
 
-        if (this._z > this.GOAL_DISTANCE) {
+        // Don't apply the extra z-based shrink if the ball is already treated as a goal/net rest.
+        if (this._z > this.GOAL_DISTANCE && !isGoal) {
             const zBasedFactor = 0.55 * (600 / Math.max(600, this._z));
             const zScale = this._baseScale * zBasedFactor;
             finalScale = Math.min(finalScale, zScale);
@@ -489,6 +493,13 @@ export default class Ball extends PIXI.Container {
         finalScale *= vanishingScaleFactor;
 
         let dScale: number = (this._displayScale !== null) ? this._displayScale : finalScale;
+        // If the ball is essentially stationary and already treated as a goal/rest,
+        // prevent `finalScale` from being smaller than the current displayed scale
+        // so it won't slowly shrink after coming to rest.
+        const isStationary = Math.abs(this._vx) < 0.25 && Math.abs(this._vy) < 0.25 && Math.abs(this._vz) < 0.25 && this._altitude <= 0.01;
+        if (isStationary && isGoal && finalScale < dScale) {
+            finalScale = dScale;
+        }
         if (this._forceScaleFrames && this._forceScaleFrames > 0) {
             this._forceScaleFrames -= 1;
             this.ballSprite.scale.set(0.8 * dScale, 0.8 * dScale);
@@ -598,36 +609,63 @@ export default class Ball extends PIXI.Container {
             }
 
             try {
+                const now = Date.now();
+                // If we recently applied a post-related impulse, skip to avoid doubling forces
+                if (now - this._postImpulseAppliedTime < this._postImpulseDebounceMs) return false;
                 const bounds = obj.getBounds();
                 const postCenterX = bounds.x + bounds.width / 2;
                 
                 const sign = (side === 'left') ? -1 : 1; 
 
-                // 1. Compute bounce force (tuned for softness)
-                let bounceForce = incoming * 0.4;
-                bounceForce = Math.max(2, Math.min(15, bounceForce));
+                // 1. Compute bounce force: set to 60% of incoming impact as requested
+                let bounceForce = incoming * 0.1;
+                // keep a small minimum to avoid zero impulses
+                bounceForce = Math.max(1, bounceForce);
+                // Cap bounce force to avoid very large impulses from extreme inputs
+                const maxBounceForce = 8; // tunable
+                if (bounceForce > maxBounceForce) {
+                    try { console.log('POST_SNAP: capping bounceForce', { incoming, original: incoming * 0.6, capped: maxBounceForce }); } catch(e) {}
+                    bounceForce = maxBounceForce;
+                }
 
                 // 2. Compute new snap position - this caused issues before without the IMPORTANT fix above
-                const pushOutDist = (bounds.width / 2 + (this.ballSprite.width / 2) * 0.8) + 2;
+                const pushOutDist = (bounds.width / 2 + (this.ballSprite.width / 2) * 0.2) + 2;
                     const newX = postCenterX + (Math.sign(this.x - postCenterX) || sign) * pushOutDist;
 
                 if (Number.isFinite(newX)) {
                     this._snapTargetX = newX;
-                    this._snapLerpFrames = 12;
+                    this._snapLerpFrames = 120;
                 }
-                
+
                 spawnImpactEffect(this.parent || this, this.x, this.y);
                 try { this.debugCollision('POST_SNAP', { side, newX, bounceForce, x:this.x, y:this.y }); } catch(e){}
 
-                // 3. Update velocity
-                this._vx = (Math.sign(this.x - postCenterX) || sign) * bounceForce;
-                this._vz *= 0.3; 
-                this._vy = Math.max(2, Math.abs(this._vy) * 0.5); 
-                
+                // 3. Update velocity — blend smoothly to avoid sudden large jumps
+                try {
+                    const oldVx = this._vx*0.2; const oldVz = this._vz*0.2; const oldVy = this._vy*0.2;
+                    const targetVx = (Math.sign(this.x - postCenterX) || sign) * bounceForce;
+                    const targetVz = Math.max(2, oldVz * 0.1);
+                    const blendedVx = oldVx * 0.5 + targetVx * 0.5; // 50/50 blend
+                    const blendedVz = oldVz * 0.5 + targetVz * 0.5;
+                    const newVy = Math.max(2, Math.abs(oldVy) * 0.5);
+                    console.log('POST_SNAP pre', { side, incoming, bounceForce, oldVx, oldVz, oldVy, targetVx, targetVz });
+                    this._vx = blendedVx*0.3;
+                    this._vz = blendedVz*0.3;
+                    this._vy = newVy;
+                    try { this._postImpulseAppliedTime = Date.now(); } catch(e) {}
+                    try { console.log('POST_SNAP applied (blended)', { side, vx:this._vx, vz:this._vz, vy:this._vy, bounceForce }); } catch(e) {}
+                } catch(e) {
+                    // Fallback to previous safe behavior
+                    this._vx = (Math.sign(this.x - postCenterX) || sign) * bounceForce;
+                    this._vz *= 0.3;
+                    this._vy = Math.max(2, Math.abs(this._vy) * 0.5);
+                    try { this._postImpulseAppliedTime = Date.now(); } catch(e) {}
+                }
+
                 this._altitude = Math.max(this._altitude, 6);
                 this._lastPostCollisionTime = Date.now();
                 this._pushedOffByPost = true;
-                
+
                 return true;
             } catch (e) { return false; }
         } catch (e) { return false; }
@@ -649,6 +687,7 @@ export default class Ball extends PIXI.Container {
         if (now - this._lastPostCollisionTime < 500) return false;
         
         const impactSpeed = Math.abs(this._vx) + 2;
+        const impactSpeed2 = 0.6*Math.abs(this._vz) + 2;
 
         const converter = this.parent || this;
         const currGlobal = converter.toGlobal(new PIXI.Point(this.x, this.y));
@@ -714,13 +753,20 @@ export default class Ball extends PIXI.Container {
                              }
                          }
                      } catch (e) {
-                         // Fallback: if goal sprite not available, nudge toward center based on sign of current vx
-                         this._vx = (Math.sign(this._vx) || 1) * Math.max(6, Math.abs(this._vx) * 0.5);
-                     }
-                     // Keep some forward momentum so the ball trends into the goal area
-                     this._vz = Math.max(8, Math.abs(this._vz) * 0.8);
-                     // Slight upward bounce then drop so it falls into the net area
-                     this._vy = -Math.abs(this._vy) * 0.5 + 2;
+                        // Fallback: if goal sprite not available, nudge toward center based on sign of current vx
+                        try {
+                            const oldVx = this._vx; const oldVz = this._vz; const oldVy = this._vy;
+                            console.log('CROSSBAR pre (fallback)', { oldVx, oldVz, oldVy });
+                        } catch(e) {}
+                        this._vx = (Math.sign(this._vx) || 1) * Math.max(6, Math.abs(this._vx) * 0.5);
+                    }
+                    // Keep some forward momentum so the ball trends into the goal area
+                    try { const oldVz = this._vz; console.log('CROSSBAR pre vz', { oldVz }); } catch(e) {}
+                    this._vz = Math.max(8, Math.abs(this._vz) * 0.8);
+                    // Slight upward bounce then drop so it falls into the net area
+                    try { const oldVy = this._vy; console.log('CROSSBAR pre vy', { oldVy }); } catch(e) {}
+                    this._vy = -Math.abs(this._vy) * 0.5 + 2;
+                    try { console.log('CROSSBAR applied', { vx:this._vx, vz:this._vz, vy:this._vy }); } catch(e) {}
                  } catch (e) {}
 
                  this._pendingBarDown = true;
@@ -753,15 +799,15 @@ export default class Ball extends PIXI.Container {
 
             // Left Post
                 if (!insidePosts && checkHit(this.goal.leftPost)) { 
-                try { this.debugCollision('POST_HIT', { side: 'left', impactSpeed, x: this.x, y: this.y }); } catch(e){}
-                this.preventRestOnPost(this.goal.leftPost, impactSpeed, false, 'left'); 
+                try { this.debugCollision('POST_HIT', { side: 'left', impactSpeed2, x: this.x, y: this.y }); } catch(e){}
+                this.preventRestOnPost(this.goal.leftPost, impactSpeed2, false, 'left'); 
                 return true; 
             }
             
             // Right Post
             if (!insidePosts && checkHit(this.goal.rightPost)) { 
-                try { this.debugCollision('POST_HIT', { side: 'right', impactSpeed, x: this.x, y: this.y }); } catch(e){}
-                this.preventRestOnPost(this.goal.rightPost, impactSpeed, false, 'right'); 
+                try { this.debugCollision('POST_HIT', { side: 'right', impactSpeed2, x: this.x, y: this.y }); } catch(e){}
+                this.preventRestOnPost(this.goal.rightPost, impactSpeed2, false, 'right'); 
                 return true; 
             }
         }
@@ -913,7 +959,7 @@ export default class Ball extends PIXI.Container {
                 const ballPos = (this.parent || this).toGlobal(new PIXI.Point(this.x, this.y));
                 
                 // Keep small padding for hit accuracy
-                const padding = 20; 
+                const padding = 8; 
 
                 const isHitX = ballPos.x > b.x - padding && ballPos.x < b.x + b.width + padding;
                 const isHitY = ballPos.y > b.y - padding && ballPos.y < b.y + b.height + padding;
@@ -926,10 +972,10 @@ export default class Ball extends PIXI.Container {
 
         const hitLeft = checkHit(this.goal.frontLeftVis);
         const hitRight = checkHit(this.goal.frontRightVis);
-        const hitLeftHor = checkHit(this.goal.frontLeftHorVis);
-        const hitRightHor = checkHit(this.goal.frontRightHorVis);
+        // const hitLeftHor = checkHit(this.goal.frontLeftHorVis); // disabled
+        // const hitRightHor = checkHit(this.goal.frontRightHorVis); // disabled
 
-        if (hitLeft || hitRight || hitLeftHor || hitRightHor) {
+        if (hitLeft || hitRight) {
             this._z = this.GOAL_DISTANCE; 
             
             
@@ -937,7 +983,7 @@ export default class Ball extends PIXI.Container {
             // Prevent it from snapping the ball elsewhere
             this._ignorePostCollisions = true; 
             // Internal bounce physics (keep soft bounce behavior)
-            this._vx = Math.abs(this._vx) * 0.4 + 3;
+            this._vx = Math.abs(this._vx) * 0.2;
             this._vz = Math.max(2, this._vz * 0.4);
             this._vy = -Math.abs(this._vy * 0.5);
 
@@ -952,13 +998,13 @@ export default class Ball extends PIXI.Container {
                 let desiredGlobalX = null as number | null;
                 let rotationDelta = 0.5;
 
-                if (hitLeft || hitLeftHor) {
-                    const h = hitLeft || hitLeftHor as any;
+                if (hitLeft) {
+                    const h = hitLeft as any;
                     desiredGlobalX = h.x + h.width + 18;
                     rotationDelta = 0.5;
                     try { this.debugCollision('INNER_HIT', { side: 'left', hit: h, ballG, desiredGlobalX }); } catch(e) {}
-                } else if (hitRight || hitRightHor) {
-                    const h = hitRight || hitRightHor as any;
+                } else if (hitRight  ) {
+                    const h = hitRight as any;
                     desiredGlobalX = h.x - 18;
                     rotationDelta = -0.5;
                     try { this.debugCollision('INNER_HIT', { side: 'right', hit: h, ballG, desiredGlobalX }); } catch(e) {}
@@ -966,7 +1012,30 @@ export default class Ball extends PIXI.Container {
 
                 if (desiredGlobalX !== null) {
                     const desiredLocal = converter.toLocal(new PIXI.Point(desiredGlobalX, ballG.y));
-                    this._vx = 0; this._vz = 0; this._vy = 0;
+                    // Give the ball a small inward lateral push toward the snap target
+                    const lateralDir = Math.sign(desiredLocal.x - this.x) || 1;
+                    // soft lateral nudges and forward momentum so it will bounce when hitting ground
+                    try {
+                        // Do NOT apply full lateral + forward push immediately.
+                        // Only set a small nudged lateral velocity (20% toward target) and
+                        // set the snap target so the lerp will pull the ball into place.
+                        const oldVx = this._vx; const oldVz = this._vz; const oldVy = this._vy;
+                        const targetVx = lateralDir * (Math.max(4, Math.abs(oldVx) * 0.25 + 3));
+                        const nudgedVx = oldVx * 0.8 + targetVx * 0.2; // 20% nudged toward target
+                        console.log('INNER_HIT pre', { side: hitLeft ? 'left' : 'right', oldVx, oldVz, oldVy, lateralDir, desiredGlobalX });
+                        this._vx = nudgedVx;
+                        // do not modify _vz/_vy here to avoid large forward impulses
+                        this._pendingBarDown = true; // ensure resolveBarDown runs on ground contact
+                        console.log('INNER_HIT applied (nudged)', { nudgedVx });
+                    } catch (e) {
+                        const oldVx = this._vx; const oldVz = this._vz; const oldVy = this._vy;
+                        const fallbackVx = lateralDir * 6;
+                        this._vx = oldVx * 0.8 + fallbackVx * 0.2;
+                        // keep existing vz/vy
+                        this._pendingBarDown = true;
+                        console.log('INNER_HIT fallback applied (nudged)', { oldVx, oldVz, oldVy, vx: this._vx });
+                    }
+                    try { this._postImpulseAppliedTime = Date.now(); } catch(e) {}
                     this._snapTargetX = desiredLocal.x;
                     this._snapLerpFrames = 12;
                     this.ballSprite.rotation += rotationDelta;
