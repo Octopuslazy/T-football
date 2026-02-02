@@ -3,40 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Penalty Game</title>
   
-
   <style>
-    html,body{height:100%;margin:0}
-    /* Ensure app container and canvas fill the viewport */
-    #app{height:100%;width:100%;}
-    #app canvas{display:block;width:100%;height:100%;}
-    #reset-btn {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 1000;
-      padding: 10px 20px;
-      background: #FF4444;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
+    html, body { 
+        height: 100%; 
+        margin: 0; 
+        overflow: hidden; /* Chặn thanh cuộn để full màn hình */
+        background-color: #af3d3d; 
     }
-    #reset-btn:hover {
-      background: #CC3333;
+    #app { 
+        width: 100%; 
+        height: 100%; 
+    }
+    canvas {
+        display: block; /* Ngăn lỗi khoảng trắng inline của canvas */
     }
   </style>
-  <script type="importmap">
-  {
-    "imports": {
-      "pixi.js": "/node_modules/pixi.js/dist/pixi.mjs",
-      "pixi": "/node_modules/pixi.js/dist/pixi.mjs"
-    }
-  }
-  </script>
-  <script type="module" crossorigin src="/assets/index-CnfwhNF2.js"></script>
+  <script type="module" crossorigin src="/assets/index-C5vZz2sY.js"></script>
 </head>
 <body>
   <div id="app"></div>

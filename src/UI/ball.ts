@@ -1,9 +1,14 @@
-import {Container, Graphics, Point, FederatedPointerEvent, Ticker } from "pixi.js";
+import {Container, Graphics, Point, FederatedPointerEvent, Ticker, Sprite } from "pixi.js";
 import { BASE_WIDTH, BASE_HEIGHT } from "../constant/global";
 const CONFIG = {
-    ballradius: 60,    
+    ballradius: 145,    
 
 };
+enum BallState {
+    Idle,
+    Flying,
+    Landing,
+}
 interface SwipeData {
     point: Point[];
     startTime: number;
@@ -17,6 +22,9 @@ export class BallGame extends Container {
     private line!: Graphics;
     private visualScale: number = 1;
     private timescale: number = 1;
+    private state: BallState = BallState.Idle;
+    private hasLanched: boolean = false;
+    private curveForce: number = 0;
 
     // 3d 
     private x3d: number = 0;
@@ -39,13 +47,10 @@ export class BallGame extends Container {
     public isFlying: boolean = false;
     constructor() {
         super();
-        this.shadow = new Graphics();
-        this.shadow
-            .ellipse(0, 0, CONFIG.ballradius * 0.8, CONFIG.ballradius * 0.7)
-            .fill(0xffffff)
-            .stroke({ width: 2, color: 0x000000, alpha: 0.3 });
-
-        this.addChild(this.shadow)
+        this.initball();
+        this.initshadow();
+        this.initline();
+       
         this.initball();
         
 
@@ -58,52 +63,50 @@ export class BallGame extends Container {
         this.on('pointermove', this.onPointerMove.bind(this));
         this.on('pointerup', this.onPointerUp.bind(this));
         this.on('pointerupoutside', this.onPointerUp.bind(this));
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space'){
+                this.reset();
+            }
+        });
+        this.reset();
+    }
+    initball() {
+        //ball handle
+        if (this.ball){
+            this.ball.destroy({ children: true });  
+        }
+        this.ball = new Container();
+        const ballSprite = Sprite.from('/Assets/arts/ball.png');
+        ballSprite.anchor.set(0.5);
+        const ballwidth = CONFIG.ballradius * 2;
+        const ballheight = CONFIG.ballradius * 2;
+        ballSprite.width = ballwidth;
+        ballSprite.height = ballheight;
+        this.ball.addChild(ballSprite);
+        this.addChild(this.ball);
+    }
+    initshadow() {
+        // shadow handle
+         this.shadow = new Graphics();
+        this.shadow
+            .ellipse(0, 0, CONFIG.ballradius * 0.8, CONFIG.ballradius * 0.2)
+            .fill(0xffffff)
+            .stroke({ width: 2, color: 0xffffff, alpha: 0.3 });
 
+        this.addChild(this.shadow);
+    }
+    initline() {
         // line handle
         this.line = new Graphics();
         this.line.alpha = 0.4;
         this.addChild(this.line);
         Ticker.shared.add(this.update, this);
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space'){
-                this.resetpossition();
-            }
-        });
-        this.resetpossition();
     }
-    initball() {
-        if (this.ball){
-            this.ball.destroy({ children: true });  
-        }
-        this.ball = new Container();
-        const circle = new Graphics();
-        circle.circle(0, 0, CONFIG.ballradius).fill(0xffffff).stroke({ width: 2, color: 0x000000  });
-        const pattern = new Graphics();
-        pattern.circle(0,0,CONFIG.ballradius*0.5);
-        pattern.moveTo(0, CONFIG.ballradius).lineTo(0.5, 0.5*CONFIG.ballradius).fill(0xffffff).stroke({ width: 2, color: 0x000000 });
-        this.ball.addChild(circle, pattern);
-        this.addChild(this.ball);
-    }
-    resetpossition() {
-        const CENTERX = BASE_WIDTH / 2;
-        const CENTERY = BASE_HEIGHT * 0.75;
 
-        this.x3d = 0; this.y3d = 0; this.z3d = 0;
-        this.vx = 0; this.vy = 0; this.vz = 0;
-        this.isFlying = false;
-        this.initball();
-        this.ball.position.set(CENTERX, CENTERY);
-        this.visualScale = 1;
-        this.ball.scale.set(this.visualScale);
-        this.shadow.position.set(CENTERX, CONFIG.ballradius+ CENTERY);
-        this.shadow.scale.set(1);
-        this.shadow.alpha = 0.5;
-        this.rotationSpeed = 0;
-        this.ball.rotation = 0;
-        this.line.clear();
-    }
+
     onPointerDown(e: FederatedPointerEvent) {
-        if (this.isFlying) return;
+        if (this.state !== BallState.Idle) return;
+        if (this.hasLanched) return;
         this.SwipeData.isDown = true;
         this.SwipeData.startTime = Date.now();
         this.SwipeData.point = [];
@@ -114,6 +117,7 @@ export class BallGame extends Container {
         
     }
     onPointerMove(e: FederatedPointerEvent) {
+        if (this.hasLanched) return;
         if (!this.SwipeData.isDown) return;
         
         const CurrentTime = Date.now();
@@ -148,10 +152,17 @@ export class BallGame extends Container {
         })}
 
     onPointerUp() {
+        if (this.hasLanched) return;
         if (!this.SwipeData.isDown) return;
         this.SwipeData.isDown = false;
         this.line.clear();
+        if (this.SwipeData.point.length < 3) return;
 
+        this.LaunchBall();
+    }
+    LaunchBall() {
+        this.hasLanched = true;
+        this.isFlying = true;
         // caculate time
         let duration = Date.now() - this.SwipeData.startTime;
         if (duration < 1) duration = 1;
@@ -164,23 +175,34 @@ export class BallGame extends Container {
         const distX = end.x - start.x;
         const distY = start.y - end.y; 
         const dist = Math.sqrt(distX * distX + distY * distY);
+        if (dist < 5) {
+            console.log('Swipe too short');
+            return;
+        }
+
+        // curveforce
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const swipeAngle = Math.atan2(dy, dx);
+        this.curveForce = Math.sin(swipeAngle) * Math.min(Math.abs(dx), 300) * 0.02;
+
 
         // speed
-        let speed = 1.2*dist/duration;
-        if (speed > 30) speed = 30;
+        let speed = 1.5*dist/duration;
+        if (speed > 90) speed = 90;
         if (speed < 1) speed = 1;
 
         // force
-        const Power = 45;
+        const Power = 40;
         const totalForce = speed * Power;
         const ratioX = distX / dist;
         const ratioY = distY / dist;
 
-        this.vz = 1.6*totalForce * (0.96 - 0.1*ratioY)+5; // vertical force
-        this.vy = totalForce *0.09 + ratioY * 0.22; // horizontal force y
+        this.vz = 0.6*totalForce * (0.96 - 0.1*ratioY) + 10; // vertical force
+        this.vy = 5 + totalForce *0.1 + ratioY * 0.22; // horizontal force y
         if (this.vy < 25) this.vy = 1;
         this.vx = totalForce * ratioX * 0.65; // horizontal force x
-        this.vx = Math.max(-60, Math.min(40, this.vx));
+        this.vx = Math.max(-500, Math.min(500, this.vx));
 
         console.log(`Speed: ${speed.toFixed(2)} px/ms`);
         console.log(`Power: ${totalForce.toFixed(2)}`);
@@ -190,26 +212,31 @@ export class BallGame extends Container {
         this.isFlying = true;
 
         // Rotation
-        this.rotationSpeed = 0.1 * this.vx * 0.1;
+        this.rotationSpeed = 0.1 * this.vx * 0.2;
         if (Math.abs(this.rotationSpeed) < 1) {
-            this.rotationSpeed = (Math.random()>0.2?1:-1)*0.4;
+            this.rotationSpeed = (Math.random()>0.2?1:-2)*0.5;
         }
 
         console.log('Pointer up', this.SwipeData);
     }
 
+
     update(ticker: Ticker) {
-        this.timescale += (1 - this.timescale) * 0.15;
+        if (!this.isFlying) return;
+        this.timescale += (0.7 - this.timescale) * 0.15;
         const dt = (ticker.deltaMS / 16.666)*this.timescale; // normalize to 60fps
         if (this.vy > 0) {
-            // đang bay lên → gravity nhẹ
+            
             this.vy -= this.fg * dt * 2.2;
         } else {
-            // đang rơi → ép rơi nhanh
-            this.vy -= this.fg * dt * 2.2;
-        }// apply gravity
+            
+            this.vy -= this.fg * dt * 3;
+        }
+        this.vx += this.curveForce * dt;
+        this.curveForce *= 0.94;
+        // apply gravity
         this.x3d += this.vx*dt;
-        const fallMul = this.vy < 0 ? 2.5 : 1.9;
+        const fallMul = this.vy < 0 ? 3.5 : 1.9;
         this.y3d += this.vy * dt * fallMul;
         this.z3d += this.vz*dt;
 
@@ -217,42 +244,100 @@ export class BallGame extends Container {
         if (flightRatio > 0.55 && this.vy < 0) {
             this.vy -= this.fg * dt * 2.5;
         }
-        // Rotation update
-        if (this.isFlying) {
-            this.ball.rotation += this.rotationSpeed * dt;
-            this.rotationSpeed *= 0.98;
-        } else {
-            this.ball.rotation = 0;
-        }
             
-
-
         //reach ground
         if (this.y3d <= 0) {
             this.y3d = 0;
-            this.vy *= -0.5; // bounce
-            this.vx *= 0.985;
-            this.vz *= 0.885;
-            if (Math.abs(this.vy)<1 && this.vz < 1) {
-                this.resetpossition();
+            this.vy *= -0.4; // bounce
+            this.vx *= 0.96;
+            this.vz *= 0.8;
+            if ((Math.abs(this.vx) < 0.5 && Math.abs(this.vy) < 1 && this.vz < 0.5) || this.ball.scale.x <= 0.1|| this.ball.rotation <= 0.1 && this.state === BallState.Flying) {
+                this.reset();
             }
         }
+        this.renderBall(dt);
+        if (this.ball.x < -100 || this.ball.x > BASE_WIDTH + 75) {
+            console.log('out screen');
+            this.reset();
+            return;
+        }
+    }
+    renderBall(dt: number) {
         // Render
-        const focalLength = 8000;
+        const focalLength = 800;
         const scale = focalLength / (focalLength + this.z3d);
         const CENTERX = BASE_WIDTH / 2;
-        const START_Y = BASE_HEIGHT * 0.75;
+        const START_Y = BASE_HEIGHT * 0.79;
 
         this.ball.x = CENTERX + this.x3d * scale;
-        this.ball.y = START_Y - this.y3d * scale - this.z3d*scale*0.1;
-        this.visualScale += (scale - this.visualScale) * 0.01;
-        this.ball.scale.set(this.visualScale);
+        this.ball.y = START_Y - this.y3d * scale - this.z3d*scale*1.2;
+        if (this.isFlying) {
+            if (this.vz >= 10 || this.vy > 0.1){
+                this.visualScale += 0.01+(scale - this.visualScale) * 0.04;
+                this.ball.scale.set(this.visualScale);
+            } else {
+                this.ball.scale.set(this.visualScale);
+            }
+        // Rotation update
+        this.ball.rotation += this.rotationSpeed * dt*0.18;
+        this.rotationSpeed *= 0.98;
+        if (this.rotationSpeed > 2.5) this.rotationSpeed = 2.5;
+        if (this.rotationSpeed < -2.5) this.rotationSpeed = -2.5;
+       
+        console.log(`scale :${scale.toFixed(2)} , visualScale: ${this.visualScale.toFixed(2)}`);
 
+        // render shadow
         this.shadow.x = this.ball.x;
-        this.shadow.y = START_Y - (this.z3d * scale * 0.1) + (CONFIG.ballradius * scale);
+        this.shadow.y = START_Y - (this.z3d * scale * 1.2) + (CONFIG.ballradius * scale);
         this.shadow.scale.set(scale);
-        this.shadow.alpha = Math.max(0.1, 0.5 - this.y3d / 800);
+        this.shadow.alpha = Math.max(0.1, 0.5 - this.y3d / 800);  
+        } else {
+            return;
+        }
+        //anim fadoff
+        const fade_start = 67000;
+        const fade_end = 72000;
+        if (this.z3d >= fade_start) {
+            console.log('fly to the sky');
+            const faderatio = (this.z3d - fade_start) / (fade_end - fade_start);
+            const newalpha = 1.0 - faderatio;
+            this.ball.alpha = Math.max(0, newalpha);
+            this.shadow.alpha = 0;
+            if (this.ball.alpha <= 0.1 || this.z3d >= fade_end) {
+                this.reset();
+                return;
+            }
+
+        } else {
+            if (this.z3d < fade_start) {
+                this.ball.alpha = 1;
+            }}
     }
+    private reset(reason:string = "unknown"){
+        this.state = BallState.Idle;
+        this.isFlying = false;
+        const CENTERX = BASE_WIDTH / 2;
+        const CENTERY = BASE_HEIGHT * 0.79;
+
+        this.x3d = 0; this.y3d = 0; this.z3d = 0;
+        this.vx = 0; this.vy = 0; this.vz = 0;
+        this.initball();
+        this.ball.position.set(CENTERX, CENTERY);
+        this.visualScale = 1;
+        this.ball.scale.set(this.visualScale);
+        this.ball.alpha = 1;
+        this.shadow.position.set(CENTERX, CONFIG.ballradius+ CENTERY);
+        this.shadow.scale.set(1);
+        this.shadow.alpha = 0.5;
+        this.rotationSpeed = 0;
+        this.ball.rotation = 0;
+        this.line.clear();
+        this.hasLanched = false;       
+    }
+    override destroy() {
+    Ticker.shared.remove(this.update, this);
+    super.destroy();
+  }
 
 }
         

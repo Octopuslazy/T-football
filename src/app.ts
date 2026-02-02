@@ -1,7 +1,7 @@
 import { Application, Container, Ticker, Assets } from 'pixi.js';
 import { BallGame } from './UI/ball'; 
 import Goal from './UI/goal';
-import Goalkeeper from './UI/goalkeeper';
+// Goalkeeper temporarily disabled
 import Ground from './UI/ground';
 import ScoreDisplay from './UI/scoreDisplay';
 import StartScreen from './UI/startScreen';
@@ -12,7 +12,7 @@ export default class App extends Application {
     // Thêm dấu ! để báo cho TypeScript biết các biến này sẽ được gán trong init()
     private ground!: Ground;
     private goal!: Goal;
-    private goalkeeper!: Goalkeeper;
+    // goalkeeper temporarily removed
     private scoreDisplay!: ScoreDisplay;
     private ballCountDisplay!: BallCountDisplay;
     private startScreen!: StartScreen;
@@ -54,7 +54,14 @@ export default class App extends Application {
             { name: '/Assets/arts/net.png', src: '/Assets/arts/net.png' },
             { name: '/Assets/arts/gkeeper.png', src: '/Assets/arts/gkeeper.png' },
             { name: '/Assets/arts/gkeeper2.png', src: '/Assets/arts/gkeeper2.png' }, // nếu dùng
-            { name: '/Assets/arts/startscreen.png', src: '/Assets/arts/startscreen.png' }
+            { name: '/Assets/arts/startscreen.png', src: '/Assets/arts/startscreen.png' },
+            { name: '/Assets/arts/ball.png', src: '/Assets/arts/ball.png' },
+            { name: '/Assets/arts/BG_1.png', src: '/Assets/arts/BG_1.png' },
+            { name: '/Assets/arts/DEMO_1.png', src: '/Assets/arts/DEMO_1.png' },
+            { name: '/Assets/arts/goal_1_a.png', src: '/Assets/arts/goal_1_a.png'},
+            { name: '/Assets/arts/goal_1_b.png', src: '/Assets/arts/goal_1_b.png'},
+            { name: '/Assets/arts/goal_2_a.png', src: '/Assets/arts/goal_2_a.png'},
+            { name: '/Assets/arts/goal_2_b.png', src: '/Assets/arts/goal_2_b.png'}
         ];
 
         // Chờ tải xong hết ảnh mới chạy tiếp
@@ -100,10 +107,6 @@ export default class App extends Application {
 
         this.goal = new Goal();
         this.gameContainer.addChild(this.goal);
-
-        this.goalkeeper = new Goalkeeper();
-        this.goalkeeper.setGoal(this.goal); // Đồng bộ kích thước thủ môn với gôn
-        this.gameContainer.addChild(this.goalkeeper);
 
         this.scoreDisplay = new ScoreDisplay();
         this.gameContainer.addChild(this.scoreDisplay);
@@ -185,9 +188,8 @@ export default class App extends Application {
         this.shotsLeft--;
         this.ballCountDisplay.setCount(this.shotsLeft);
 
-        // Đợi 2 giây rồi reset thủ môn và tạo bóng mới
+        // Đợi 2 giây rồi tạo bóng mới
         setTimeout(() => {
-            this.goalkeeper.reset();
             this.createNewBall();
         }, 2000);
     }

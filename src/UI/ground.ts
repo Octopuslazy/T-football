@@ -5,17 +5,26 @@ export default class Ground extends PIXI.Container {
   private groundSprite: PIXI.Graphics;
   private skySprite: PIXI.Graphics;
   private _onResize: () => void;
+  private bgimagine: PIXI.Sprite;
 
   constructor() {
     super();
+
+    // bgimagine
+    this.bgimagine = PIXI.Sprite.from('/Assets/arts/BG_1.png');
+    this.bgimagine.anchor.set(0.5,1);
+    
     
     // Create ground graphics
     this.groundSprite = new PIXI.Graphics();
+    this.groundSprite.alpha = 0;
     this.skySprite = new PIXI.Graphics();
+    this.skySprite.alpha = 0;
     
     // Add children (sky first, then ground for proper layering)
     this.addChild(this.skySprite);
     this.addChild(this.groundSprite);
+    this.addChild(this.bgimagine);
 
     this._onResize = this.updateScale.bind(this);
     window.addEventListener('resize', this._onResize);
@@ -27,6 +36,12 @@ export default class Ground extends PIXI.Container {
   updateScale() {
     const screenWidth = BASE_WIDTH;
     const screenHeight = BASE_HEIGHT;
+
+    //bgimagine
+    const scale = Math.max(BASE_WIDTH/this.bgimagine.width, BASE_HEIGHT/this.bgimagine.height);
+    this.bgimagine.scale.set(scale)
+    this.bgimagine.x = 0;
+    this.bgimagine.y = 0;
     
     // Sky takes 1/4 from top
     const skyHeight = screenHeight / 4;
