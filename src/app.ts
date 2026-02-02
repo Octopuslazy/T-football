@@ -7,6 +7,7 @@ import ScoreDisplay from './UI/scoreDisplay';
 import StartScreen from './UI/startScreen';
 import BallCountDisplay from './UI/ballCountDisplay'; 
 import { BASE_WIDTH, BASE_HEIGHT } from './constant/global';
+import { BallCollision } from './UI/ballCollision';
 
 export default class App extends Application {
     // Thêm dấu ! để báo cho TypeScript biết các biến này sẽ được gán trong init()
@@ -22,10 +23,13 @@ export default class App extends Application {
     private isGameActive: boolean = false;
     private shotsLeft: number = 5;
 
+    private ballcollision: BallCollision;
+
     constructor() {
         super();
         this.gameContainer = new Container();
         this.gameContainer.visible = false; // Ẩn game lúc đầu để hiện StartScreen
+        this.ballcollision = new BallCollision();
     }
 
     async init() {
@@ -115,6 +119,7 @@ export default class App extends Application {
         this.ballCountDisplay.setGoal(this.goal);
         this.gameContainer.addChild(this.ballCountDisplay);
 
+
         // 4. Khởi tạo Start Screen
         this.startScreen = new StartScreen();
         // Cài đặt sự kiện khi bấm nút Play
@@ -176,6 +181,8 @@ export default class App extends Application {
     // Vòng lặp chính của game (chạy mỗi frame)
     update(ticker: Ticker) {
         if (!this.isGameActive || !this.currentBall) return;
+        if (this.currentBall.isFlying) {
+            this.ballcollision.checkCollision(this.currentBall, this.goal);}
 
         
     }

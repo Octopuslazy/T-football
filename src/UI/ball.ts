@@ -18,23 +18,23 @@ interface SwipeData {
 export class BallGame extends Container {
     public ball!: Container;
     public shadow!: Graphics;
-    private SwipeData: SwipeData;
+    public SwipeData: SwipeData;
     private line!: Graphics;
-    private visualScale: number = 1;
-    private timescale: number = 1;
+    public visualScale: number = 1;
+    public timescale: number = 1;
     private state: BallState = BallState.Idle;
-    private hasLanched: boolean = false;
+    public hasLanched: boolean = false;
     private curveForce: number = 0;
 
     // 3d 
-    private x3d: number = 0;
-    private y3d: number = 0 ;
-    private z3d: number = 0;
+    public x3d: number = 0;
+    public y3d: number = 0 ;
+    public z3d: number = 0;
 
     // verlocity
-    private vx: number =0;
-    private vy: number =0;
-    private vz: number =0;
+    public vx: number =0;
+    public vy: number =0;
+    public vz: number =0;
 
     //force
     private fg: number =0.98; // gravity
@@ -198,7 +198,7 @@ export class BallGame extends Container {
         const ratioX = distX / dist;
         const ratioY = distY / dist;
 
-        this.vz = 0.6*totalForce * (0.96 - 0.1*ratioY) + 10; // vertical force
+        this.vz = 0.7*totalForce * (0.96 - 0.1*ratioY) + 10; // vertical force
         this.vy = 5 + totalForce *0.1 + ratioY * 0.22; // horizontal force y
         if (this.vy < 25) this.vy = 1;
         this.vx = totalForce * ratioX * 0.65; // horizontal force x
@@ -214,7 +214,7 @@ export class BallGame extends Container {
         // Rotation
         this.rotationSpeed = 0.1 * this.vx * 0.2;
         if (Math.abs(this.rotationSpeed) < 1) {
-            this.rotationSpeed = (Math.random()>0.2?1:-2)*0.5;
+            this.rotationSpeed = (Math.random()>0.2?2:-2)*0.9;
         }
 
         console.log('Pointer up', this.SwipeData);
@@ -273,7 +273,7 @@ export class BallGame extends Container {
         this.ball.y = START_Y - this.y3d * scale - this.z3d*scale*1.2;
         if (this.isFlying) {
             if (this.vz >= 10 || this.vy > 0.1){
-                this.visualScale += 0.01+(scale - this.visualScale) * 0.04;
+                this.visualScale += 0.01+(scale - this.visualScale) * 0.045;
                 this.ball.scale.set(this.visualScale);
             } else {
                 this.ball.scale.set(this.visualScale);
@@ -284,7 +284,7 @@ export class BallGame extends Container {
         if (this.rotationSpeed > 2.5) this.rotationSpeed = 2.5;
         if (this.rotationSpeed < -2.5) this.rotationSpeed = -2.5;
        
-        console.log(`scale :${scale.toFixed(2)} , visualScale: ${this.visualScale.toFixed(2)}`);
+        // console.log(`scale :${scale.toFixed(2)} , visualScale: ${this.visualScale.toFixed(2)}`);
 
         // render shadow
         this.shadow.x = this.ball.x;
@@ -333,6 +333,13 @@ export class BallGame extends Container {
         this.ball.rotation = 0;
         this.line.clear();
         this.hasLanched = false;       
+    }
+    public onNetCatch(targetGlobalX: number, targetGlobalY: number) {
+        this.isFlying = false;
+
+        const globalPos = new Point(targetGlobalX, targetGlobalY);
+        const localPos = this.toLocal(globalPos);
+        this.ball.position.set(localPos.x, localPos.y);
     }
     override destroy() {
     Ticker.shared.remove(this.update, this);

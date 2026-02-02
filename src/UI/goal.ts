@@ -37,9 +37,9 @@ export default class Goal extends PIXI.Container {
     this.rightPost = new PIXI.Graphics();
     this.crossbar = new PIXI.Graphics();
     
-    this.leftPost.alpha = 0; 
-    this.rightPost.alpha = 0;
-    this.crossbar.alpha = 0;
+    this.leftPost.alpha = 1; 
+    this.rightPost.alpha = 1;
+    this.crossbar.alpha = 1;
 
     this.zoneVisualization = new PIXI.Graphics();
 
@@ -98,7 +98,7 @@ export default class Goal extends PIXI.Container {
   }
 
   // Redraw rectangular hitboxes to match goal art
-  private updateGoalPostsHitbox(scale: number) {
+  public updateGoalPostsHitbox(scale: number) {
     // Estimated post size in the art (may need tuning)
        const postThickness = 15 * scale; // post thickness
        const barHeight = 12 * scale;     // crossbar thickness
