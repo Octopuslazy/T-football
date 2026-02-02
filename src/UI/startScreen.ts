@@ -13,6 +13,7 @@ export default class StartScreen extends PIXI.Container {
 
   constructor() {
     super();
+    console.log('StartScreen: constructor()');
 
     this.bg = new PIXI.Graphics();
     this.drawBackground();
@@ -21,7 +22,7 @@ export default class StartScreen extends PIXI.Container {
     // background image (optional). Use project-relative path; texture may be loaded by the app preloader.
     try {
       // Create sprite with a texture; prefer the texture stored in PIXI.Assets if available
-      const key = './arts/startscreen.png';
+      const key = '/Assets/arts/startscreen.png';
       let tex: PIXI.Texture | null = null;
       try {
         const assetsGet = (PIXI as any).Assets && (PIXI as any).Assets.get;
@@ -56,6 +57,7 @@ export default class StartScreen extends PIXI.Container {
     this.on('pointerdown', (e: any) => { try { e.stopPropagation?.(); } catch (e) {} });
 
     this.resize();
+    console.log('StartScreen: initial resize done, bgSprite?', !!this.bgSprite);
 
     window.addEventListener('resize', () => this.resize());
   }
@@ -113,6 +115,7 @@ export default class StartScreen extends PIXI.Container {
 
   private resize() {
     this.drawBackground();
+    console.log('StartScreen: resize() ->', window.innerWidth, 'x', window.innerHeight);
     this.x = 0; this.y = 0;
     this.title.x = window.innerWidth / 2;
     this.title.y = 120;

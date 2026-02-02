@@ -17,7 +17,7 @@ export default class Goalkeeper extends PIXI.Container {
     super();
     
     // Create goalkeeper sprite (starting with gkeeper.png)
-    const tex = PIXI.Texture.from('./arts/gkeeper.png');
+    const tex = PIXI.Texture.from('/Assets/arts/gkeeper.png');
     this.goalkeeperSprite = new PIXI.Sprite(tex);
     this.goalkeeperSprite.anchor.set(0.5, 0.8); // mid-bottom anchor
     
@@ -38,7 +38,7 @@ export default class Goalkeeper extends PIXI.Container {
     this.rotation = this._initialRotation;
     
     // Reset to normal goalkeeper sprite
-    const normalTexture = PIXI.Texture.from('./arts/gkeeper.png');
+    const normalTexture = PIXI.Texture.from('/Assets/arts/gkeeper.png');
     this.goalkeeperSprite.texture = normalTexture;
     
     this._isActive = true;
@@ -272,7 +272,7 @@ export default class Goalkeeper extends PIXI.Container {
         // keep targetPosition.y unchanged to avoid sudden height drop
       }
 
-      const catchTexture = PIXI.Texture.from('./arts/gkeeper2.png');
+      const catchTexture = PIXI.Texture.from('/Assets/arts/gkeeper2.png');
       this.goalkeeperSprite.texture = catchTexture;
 
       // Use sprite rotation as the animated rotation target (avoid rotating the whole container)
@@ -416,7 +416,7 @@ export default class Goalkeeper extends PIXI.Container {
       this._isAnimating = true;
       this._isActive = false;
       
-      const catchTexture = PIXI.Texture.from('./arts/gkeeper2.png');
+      const catchTexture = PIXI.Texture.from('/Assets/arts/gkeeper2.png');
       this.goalkeeperSprite.texture = catchTexture;
 
       // 1. Determine destination (ball position)
@@ -568,7 +568,7 @@ export default class Goalkeeper extends PIXI.Container {
           // do not modify container.rotation here
           
           // Reset goalkeeper to normal state after falling
-          const normalTexture = PIXI.Texture.from('./arts/gkeeper.png');
+          const normalTexture = PIXI.Texture.from('/Assets/arts/gkeeper.png');
           this.goalkeeperSprite.texture = normalTexture;
 
           // --- FIX HERE ---
