@@ -1,5 +1,7 @@
 import {Container, Graphics, Point, FederatedPointerEvent, Ticker, Sprite } from "pixi.js";
-import { BASE_WIDTH, BASE_HEIGHT } from "../constant/global";
+import { BASE_WIDTH, BASE_HEIGHT } from "../constant/global";  
+import { BallCollision } from "./ballCollision";
+import Goal from "./goal";
 const CONFIG = {
     ballradius: 145,    
 
@@ -25,6 +27,7 @@ export class BallGame extends Container {
     private state: BallState = BallState.Idle;
     public hasLanched: boolean = false;
     private curveForce: number = 0;
+    private goal!: Goal;
 
     // 3d 
     public x3d: number = 0;
@@ -42,6 +45,18 @@ export class BallGame extends Container {
 
     //Rotation
     private rotationSpeed: number =0;
+
+    //Net phase
+    public isNetAnim: boolean = false;
+    public netPhase: 'falling' | 'rolling' | 'stopped' = 'stopped';
+
+    private netTargetX: number = 0;
+    private netTargetY: number = 0;
+    private veTargetX: number = 0;
+    private veTargetY: number = 0;
+
+    public netMinX: number = -Infinity;
+    public netMaxX: number = Infinity;
 
     // state
     public isFlying: boolean = false;
@@ -219,9 +234,61 @@ export class BallGame extends Container {
 
         console.log('Pointer up', this.SwipeData);
     }
+    public setGoal(goal: Goal) {
+    this.goal = goal;
+    }
 
+    public setNetLimit(minLocal: number, maxLocal: number) {
+        this.netMinX = minLocal;
+        this.netMaxX = maxLocal;
+    }
 
     update(ticker: Ticker) {
+
+        // net animation
+        if (this.isNetAnim == true) {
+            if (this.netPhase === 'falling') {
+                this.veTargetY += this.fg;
+                this.ball.scale.x *=0.998;
+                this.ball.scale.y *=0.998;
+                this.ball.y += this.veTargetY;
+                this.ball.x += this.veTargetX;
+                const direction = this.netTargetX > this.ball.x ? 1 : -1;
+                this.ball.rotation += direction * 0.1;
+
+                if (this.ball.y >= this.netTargetY ) {
+                    this.ball.y = this.netTargetY;
+
+                    if (this.veTargetY > 4) {
+                        this.veTargetY = -this.veTargetY*0.5;
+                        this.veTargetX *= 0.6;
+                    } else {
+                    this.netPhase = 'rolling';
+                    const currentDirection = this.veTargetX > 0 ? 1 : -1;
+                    const distanceToTarget = (this.netTargetX - this.ball.x) > 0 ? 1 : -1;
+                    this.veTargetX = distanceToTarget * 0.1;
+                    if (currentDirection !== distanceToTarget) {
+                        this.netTargetX = this.ball.x + (this.veTargetX * 5);
+                        if (this.netTargetX <  this.netMinX) this.netTargetX = this.netMinX;
+                        if (this.netTargetX > this.netMaxX) this.netTargetX = this.netMaxX;
+                        
+                    }
+                    this.veTargetX = (this.netTargetX - this.ball.x) * 0.01;
+                }}
+            }
+            if (this.netPhase === 'rolling') {
+                this.ball.x += (this.netTargetX-this.ball.x)*0.1;
+                if (Math.abs(this.netTargetX - this.ball.x) < 1) {
+                    this.ball.x = this.netTargetX;
+                    this.netPhase = 'stopped';
+                    this.isNetAnim = false;
+                    this.ball.rotation *= 0.01;
+                    if (this.ball.rotation < 0.0005) this.ball.rotation = 0;
+                }
+            }
+        }
+
+        
         if (!this.isFlying) return;
         this.timescale += (0.7 - this.timescale) * 0.15;
         const dt = (ticker.deltaMS / 16.666)*this.timescale; // normalize to 60fps
@@ -243,8 +310,9 @@ export class BallGame extends Container {
         const flightRatio = this.z3d / Math.max(this.z3d + 1, 3000);
         if (flightRatio > 0.55 && this.vy < 0) {
             this.vy -= this.fg * dt * 2.5;
-        }
-            
+        }    
+
+
         //reach ground
         if (this.y3d <= 0) {
             this.y3d = 0;
@@ -262,6 +330,9 @@ export class BallGame extends Container {
             return;
         }
     }
+    
+
+    // render ball & shadow
     renderBall(dt: number) {
         // Render
         const focalLength = 800;
@@ -295,8 +366,8 @@ export class BallGame extends Container {
             return;
         }
         //anim fadoff
-        const fade_start = 67000;
-        const fade_end = 72000;
+        const fade_start = 80000;
+        const fade_end = 90000;
         if (this.z3d >= fade_start) {
             console.log('fly to the sky');
             const faderatio = (this.z3d - fade_start) / (fade_end - fade_start);
@@ -313,6 +384,25 @@ export class BallGame extends Container {
                 this.ball.alpha = 1;
             }}
     }
+
+    // net catch
+    public onNetCatch(targetGlobalX: number, targetGlobalY: number, impactForce: number = 0) {
+        this.isFlying = false;
+
+        const globalPos = new Point(targetGlobalX, targetGlobalY);
+        const localPos = this.toLocal(globalPos);
+        this.netTargetX = localPos.x;
+        this.netTargetY = localPos.y;
+
+        this.isNetAnim = true;
+        this.netPhase = 'falling';
+        this.veTargetY = Math.min( impactForce * 0.05, 8);
+        const deltaX = (this.netTargetX - this.ball.x) * 0.05;
+        this.veTargetX = Math.max(-15, Math.min(15, deltaX));
+        console.log('veTargetX:', this.veTargetX, this.veTargetY);
+    }
+
+    //reset
     private reset(reason:string = "unknown"){
         this.state = BallState.Idle;
         this.isFlying = false;
@@ -332,15 +422,10 @@ export class BallGame extends Container {
         this.rotationSpeed = 0;
         this.ball.rotation = 0;
         this.line.clear();
-        this.hasLanched = false;       
+        this.hasLanched = false; 
+        
     }
-    public onNetCatch(targetGlobalX: number, targetGlobalY: number) {
-        this.isFlying = false;
-
-        const globalPos = new Point(targetGlobalX, targetGlobalY);
-        const localPos = this.toLocal(globalPos);
-        this.ball.position.set(localPos.x, localPos.y);
-    }
+    
     override destroy() {
     Ticker.shared.remove(this.update, this);
     super.destroy();

@@ -141,9 +141,44 @@ export default class Goal extends PIXI.Container {
     this.crossbar.x = gx - w/2;
     this.crossbar.y = gy;
     try {
-  // Debug: visualize scoring zone
+      // Debug: visualize net rectangle for easier collision tuning
+      this.zoneVisualization.clear();
+      this.zoneVisualization.lineStyle(3, 0x00ff00, 0.9);
+      if (this.netSprite.texture) {
+        // Use actual displayed size (width/height) which already include scale
+        const netW = this.netSprite.width;
+        const netH = this.netSprite.height;
+        const netX = this.netSprite.x - netW / 2;
+        const netY = this.netSprite.y;
 
-  } catch (e) {}}
+        // Draw a filled, semi-transparent rectangle and reparent to the Goal's parent
+        this.zoneVisualization.clear();
+        this.zoneVisualization.beginFill(0x00ff00, 0.28);
+        this.zoneVisualization.lineStyle(3, 0x00ff00, 0.9);
+        this.zoneVisualization.drawRect(0, 0, netW, netH);
+        this.zoneVisualization.endFill();
+        this.zoneVisualization.alpha = 1;
+        this.zoneVisualization.visible = true;
+
+        try {
+          // compute position in parent's coordinate space so the rect sits at the same place
+          const topLeftGlobal = this.toGlobal(new PIXI.Point(netX, netY));
+          if (this.parent) {
+            const parentLocal = this.parent.toLocal(topLeftGlobal);
+            // move the visualization to parent so it renders above most siblings
+            this.parent.addChild(this.zoneVisualization);
+            this.zoneVisualization.position.set(parentLocal.x, parentLocal.y);
+          } else {
+            // fallback: keep inside goal
+            this.zoneVisualization.position.set(netX, netY);
+          }
+        } catch (e) {
+          // fallback to local coords
+          this.zoneVisualization.position.set(netX, netY);
+        }
+      }
+    } catch (e) {}
+  }
 
    
   }
