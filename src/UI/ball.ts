@@ -215,7 +215,7 @@ export class BallGame extends Container {
         const ratioY = distY / dist;
 
         this.vz = 0.8*totalForce * (0.96 - 0.1*ratioY) + 10; // vertical force
-        this.vy = 5 + totalForce *0.1 + ratioY * 0.22; // horizontal force y
+        this.vy = 2 + totalForce *0.12 + ratioY * 0.22; // horizontal force y
         if (this.vy < 25) this.vy = 1;
         this.vx = totalForce * ratioX * 0.65; // horizontal force x
         this.vx = Math.max(-500, Math.min(500, this.vx));
@@ -425,7 +425,7 @@ export class BallGame extends Container {
     }
 
     //reset
-    private reset(reason:string = "unknown"){
+    public reset(reason:string = "unknown"){
         this.state = BallState.Idle;
         this.isFlying = false;
         const CENTERX = BASE_WIDTH / 2;

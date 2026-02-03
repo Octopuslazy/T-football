@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@pixi/display": "^7.4.3",
+    "@pixi/spine-pixi": "^2.1.1",
     "pixi.js": "^8.15.0"
   },
   "devDependencies": {
