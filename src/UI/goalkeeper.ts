@@ -1,11 +1,10 @@
 import { Container } from 'pixi.js';
-import { Spine } from '@pixi/spine-pixi';
+import { Spine } from '@esotericsoftware/spine-pixi-v8';
 
 export default class Goalkeeper extends Container {
     private spine!: Spine;
     private _goal: any = null;
     private _onResize: () => void;
-
     private _initialPosition = { x: 0, y: 0 };
 
     constructor() {
@@ -14,33 +13,57 @@ export default class Goalkeeper extends Container {
         window.addEventListener('resize', this._onResize);
     }
 
-    /**
-     * ⚠️ spineAsset PHẢI là Spine instance do Pixi Assets loader tạo
-     */
     public init(spineAsset: Spine) {
         if (!spineAsset) {
             console.error('❌ Goalkeeper.init: spineAsset is null');
             return;
         }
 
-        // 🔥 BẮT BUỘC clone trong Pixi v8
-        this.spine = spineAsset.clone();
+        console.log('Removing old children, count:', this.children.length);
+        this.removeChildren();
+        
+        this.spine = spineAsset;
 
-        // Animation idle
-        const idleAnim =
-            this.spine.spineData.findAnimation('idle') ||
-            this.spine.spineData.animations[0];
+        console.log('🔍 Spine structure:', {
+            hasState: !!this.spine.state,
+            hasSkeleton: !!this.spine.skeleton,
+            skeletonData: !!this.spine.skeleton?.data,
+            animations: this.spine.skeleton?.data?.animations?.map((a: any) => a.name)
+        });
 
-        if (idleAnim) {
-            this.spine.state.setAnimation(0, idleAnim.name, true);
+        // Force visibility
+        this.spine.visible = true;
+        this.spine.alpha = 1;
+        
+        // Force update
+        if (this.spine.update) {
+            this.spine.update(0.016);
         }
 
+        // Play idle animation
+        try {
+            const animations = this.spine.skeleton?.data?.animations || [];
+            
+            if (animations.length > 0) {
+                const idleAnim = animations.find((a: any) => a.name === 'idle') || animations[0];
+                if (idleAnim && this.spine.state) {
+                    this.spine.state.setAnimation(0, idleAnim.name, true);
+                    console.log('✅ Playing animation:', idleAnim.name);
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ Failed to set animation:', e);
+        }
+
+        // Add spine at center of container
+        this.spine.x = 0;
+        this.spine.y = 0;
         this.addChild(this.spine);
 
         this.updateScale();
         this.reset();
 
-        console.log('✅ Goalkeeper Spine initialized (Pixi v8)');
+        console.log('✅ Goalkeeper Spine initialized, children count:', this.children.length);
     }
 
     public reset() {
@@ -71,26 +94,41 @@ export default class Goalkeeper extends Container {
     private updateScale() {
         if (!this.spine) return;
 
-        const screenW = window.innerWidth;
-        const screenH = window.innerHeight;
-
-        let scale =
-            Math.min(screenW / 1920, screenH / 1080) * 0.6;
-
-        // Clamp theo chiều cao gôn
-        if (this._goal?.getGoalArea) {
-            const goalArea = this._goal.getGoalArea();
-            if (goalArea?.height > 0) {
-                const maxScale = (goalArea.height * 0.65) / this.spine.height;
-                scale = Math.min(scale, maxScale);
-
-                const cx = goalArea.x + goalArea.width / 2;
-                const by = goalArea.y + goalArea.height - 20;
-                this.setInitialPosition(cx, by);
-            }
+        // Lấy thông tin goal
+        if (!this._goal || !this._goal.goalSprite) return;
+        
+        const goal = this._goal.goalSprite;
+        const goalWidth = goal.width;
+        const goalHeight = goal.height;
+        const goalX = goal.x;
+        const goalY = goal.y;
+        
+        console.log('🥅 Goal info:', {
+            x: goalX,
+            y: goalY,
+            width: goalWidth,
+            height: goalHeight
+        });
+        
+        // Scale goalkeeper = 2/3 chiều cao goal
+        const targetHeight = goalHeight * (2 / 3);
+        
+        // Lấy bounds của spine để tính scale
+        const spineBounds = this.spine.getLocalBounds();
+        if (spineBounds && spineBounds.height > 0) {
+            const scale = targetHeight / spineBounds.height;
+            this.spine.scale.set(scale, scale);
+            
+            console.log('⚽ Goalkeeper scale:', scale, 'target height:', targetHeight, 'spine height:', spineBounds.height);
         }
-
-        this.scale.set(Math.max(0.05, scale));
+        
+        // Đặt goalkeeper tại giữa goal (center X, bottom Y)
+        const centerX = goalX;
+        const bottomY = goalY + goalHeight - 30; // Trừ 30px để goalkeeper đứng trên sân
+        
+        this.setInitialPosition(centerX, bottomY);
+        
+        console.log('📍 Goalkeeper position:', centerX, bottomY);
     }
 
     destroy(options?: any) {

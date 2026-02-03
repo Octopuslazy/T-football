@@ -1,4 +1,5 @@
-import { Application, Container, Ticker, Assets, Graphics, Text, TextStyle } from 'pixi.js';
+import { Application, Container, Ticker, Assets, Graphics, Text, TextStyle, Texture } from 'pixi.js';
+import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { BallGame } from './UI/ball';
 import Goal from './UI/goal';
 import Ground from './UI/ground';
@@ -8,7 +9,6 @@ import BallCountDisplay from './UI/ballCountDisplay';
 import { BASE_WIDTH, BASE_HEIGHT } from './constant/global';
 import { BallCollision } from './UI/ballCollision';
 import Goalkeeper from './UI/goalkeeper';
-import '@pixi/spine-pixi'; // Import plugin
 
 export default class App extends Application {
     private ground!: Ground;
@@ -53,12 +53,6 @@ export default class App extends Application {
                     assets: [
                         { alias: '/Assets/arts/goal.png', src: '/Assets/arts/goal.png' },
                         { alias: '/Assets/arts/net.png', src: '/Assets/arts/net.png' },
-                        
-                        // --- SỬA PHẦN SPINE (QUAN TRỌNG) ---
-                        // 1. Load JSON
-                        { alias: 'gkeeperJson', src: '/Assets/anim/Gkeeper/skeleton.json' },
-                        
-                        // ----------------------------------
 
                         { alias: '/Assets/arts/startscreen.png', src: '/Assets/arts/startscreen.png' },
                         { alias: '/Assets/arts/ball.png', src: '/Assets/arts/ball.png' },
@@ -110,12 +104,6 @@ export default class App extends Application {
         this.ballCountDisplay.setGoal(this.goal);
         this.gameContainer.addChild(this.ballCountDisplay);
 
-        this.goalkeeper = new Goalkeeper();
-        this.goalkeeper.init(Assets.gkeeperJson); // 🔥 Spine instance
-        this.goalkeeper.setGoal(this.goal);
-        this.gameContainer.addChild(this.goalkeeper);
-
-        
         this.ticker.add(this.update.bind(this));
 
         this.createResetButton();
@@ -123,9 +111,62 @@ export default class App extends Application {
         this.startScreen = new StartScreen();
         this.startScreen.onSelect = (mode) => this.startGame(mode);
         this.stage.addChild(this.startScreen);
-        this.createResetButton();
 
-        this.ticker.add(this.update.bind(this));
+        // Load Spine goalkeeper LAST so it's on top layer
+        await this.loadGoalkeeperSpine();
+    }
+
+    private async loadGoalkeeperSpine() {
+        try {
+            console.log('🔧 Loading Spine assets...');
+            
+            // Load skeleton and atlas using PIXI.Assets
+            Assets.add({ alias: 'goalkeeperData', src: '/Assets/anim/Gkeeper/skeleton.json' });
+            Assets.add({ alias: 'goalkeeperAtlas', src: '/Assets/anim/Gkeeper/skeleton.atlas' });
+            await Assets.load(['goalkeeperData', 'goalkeeperAtlas']);
+            
+            // Create Spine instance
+            const spine = Spine.from({ skeleton: 'goalkeeperData', atlas: 'goalkeeperAtlas', scale: 0.5 });
+            
+            if (!spine) {
+                throw new Error('Failed to create spine');
+            }
+            
+            console.log('✅ Spine loaded:', {
+                animations: spine.skeleton?.data?.animations?.map((a: any) => a.name)
+            });
+            
+            this.goalkeeper = new Goalkeeper();
+            this.goalkeeper.init(spine);
+            this.goalkeeper.setGoal(this.goal);
+            
+            this.goalkeeper.visible = true;
+            this.goalkeeper.alpha = 1;
+            
+            console.log('🔍 Goalkeeper properties:', {
+                x: this.goalkeeper.x,
+                y: this.goalkeeper.y,
+                scale: this.goalkeeper.scale.x,
+                visible: this.goalkeeper.visible,
+                alpha: this.goalkeeper.alpha,
+                children: this.goalkeeper.children.length
+            });
+            
+            this.gameContainer.addChild(this.goalkeeper);
+            
+            // Ensure goalkeeper is on top layer
+            this.gameContainer.setChildIndex(this.goalkeeper, this.gameContainer.children.length - 1);
+            
+            console.log('🔍 GameContainer state:', {
+                visible: this.gameContainer.visible,
+                children: this.gameContainer.children.length,
+                goalkeeperIndex: this.gameContainer.getChildIndex(this.goalkeeper)
+            });
+
+            console.log('✅ Goalkeeper Spine initialized at position:', this.goalkeeper.x, this.goalkeeper.y);
+        } catch (error) {
+            console.error('❌ Failed to load Goalkeeper Spine:', error);
+        }
     }
 
     startGame(mode: 'play' | 'other') {

@@ -8,8 +8,16 @@
     "vite:preview": "vite preview"
   },
   "dependencies": {
+    "@esotericsoftware/spine-pixi-v8": "^4.2.100",
+    "@pixi-spine/all-3.8": "^4.0.6",
+    "@pixi-spine/all-4.0": "^4.0.6",
+    "@pixi-spine/base": "^4.0.6",
+    "@pixi-spine/loader-3.8": "^4.0.6",
+    "@pixi-spine/runtime-3.8": "^4.0.6",
+    "@pixi-spine/runtime-4.0": "^4.0.6",
     "@pixi/display": "^7.4.3",
     "@pixi/spine-pixi": "^2.1.1",
+    "pixi-spine": "^4.0.6",
     "pixi.js": "^8.15.0"
   },
   "devDependencies": {

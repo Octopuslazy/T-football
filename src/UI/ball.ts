@@ -206,7 +206,7 @@ export class BallGame extends Container {
         // speed
         let speed = 1.7*dist/duration;
         if (speed > 62) speed = 62;
-        if (speed < 10) speed = 10;
+        if (speed < 5) speed = 5;
 
         // force
         const Power = 50;
@@ -228,7 +228,7 @@ export class BallGame extends Container {
         this.isFlying = true;
 
         // Rotation
-        this.rotationSpeed = 0.1 * this.vx * 0.2;
+        this.rotationSpeed = 0.2 * this.vx * 0.2;
         if (Math.abs(this.rotationSpeed) < 1) {
             this.rotationSpeed = (Math.random()>0.2?2:-2)*0.9;
         }
@@ -314,7 +314,7 @@ export class BallGame extends Container {
         this.curveForce *= 0.94;
         // apply gravity
         this.x3d += this.vx*dt;
-        const fallMul = this.vy < 0 ? 3.5 : 1.9;
+        const fallMul = this.vy < 0 ? 1.5 : 1.5;
         this.y3d += this.vy * dt * fallMul;
         this.z3d += this.vz*dt;
 
@@ -410,7 +410,7 @@ export class BallGame extends Container {
         this.netPhase = 'falling';
         this.veTargetY = Math.min( impactForce * 0.05, 8);
         const deltaX = (this.netTargetX - this.ball.x) * 0.05;
-        this.veTargetX = Math.max(-15, Math.min(15, deltaX));
+        this.veTargetX = Math.max(-10, Math.min(10, deltaX));
         console.log('veTargetX:', this.veTargetX, this.veTargetY);
     }
 

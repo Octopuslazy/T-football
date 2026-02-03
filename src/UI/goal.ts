@@ -37,9 +37,9 @@ export default class Goal extends PIXI.Container {
     this.rightPost = new PIXI.Graphics();
     this.crossbar = new PIXI.Graphics();
     
-    this.leftPost.alpha = 1; 
-    this.rightPost.alpha = 1;
-    this.crossbar.alpha = 1;
+    this.leftPost.alpha = 0; 
+    this.rightPost.alpha = 0;
+    this.crossbar.alpha = 0;
 
     this.zoneVisualization = new PIXI.Graphics();
 
@@ -157,7 +157,7 @@ export default class Goal extends PIXI.Container {
         this.zoneVisualization.lineStyle(3, 0x00ff00, 0.9);
         this.zoneVisualization.drawRect(0, 0, netW, netH);
         this.zoneVisualization.endFill();
-        this.zoneVisualization.alpha = 1;
+        this.zoneVisualization.alpha = 0;
         this.zoneVisualization.visible = true;
 
         try {
