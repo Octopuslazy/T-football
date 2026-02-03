@@ -100,7 +100,7 @@ export default class Goal extends PIXI.Container {
   // Redraw rectangular hitboxes to match goal art
   public updateGoalPostsHitbox(scale: number) {
     // Estimated post size in the art (may need tuning)
-       const postThickness = 15 * scale; // post thickness
+       const postThickness = 20 * scale; // post thickness
        const barHeight = 12 * scale;     // crossbar thickness
     
     const goalBounds = this.goalSprite.getLocalBounds(); // Get original (unscaled) bounds

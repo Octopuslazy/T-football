@@ -1,0 +1,617 @@
+import * as PIXI from 'pixi.js';
+export default class Goalkeeper extends PIXI.Container {
+    constructor() {
+        super();
+        this._initialPosition = { x: 0, y: 0 };
+        this._initialRotation = 0;
+        this._isActive = true;
+        this._isAnimating = false;
+        this._catchProbability = 0;
+        this._goal = null;
+        this._lastActionTime = 0;
+        this._actionCooldown = 4500;
+        this.KEEPER_SAFE_PADDING = 80; // extra pixels to keep between keeper and ball on miss
+        // Create goalkeeper sprite (starting with gkeeper.png)
+        const tex = PIXI.Texture.from('/Assets/arts/gkeeper.png');
+        this.goalkeeperSprite = new PIXI.Sprite(tex);
+        this.goalkeeperSprite.anchor.set(0.5, 0.8); // mid-bottom anchor
+        this.addChild(this.goalkeeperSprite);
+        this._onResize = this.updateScale.bind(this);
+        window.addEventListener('resize', this._onResize);
+        // Initial setup
+        this.updateScale();
+        this.reset();
+    }
+    // Reset goalkeeper to initial position and state
+    reset() {
+        this.x = this._initialPosition.x;
+        this.y = this._initialPosition.y * 1.06;
+        this.rotation = this._initialRotation;
+        // Reset to normal goalkeeper sprite
+        const normalTexture = PIXI.Texture.from('/Assets/arts/gkeeper.png');
+        this.goalkeeperSprite.texture = normalTexture;
+        this._isActive = true;
+        this._isAnimating = false;
+        this._lastActionTime = 0; // Reset cooldown
+    }
+    // Set initial position (called when positioning goalkeeper)
+    setInitialPosition(x, y) {
+        this._initialPosition = { x, y: 0.9 * y };
+        this.x = x;
+        this.y = y;
+    }
+    // Update goalkeeper scale based on goal size
+    updateScale() {
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+        // Scale goalkeeper as 0.6 times the goal scale
+        const devicePixel = (window && (window.devicePixelRatio || 1)) || 1;
+        const rawScreenFactor = Math.min(screenWidth / 1920, screenHeight / 1080);
+        const clampedScreenFactor = Math.max(0.6, Math.min(rawScreenFactor, 1.4));
+        const screenFactor = clampedScreenFactor * devicePixel;
+        let baseScale = 0.6 * screenFactor;
+        if (this._goal && this._goal.scale) {
+            const sx = typeof this._goal.scale.x === 'number' ? this._goal.scale.x : 1;
+            const sy = typeof this._goal.scale.y === 'number' ? this._goal.scale.y : sx;
+            const goalScale = (sx + sy) / 2;
+            baseScale = goalScale * 0.6 * screenFactor;
+        }
+        else {
+            const goalLikeScale = Math.min(screenWidth / 1920, screenHeight / 1080) * 0.8;
+            baseScale = goalLikeScale * 0.6 * screenFactor;
+        }
+        // Cap goalkeeper visual height so it never exceeds 2/3 of the goal area height
+        let finalScale = baseScale;
+        try {
+            if (this._goal && this._goal.getGoalArea) {
+                const goalArea = this._goal.getGoalArea();
+                if (goalArea && goalArea.height > 0) {
+                    const tex = this.goalkeeperSprite.texture;
+                    let spriteH = 0;
+                    if (tex && tex.height)
+                        spriteH = tex.height;
+                    else if (tex && tex.orig && tex.orig.height)
+                        spriteH = tex.orig.height;
+                    else
+                        spriteH = this.goalkeeperSprite.height || 1;
+                    if (spriteH > 0) {
+                        const maxScale = (goalArea.height * (2 / 3)) / spriteH;
+                        finalScale = Math.min(finalScale, maxScale);
+                    }
+                }
+            }
+        }
+        catch (e) { }
+        finalScale = Math.max(0.05, finalScale);
+        this.scale.set(finalScale);
+        if (this._goal && this._goal.getGoalArea) {
+            const goalArea = this._goal.getGoalArea();
+            const goalCenterX = goalArea.x + goalArea.width / 2;
+            const goalBottomY = goalArea.y + goalArea.height - 20;
+            this.setInitialPosition(goalCenterX, goalBottomY);
+        }
+        else {
+            const goalCenterX = screenWidth / 2;
+            const goalBottomY = screenHeight * 0.5;
+            this.setInitialPosition(goalCenterX, goalBottomY);
+        }
+    }
+    setGoal(goal) {
+        this._goal = goal;
+        this.updateScale();
+    }
+    // Calculate target position for diving to a specific zone
+    getPositionForZone(zoneId) {
+        const baseX = this._initialPosition.x;
+        const baseY = this._initialPosition.y;
+        // Increase dive distance (controls rotation radius)
+        const diveDistance = 90;
+        let targetX = baseX;
+        let targetY = baseY;
+        switch (zoneId) {
+            case 1:
+                targetX = baseX - diveDistance;
+                targetY = baseY - diveDistance;
+                break;
+            case 2:
+                targetX = baseX - diveDistance * 0.5;
+                targetY = baseY - diveDistance;
+                break;
+            case 3:
+                targetX = baseX + diveDistance * 0.5;
+                targetY = baseY - diveDistance;
+                break;
+            case 4:
+                targetX = baseX + diveDistance;
+                targetY = baseY - diveDistance;
+                break;
+            case 5:
+                targetX = baseX - diveDistance;
+                targetY = baseY;
+                break;
+            case 6:
+                targetX = baseX - diveDistance * 0.5;
+                targetY = baseY;
+                break;
+            case 7:
+                targetX = baseX + diveDistance * 0.5;
+                targetY = baseY;
+                break;
+            case 8:
+                targetX = baseX + diveDistance;
+                targetY = baseY;
+                break;
+            case 9:
+                targetX = baseX - diveDistance;
+                targetY = baseY + diveDistance * 0.5;
+                break;
+            case 10:
+                targetX = baseX - diveDistance * 0.5;
+                targetY = baseY + diveDistance * 0.5;
+                break;
+            case 11:
+                targetX = baseX + diveDistance * 0.5;
+                targetY = baseY + diveDistance * 0.5;
+                break;
+            case 12:
+                targetX = baseX + diveDistance;
+                targetY = baseY + diveDistance * 0.5;
+                break;
+            default:
+                const angle = Math.random() * Math.PI * 2;
+                targetX = baseX + Math.cos(angle) * diveDistance;
+                targetY = baseY + Math.sin(angle) * diveDistance * 0.7;
+                break;
+        }
+        return { x: targetX, y: targetY };
+    }
+    getRotationForZone(zoneId) {
+        let rotation = 0;
+        switch (zoneId) {
+            case 1:
+                rotation = -0.2;
+                break;
+            case 2:
+                rotation = -0.1;
+                break;
+            case 3:
+                rotation = 0.1;
+                break;
+            case 4:
+                rotation = 0.2;
+                break;
+            case 5:
+                rotation = -0.25;
+                break;
+            case 6:
+                rotation = -0.1;
+                break;
+            case 7:
+                rotation = 0.1;
+                break;
+            case 8:
+                rotation = 0.25;
+                break;
+            case 9:
+                rotation = -0.15;
+                break;
+            case 10:
+                rotation = -0.05;
+                break;
+            case 11:
+                rotation = 0.05;
+                break;
+            case 12:
+                rotation = 0.15;
+                break;
+            default:
+                rotation = 0;
+                break;
+        }
+        return rotation;
+    }
+    // Attempt to catch ball at specific zone
+    attemptCatch(ballX, ballY, targetZone, ballRadius = 20) {
+        return new Promise((resolve) => {
+            // 1. Check Active and Animating state
+            if (!this._isActive || this._isAnimating) {
+                resolve({ caught: false });
+                return;
+            }
+            // 2. CHECK COOLDOWN (prevent double-dive bug)
+            // If the keeper has just dived within 1.5s, skip
+            const now = Date.now();
+            if (now - this._lastActionTime < this._actionCooldown) {
+                resolve({ caught: false });
+                return;
+            }
+            const willAttemptCatch = Math.random() < this._catchProbability;
+            if (!willAttemptCatch) {
+                // Even if roll fails, perform a random miss-dive so keeper appears to attempt elsewhere
+                this._lastActionTime = now;
+                this._isAnimating = true;
+                this._isActive = false;
+                let missZone = targetZone;
+                if (!targetZone || !this.isValidTargetZone(ballX, ballY, targetZone)) {
+                    missZone = this.getRandomZone();
+                }
+                this.performFailedCatchAnimation(missZone, { x: ballX, y: ballY }).then((pos) => {
+                    // return a deflect position to Ball (avoid actual ball position)
+                    const deflect = pos || this.getRandomDeflectPosition({ x: ballX, y: ballY });
+                    resolve({ caught: false, catchZone: missZone, catchPos: deflect });
+                }).catch(() => { resolve({ caught: false }); });
+                return;
+            }
+            // Set cooldown start time when deciding to dive (successful roll)
+            this._lastActionTime = now;
+            this._isAnimating = true;
+            this._isActive = false;
+            let catchZone = targetZone;
+            if (!targetZone || !this.isValidTargetZone(ballX, ballY, targetZone)) {
+                catchZone = this.getRandomZone();
+            }
+            // When willAttemptCatch succeeds, always perform catch animation
+            // no need to check canReachZone to avoid animation mismatch
+            // Pass the exact ball coordinates so keeper dives to them
+            this.performCatchAnimation(catchZone, { x: ballX, y: ballY }).then((pos) => {
+                resolve({ caught: true, catchZone, catchPos: pos });
+            }).catch((error) => {
+                resolve({ caught: false });
+            });
+        });
+    }
+    canReachZone(catchZone, ballX, ballY) {
+        const goalArea = this._goal?.getGoalArea();
+        if (!goalArea)
+            return true;
+        const ballToGoalCenterX = Math.abs(ballX - (goalArea.x + goalArea.width / 2));
+        const ballToGoalCenterY = Math.abs(ballY - (goalArea.y + goalArea.height / 2));
+        // Make canReachZone more tolerant since it's used only for validation
+        const maxDistanceX = goalArea.width * 2.5;
+        const maxDistanceY = goalArea.height * 2.5;
+        return ballToGoalCenterX <= maxDistanceX && ballToGoalCenterY <= maxDistanceY;
+    }
+    performFailedCatchAnimation(zone, avoidWorldPos) {
+        return new Promise((resolve) => {
+            this._isAnimating = true;
+            this._isActive = false;
+            const targetRotation = this.getRotationForZone(zone.id);
+            let targetPosition = this.getPositionForZone(zone.id);
+            // For middle zones (2,3,6,7,10,11), on miss shift target to neighboring zone
+            // Intent: if missing at 2 then keeper may dive toward 3; 6 -> 7; 10 -> 11
+            // and vice versa: 3 -> 2; 7 -> 6; 11 -> 10
+            const missNeighborMap = {
+                2: 4, 6: 8, 10: 12,
+                3: 1, 7: 5, 11: 9
+            };
+            if (missNeighborMap[zone.id]) {
+                const neighborId = missNeighborMap[zone.id];
+                const neighborPos = this.getPositionForZone(neighborId);
+                // Only take neighbor's X to avoid lowering Y (keep height unchanged)
+                targetPosition.x = neighborPos.x;
+                // keep targetPosition.y unchanged to avoid sudden height drop
+            }
+            const catchTexture = PIXI.Texture.from('/Assets/arts/gkeeper2.png');
+            this.goalkeeperSprite.texture = catchTexture;
+            // Use sprite rotation as the animated rotation target (avoid rotating the whole container)
+            const startRotation = this.goalkeeperSprite.rotation || 0;
+            const startX = this.x;
+            const startY = this.y;
+            const rotationDiff = targetRotation - startRotation;
+            // Reduce movement multiplier to limit orbital radius
+            // If we're given a world position to avoid (the ball), bias the target away from it
+            if (avoidWorldPos) {
+                try {
+                    const dx = targetPosition.x - avoidWorldPos.x;
+                    const dy = targetPosition.y - avoidWorldPos.y;
+                    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const keeperRadius = (typeof this.getCollisionRadius === 'function') ? this.getCollisionRadius() : 40;
+                    const ballRadiusEstimate = 40;
+                    const safeDist = Math.max(keeperRadius + ballRadiusEstimate + this.KEEPER_SAFE_PADDING, keeperRadius * 0.9 + this.KEEPER_SAFE_PADDING);
+                    if (d < safeDist) {
+                        const nx = dx / d;
+                        const ny = dy / d;
+                        targetPosition.x = avoidWorldPos.x + nx * safeDist;
+                        targetPosition.y = avoidWorldPos.y + ny * safeDist;
+                    }
+                }
+                catch (e) { }
+            }
+            // Movement multiplier: when avoiding the ball, move much closer to the target (more aggressive)
+            let moveMul = avoidWorldPos ? 0.9 : 0.25;
+            let positionDiffX = (targetPosition.x - startX) * moveMul;
+            let positionDiffY = (targetPosition.y - startY) * moveMul;
+            // Clamp per-animation movement relative to goal size so keeper can traverse the whole goal
+            try {
+                const scale = this.scale?.x || 1;
+                let maxMove = 100 * scale;
+                try {
+                    const ga = this._goal?.getGoalArea?.();
+                    if (ga && typeof ga.width === 'number' && typeof ga.height === 'number') {
+                        const goalMax = Math.max(ga.width, ga.height);
+                        // allow movement up to ~70% of goal width (clamped to reasonable min/max)
+                        maxMove = Math.max(60, Math.min(goalMax * 0.7, 400)) * scale;
+                    }
+                }
+                catch (e) { }
+                positionDiffX = Math.sign(positionDiffX) * Math.min(Math.abs(positionDiffX), maxMove);
+                positionDiffY = Math.sign(positionDiffY) * Math.min(Math.abs(positionDiffY), maxMove);
+            }
+            catch (e) { }
+            const animationDuration = 300;
+            const startTime = Date.now();
+            let resolved = false;
+            const animateDive = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / animationDuration, 1);
+                const easedProgress = this.easeOutCubic(progress);
+                // Rotate sprite only, move container position for dive
+                // Clamp sprite rotation to avoid large orbital appearance
+                const maxSpriteRotation = 0.5;
+                const desiredRot = startRotation + (rotationDiff * easedProgress);
+                this.goalkeeperSprite.rotation = Math.max(-maxSpriteRotation, Math.min(maxSpriteRotation, desiredRot));
+                this.x = startX + (positionDiffX * easedProgress);
+                this.y = startY + (positionDiffY * easedProgress);
+                // Resolve a deflect position at mid-dive so ball deflects visually on keeper body
+                if (!resolved && progress >= 0.45) {
+                    resolved = true;
+                    // For failed catch, return a deflect position that avoids the actual ball
+                    if (avoidWorldPos) {
+                        try {
+                            const deflect = this.getRandomDeflectPosition(avoidWorldPos);
+                            resolve(deflect);
+                        }
+                        catch (e) {
+                            resolve({ x: avoidWorldPos.x + 60, y: avoidWorldPos.y });
+                        }
+                    }
+                    else {
+                        resolve({ x: this.x, y: this.y });
+                    }
+                }
+                if (progress < 1) {
+                    requestAnimationFrame(animateDive);
+                }
+                else {
+                    if (!resolved) {
+                        const deflectPos = this.getRandomDeflectPosition(avoidWorldPos);
+                        this.fallToGround().then(() => { resolve(deflectPos); }).catch(() => { resolve(deflectPos); });
+                    }
+                    else {
+                        setTimeout(() => { try {
+                            this.fallToGround();
+                        }
+                        catch (e) { } }, 0);
+                    }
+                }
+            };
+            animateDive();
+        });
+    }
+    isValidTargetZone(ballX, ballY, zone) {
+        return zone && zone.id >= 1 && zone.id <= 12;
+    }
+    getRandomZone() {
+        const randomZoneId = Math.floor(Math.random() * 12) + 1;
+        return {
+            id: randomZoneId,
+            row: Math.floor((randomZoneId - 1) / 4),
+            col: (randomZoneId - 1) % 4
+        };
+    }
+    // Get a random deflect position (used when keeper misses) - avoid returning the actual ball position when possible
+    getRandomDeflectPosition(avoid) {
+        const goalArea = this._goal?.getGoalArea?.();
+        if (!goalArea) {
+            // fallback near keeper
+            const offsetX = (Math.random() < 0.5 ? -1 : 1) * (80 + Math.random() * 120);
+            const offsetY = -20 + Math.random() * 80;
+            return { x: this._initialPosition.x + offsetX, y: this._initialPosition.y + offsetY };
+        }
+        // pick a random side (left/right/top) away from the center
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const x = side === -1 ? goalArea.x - 40 - Math.random() * 80 : goalArea.x + goalArea.width + 40 + Math.random() * 80;
+        const y = goalArea.y + Math.random() * goalArea.height * 0.8 + goalArea.height * 0.1;
+        const pos = { x, y };
+        if (avoid) {
+            const dx = pos.x - avoid.x;
+            const dy = pos.y - avoid.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < 60) {
+                // shift further out
+                pos.x += side * 80;
+                pos.y += (Math.random() - 0.5) * 80;
+            }
+        }
+        return pos;
+    }
+    // NEW CATCH LOGIC (fly directly to ball & arm length)
+    performCatchAnimation(zone, catchWorldPos) {
+        return new Promise((resolve) => {
+            this._isAnimating = true;
+            this._isActive = false;
+            const catchTexture = PIXI.Texture.from('/Assets/arts/gkeeper2.png');
+            this.goalkeeperSprite.texture = catchTexture;
+            // 1. Determine destination (ball position)
+            let targetX = 0;
+            let targetY = 0;
+            if (catchWorldPos) {
+                // Use world coordinates since keeper and ball share the same coordinate system
+                targetX = catchWorldPos.x;
+                targetY = catchWorldPos.y;
+            }
+            else {
+                const defaultPosition = this.getPositionForZone(zone.id);
+                // reduce multiplier so keeper doesn't fly too far when using default catch
+                targetX = this.x + (defaultPosition.x - this.x) * 1.1;
+                targetY = defaultPosition.y;
+            }
+            // 2. Compute body position based on Arm Length
+            // Reduce arm length so keeper moves closer to the ball
+            const armLength = 20 * (this.scale.x || 1);
+            const dx = targetX - this.x;
+            const dy = targetY - this.y;
+            const angle = Math.atan2(dy, dx);
+            // Body moves toward ball, subtract arm length (keep a small separation)
+            const finalBodyX = targetX - Math.cos(angle) * armLength;
+            const finalBodyY = targetY - Math.sin(angle) * armLength;
+            const startX = this.x;
+            const startY = this.y;
+            const startRotation = this.goalkeeperSprite.rotation || 0;
+            // Rotation angle facing the ball
+            let targetRotation = angle;
+            if (zone.id <= 4)
+                targetRotation = -0.5 * Math.sign(dx);
+            else if (zone.id >= 9)
+                targetRotation = 0.2 * Math.sign(dx);
+            else
+                targetRotation = angle * 0.5;
+            const rotationDiff = targetRotation - startRotation;
+            let distBodyX = finalBodyX - startX;
+            let distBodyY = finalBodyY - startY;
+            // Clamp body travel distance per animation relative to goal size to allow full-goal movement
+            try {
+                const scale = this.scale?.x || 1;
+                let maxBodyMove = 120 * scale;
+                try {
+                    const ga = this._goal?.getGoalArea?.();
+                    if (ga && typeof ga.width === 'number' && typeof ga.height === 'number') {
+                        const goalMax = Math.max(ga.width, ga.height);
+                        // allow body travel up to ~90% of goal width (clamped)
+                        maxBodyMove = Math.max(80, Math.min(goalMax * 0.9, 800)) * scale;
+                    }
+                }
+                catch (e) { }
+                distBodyX = Math.sign(distBodyX) * Math.min(Math.abs(distBodyX), maxBodyMove);
+                distBodyY = Math.sign(distBodyY) * Math.min(Math.abs(distBodyY), maxBodyMove);
+            }
+            catch (e) { }
+            const animationDuration = 450;
+            const startTime = Date.now();
+            let resolved = false;
+            // Increase jump height so keeper jumps higher
+            const jumpHeight = 60 * (this.scale.x || 1);
+            const animateDive = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / animationDuration, 1);
+                const easedProgress = this.easeOutCubic(progress);
+                this.x = startX + (distBodyX * easedProgress);
+                const linearY = startY + (distBodyY * easedProgress);
+                // At progress=1, arc=0 => keeper lands at calculated position
+                const arc = Math.sin(progress * Math.PI) * jumpHeight;
+                this.y = linearY - arc;
+                // Clamp sprite rotation to avoid large orbital appearance
+                const maxSpriteRotation = 0.5;
+                const desiredRot = startRotation + (rotationDiff * easedProgress);
+                this.goalkeeperSprite.rotation = Math.max(-maxSpriteRotation, Math.min(maxSpriteRotation, desiredRot));
+                if (!resolved && progress >= 0.5) {
+                    resolved = true;
+                    // Always return ball position when provided for proximity validation
+                    // Don't return keeper position as it may have moved during animation
+                    if (catchWorldPos) {
+                        resolve({ x: catchWorldPos.x, y: catchWorldPos.y });
+                    }
+                    else {
+                        resolve({ x: this.x, y: this.y });
+                    }
+                }
+                if (progress < 1) {
+                    requestAnimationFrame(animateDive);
+                }
+                else {
+                    // After animation, wait then fall
+                    setTimeout(() => { try {
+                        this.fallToGround();
+                    }
+                    catch (e) { } }, 150);
+                }
+            };
+            requestAnimationFrame(animateDive);
+        });
+    }
+    fallToGround() {
+        return new Promise((resolve) => {
+            const currentX = this.x;
+            const currentY = this.y;
+            // While flying we rotate the Sprite; when falling we rotate the Container, so capture current angle
+            // However, to simplify, animate the Container back to 0 and reset the Sprite at the end
+            const currentRotation = this.goalkeeperSprite.rotation || 0;
+            // Target position: back to initial position (ground level)
+            const targetX = this._initialPosition.x;
+            const targetY = this._initialPosition.y;
+            // target sprite rotation is zero (upright)
+            const targetRotation = 0;
+            // Calculate differences
+            const diffX = targetX - currentX;
+            const diffY = targetY - currentY;
+            const diffRotation = targetRotation - currentRotation;
+            const fallDuration = 500; // ms - falling animation duration
+            const startTime = Date.now();
+            const animateFall = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / fallDuration, 1);
+                // Use gravity-like easing (faster falling)
+                const easedProgress = this.easeInQuad(progress);
+                // Animate back to ground position and reset sprite rotation only
+                this.x = currentX + (diffX * easedProgress);
+                this.y = currentY + (diffY * easedProgress);
+                this.goalkeeperSprite.rotation = currentRotation + (diffRotation * easedProgress);
+                if (progress < 1) {
+                    requestAnimationFrame(animateFall);
+                }
+                else {
+                    // Ensure exact final position (container) and reset sprite rotation
+                    this.x = targetX;
+                    this.y = targetY;
+                    // do not modify container.rotation here
+                    // Reset goalkeeper to normal state after falling
+                    const normalTexture = PIXI.Texture.from('/Assets/arts/gkeeper.png');
+                    this.goalkeeperSprite.texture = normalTexture;
+                    // --- FIX HERE ---
+                    // Must reset sprite rotation to 0
+                    // Because we rotated it during flight, if not reset it will remain tilted permanently
+                    this.goalkeeperSprite.rotation = 0;
+                    // ---------------------
+                    // Reset flags and active state
+                    this._isAnimating = false;
+                    this._isActive = true;
+                    resolve();
+                }
+            };
+            animateFall();
+        });
+    }
+    easeInQuad(t) {
+        return t * t;
+    }
+    easeOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3);
+    }
+    shouldAttemptCatch(ballX, ballY, ballVelocity) {
+        return ballVelocity.x > 0 && this._isActive;
+    }
+    getState() {
+        return {
+            position: { x: this.x, y: this.y },
+            rotation: this.rotation,
+            isActive: this._isActive,
+            texture: this.goalkeeperSprite.texture.label
+        };
+    }
+    getBounds() {
+        return this.goalkeeperSprite.getBounds();
+    }
+    getCollisionRadius() {
+        return 40 * (this.scale?.x || 1);
+    }
+    setCatchProbability(probability) {
+        this._catchProbability = Math.max(0, Math.min(1, probability));
+    }
+    getCatchProbability() {
+        return this._catchProbability;
+    }
+    destroy(options) {
+        window.removeEventListener('resize', this._onResize);
+        super.destroy(options);
+    }
+}
