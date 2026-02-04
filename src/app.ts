@@ -17,6 +17,7 @@ export default class App extends Application {
     private ballCountDisplay!: BallCountDisplay;
     private startScreen!: StartScreen;
     private goalkeeper!: Goalkeeper;
+    private playerSpine: Spine | null = null;
 
     private currentBall: BallGame | null = null;
     private gameContainer: Container;
@@ -69,9 +70,7 @@ export default class App extends Application {
 
         await Assets.init({ manifest });
         
-        console.log('Start loading assets...');
         const loadedAssets = await Assets.loadBundle('game-screen');
-        console.log('Assets loaded!');
 
         this.stage.addChild(this.gameContainer);
 
@@ -86,7 +85,7 @@ export default class App extends Application {
                 const displayH = BASE_HEIGHT * s;
                 this.gameContainer.x = Math.round((window.innerWidth - displayW) / 2);
                 this.gameContainer.y = Math.round((window.innerHeight - displayH) / 2);
-            } catch (e) { console.warn('updateRootScale failed', e); }
+            } catch (e) { /* updateRootScale failed */ }
         };
         updateRootScale();
         window.addEventListener('resize', updateRootScale);
@@ -114,12 +113,13 @@ export default class App extends Application {
 
         // Load Spine goalkeeper LAST so it's on top layer
         await this.loadGoalkeeperSpine();
+        
+        // Load player spine
+        await this.loadPlayerSpine();
     }
 
     private async loadGoalkeeperSpine() {
         try {
-            console.log('🔧 Loading Spine assets...');
-            
             // Load skeleton and atlas using PIXI.Assets
             Assets.add({ alias: 'goalkeeperData', src: '/Assets/anim/Gkeeper/skeleton.json' });
             Assets.add({ alias: 'goalkeeperAtlas', src: '/Assets/anim/Gkeeper/skeleton.atlas' });
@@ -132,10 +132,6 @@ export default class App extends Application {
                 throw new Error('Failed to create spine');
             }
             
-            console.log('✅ Spine loaded:', {
-                animations: spine.skeleton?.data?.animations?.map((a: any) => a.name)
-            });
-            
             this.goalkeeper = new Goalkeeper();
             this.goalkeeper.init(spine);
             this.goalkeeper.setGoal(this.goal);
@@ -143,29 +139,41 @@ export default class App extends Application {
             this.goalkeeper.visible = true;
             this.goalkeeper.alpha = 1;
             
-            console.log('🔍 Goalkeeper properties:', {
-                x: this.goalkeeper.x,
-                y: this.goalkeeper.y,
-                scale: this.goalkeeper.scale.x,
-                visible: this.goalkeeper.visible,
-                alpha: this.goalkeeper.alpha,
-                children: this.goalkeeper.children.length
-            });
-            
             this.gameContainer.addChild(this.goalkeeper);
             
             // Ensure goalkeeper is on top layer
             this.gameContainer.setChildIndex(this.goalkeeper, this.gameContainer.children.length - 1);
             
-            console.log('🔍 GameContainer state:', {
-                visible: this.gameContainer.visible,
-                children: this.gameContainer.children.length,
-                goalkeeperIndex: this.gameContainer.getChildIndex(this.goalkeeper)
-            });
-
-            console.log('✅ Goalkeeper Spine initialized at position:', this.goalkeeper.x, this.goalkeeper.y);
         } catch (error) {
-            console.error('❌ Failed to load Goalkeeper Spine:', error);
+            // Failed to load Goalkeeper Spine
+        }
+    }
+
+    private async loadPlayerSpine() {
+        try {
+            // Load player spine assets
+            Assets.add({ alias: 'playerData', src: '/Assets/anim/player/skeleton.json' });
+            Assets.add({ alias: 'playerAtlas', src: '/Assets/anim/player/skeleton.atlas' });
+            await Assets.load(['playerData', 'playerAtlas']);
+            
+            // Create player spine instance
+            this.playerSpine = Spine.from({ skeleton: 'playerData', atlas: 'playerAtlas', scale: 0.3 });
+            
+            if (this.playerSpine) {
+                // Set player position
+                this.playerSpine.x = 400;
+                this.playerSpine.y = 600;
+                
+                // Play idle animation
+                if (this.playerSpine.state) {
+                    this.playerSpine.state.setAnimation(0, 'idle', true);
+                }
+                
+                // Add to game container
+                this.gameContainer.addChild(this.playerSpine);
+            }
+        } catch (error) {
+            // Failed to load Player Spine
         }
     }
 
@@ -201,6 +209,9 @@ export default class App extends Application {
     }
 
     update(ticker: Ticker) {
+        if (this.goalkeeper) {
+            this.goalkeeper.UpdatePhysics();
+        }
         if (!this.isGameActive || !this.currentBall) return;
         if (this.currentBall.isFlying) {
             this.ballcollision.checkCollision(this.currentBall, this.goal);
@@ -216,7 +227,6 @@ export default class App extends Application {
     }
 
     endGame() {
-        console.log("Game Over");
         this.isGameActive = false;
         this.gameContainer.visible = false;
         this.startScreen.visible = true;
@@ -241,7 +251,7 @@ export default class App extends Application {
         this.resetButton.cursor = 'pointer';
         this.resetButton.on('pointerdown', () => {
             if (this.currentBall) {
-                try { this.currentBall.reset(); } catch (e) { console.warn('Reset failed', e); }
+                try { this.currentBall.reset(); } catch (e) { /* Reset failed */ }
             }
             if (this.goalkeeper) this.goalkeeper.reset();
         });

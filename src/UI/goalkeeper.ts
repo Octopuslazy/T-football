@@ -1,5 +1,21 @@
 import { Container } from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
+import Goal from './goal';
+
+export enum GoalkeeperAction {
+    Case1 = '1',
+    Case2 = '2',
+    Case3 = '3',
+    Case4 = '4',
+    Case5 = '5',
+    Case6 = '6',
+    Case7 = '7',
+    Case8 = '8',
+    Case9 = '9',
+    Case10 = '10',
+    Reset = 'Reset',
+
+}
 
 export default class Goalkeeper extends Container {
     private spine!: Spine;
@@ -7,19 +23,281 @@ export default class Goalkeeper extends Container {
     private _onResize: () => void;
     private _initialPosition = { x: 0, y: 0 };
 
+    // Physic
+    public isGrounded: boolean = true;
+    private velocity: { x: number; y: number } = { x: 0, y: 0 };
+    private keys: { [key: string]: boolean } = {};
+    private isFallen: boolean = false;
+    private isDiving: boolean = false;
+
+    private speed: number = 10;
+    private jump: number = 19;
+    private gravity: number = 0.8;
+    private fallen: number = 10;
+    private targetRotation: number = 0;
+    private rotationSpeed: number = 0.11;
+    private isPrepared: boolean = false;
     constructor() {
-        super();
+        super();2
+
         this._onResize = this.updateScale.bind(this);
         window.addEventListener('resize', this._onResize);
+
+        window.addEventListener('keydown', this.onKeyDown.bind(this));
+        window.addEventListener('keyup', this.onKeyUp.bind(this));
     }
 
-    public init(spineAsset: Spine) {
-        if (!spineAsset) {
-            console.error('❌ Goalkeeper.init: spineAsset is null');
+    //#region Keys test
+    private onKeyDown(e: KeyboardEvent) {
+        if (e.code ==='KeyR') {
+            this.PerformFall(GoalkeeperAction.Reset);
+        }
+        if (this.isFallen) return;
+        this.keys[e.code] = true;
+        if (this.isPrepared) return;
+    
+        if (this.keys['ArrowUp'] && this.isGrounded) {
+            if (this.keys['ArrowLeft']){
+                this.dive(-1);
+            } else if (this.keys['ArrowRight']){
+                this.dive(1);
+
+            } else {
+            this.Jump(18);
+            }
+        }
+        if (this.keys['Digit2']) {
+            this.PerformFall(GoalkeeperAction.Case2);
+        }
+        if (this.keys['Digit3']) {
+            this.PerformFall(GoalkeeperAction.Case3);
+        }
+        if (this.keys['Digit4']) {
+            this.PerformFall(GoalkeeperAction.Case4);
+        }
+        if (this.keys['Digit5']) {
+            this.PerformFall(GoalkeeperAction.Case5);
+        }
+        if (this.keys['Digit6']) {
+            this.PerformFall(GoalkeeperAction.Case6);
+        }
+        if (this.keys['Digit7']) {
+            this.PerformFall(GoalkeeperAction.Case7);
+        }
+        if (this.keys['Digit8']) {
+            this.PerformFall(GoalkeeperAction.Case8);
+        }
+        if (this.keys['Digit9']) {
+            this.PerformFall(GoalkeeperAction.Case9);
+        }
+        if (this.keys['Digit0']) {
+            this.PerformFall(GoalkeeperAction.Case10);
+        }
+        
+        
+    }
+    private onKeyUp(e: KeyboardEvent) {
+        this.keys[e.code] = false;
+    }
+
+    //#endregion
+
+    //#region Moverment & Physics
+    public UpdatePhysics() {
+        if (!this.spine) return;
+
+        if (this.isPrepared) {
+            this.velocity.x = 0;
+            this.velocity.y = 0;
+            return; 
+        }
+        if (Math.abs(this.rotation - this.targetRotation) > 0.01) {
+            this.rotation += (this.targetRotation - this.rotation) * this.rotationSpeed;
+        } else {
+            this.rotation = this.targetRotation;
+        }
+
+        if (this.isFallen) {
+            this.velocity.x *= 0.8;
+            if (Math.abs(this.velocity.x) < 0.1) this.velocity.x = 0;
+            this.x += this.velocity.x;
+            this.y = this._initialPosition.y;
             return;
         }
 
-        console.log('Removing old children, count:', this.children.length);
+        if (this.keys['ArrowLeft']) {
+            this.velocity.x = -this.speed;
+        }
+        else if (this.keys['ArrowRight']) {
+            this.velocity.x = this.speed;
+        }
+        // else {
+        //     this.velocity.x = 0;
+            
+        // }
+        if (!this.isGrounded) {
+            this.velocity.y += this.gravity;
+        }
+        this.x += this.velocity.x;
+        this.y += this.velocity.y;
+        this.CheckBounds();
+
+        const groundY = this._initialPosition.y;
+        if (this.y >= groundY) {
+            this.y = groundY;
+            this.velocity.y = 0;
+            if (this.isDiving) {
+                this.isDiving = false;
+                this.isFallen = true;
+                this.isGrounded = true;
+                this.y = this._initialPosition.y;
+            } else {    
+            this.rotation = 0;
+            this.targetRotation = 0;
+            this.isGrounded = true;
+            this.PlayAnimation('idle', true);
+            }
+        } else {
+            this.isGrounded = false;
+        }
+    }
+
+    private excutePhysics(dir: number, speed: number, jump: number) {
+        this.isPrepared = false;
+        this.isGrounded = false;
+        this.isDiving = true;
+
+        this.velocity.y = -jump;
+        this.velocity.x = dir * speed;
+
+        this.PlayAnimation('FlyingCatch', true);
+    }
+
+
+    private Jump(jump: number) {
+        if (!this.isGrounded|| this.isPrepared) return;
+        this.isPrepared = true;
+
+        this.velocity.y = -this.jump;
+        this.targetRotation = 0;
+        this.isGrounded = false;
+
+        const trackEntry = this.PlayAnimation('Jump', false);
+        if (trackEntry) {
+            trackEntry.listener = {
+                complete: () => {
+                    this.excutePhysics(0, 0, jump);
+                }
+            };
+        }
+    }
+
+    private dive(direction: number, speed?: number, jump?: number) {
+        this.isPrepared = true;
+        this.isGrounded = false;
+        this.isDiving = true;
+        const finalJump = (jump !== undefined) ? jump : this.jump;
+        const finalSpeed = (speed !== undefined) ? speed : this.fallen;
+        let AngleJump = Math.atan2(finalJump, finalSpeed);
+        if (AngleJump > 1.0) AngleJump = 1.0;
+        if (AngleJump < 0.1) AngleJump = 0.1;
+
+        this.spine.skeleton.scaleX = direction;
+
+        this.targetRotation = AngleJump*direction;
+
+        const trackEntry = this.PlayAnimation('Jump', false);
+
+        if (trackEntry) {
+            trackEntry.listener = {
+                complete: () => {
+                    // Khi Jump chạy xong, nếu vẫn đang bay (chưa ngã) thì chuyển sang FlyingCatch
+                    if (this.isDiving && !this.isFallen) {
+                        
+                        this.excutePhysics(direction, finalSpeed, finalJump);
+                    }
+                }
+            };
+        }
+    }
+       
+
+
+    public PlayAnimation(animationName: string, loop = true): any {
+        if (!this.spine) return null;
+
+        if (this.spine.state.getCurrent(0)?.animation?.name !== animationName) {
+            return this.spine.state.setAnimation(0, animationName, loop);
+        }
+
+        return this.spine.state.getCurrent(0);
+    }
+
+    //#region Case Perform
+    public PerformFall(action: GoalkeeperAction) {  
+        if (this.isFallen && action !== GoalkeeperAction.Reset) return;
+        
+        switch (action){
+            case GoalkeeperAction.Case1:
+                this.isGrounded && this.PlayAnimation('idle', true);
+                break;
+            case GoalkeeperAction.Case2:
+                if (this.isGrounded) {
+                    this.Jump(15);
+                }
+                break;
+            case GoalkeeperAction.Case3:
+                if (this.isGrounded) {
+                    this.dive(-1, 1, 13);
+                }
+                break;
+            case GoalkeeperAction.Case4:
+                if (this.isGrounded) {
+                    this.dive(1, 1, 13);
+                }
+                break;
+            case GoalkeeperAction.Case5:
+                if (this.isGrounded) {
+                    this.dive(-1, 5, 18);
+                }
+                break;
+            case GoalkeeperAction.Case6:
+                if (this.isGrounded) {
+                    this.dive(1, 5, 18);
+                }
+                break;
+            case GoalkeeperAction.Case7:
+                if (this.isGrounded) {
+                    this.dive(-1, 6, 8);
+                }
+                break;
+            case GoalkeeperAction.Case8:
+                if (this.isGrounded) {
+                    this.dive(1, 6, 8);
+                }
+                break;
+            case GoalkeeperAction.Case9:
+                if (this.isGrounded) {
+                    this.dive(-1, 1, 18);
+                }
+                break;
+            case GoalkeeperAction.Case10:
+                if (this.isGrounded) {
+                    this.dive(1, 1, 18);
+                }
+                break;
+            case GoalkeeperAction.Reset:
+                this.reset();
+                break;
+        }
+
+
+    }
+    //#region create and init goalkeeper
+    public init(spineAsset: Spine) {
+        if (!spineAsset) {
+            return;
+        }
         this.removeChildren();
         
         this.spine = spineAsset;
@@ -62,23 +340,8 @@ export default class Goalkeeper extends Container {
 
         this.updateScale();
         this.reset();
-
-        console.log('✅ Goalkeeper Spine initialized, children count:', this.children.length);
     }
 
-    public reset() {
-        if (!this.spine) return;
-
-        this.x = this._initialPosition.x;
-        this.y = this._initialPosition.y;
-
-        this.rotation = 0;
-        this.spine.rotation = 0;
-
-        try {
-            this.spine.state.setAnimation(0, 'idle', true);
-        } catch {}
-    }
 
     public setGoal(goal: any) {
         this._goal = goal;
@@ -86,11 +349,17 @@ export default class Goalkeeper extends Container {
     }
 
     private setInitialPosition(x: number, y: number) {
-        this._initialPosition = { x, y };
+        this._initialPosition = { x, y: y };
         this.x = x;
         this.y = y;
+        if (this.isGrounded) {
+            this.x = x;
+            this.y = this._initialPosition.y;
+        }
     }
-
+    
+    //#endregion
+    //#region Scale and Position
     private updateScale() {
         if (!this.spine) return;
 
@@ -118,21 +387,59 @@ export default class Goalkeeper extends Container {
         if (spineBounds && spineBounds.height > 0) {
             const scale = targetHeight / spineBounds.height;
             this.spine.scale.set(scale, scale);
-            
-            console.log('⚽ Goalkeeper scale:', scale, 'target height:', targetHeight, 'spine height:', spineBounds.height);
         }
         
         // Đặt goalkeeper tại giữa goal (center X, bottom Y)
         const centerX = goalX;
-        const bottomY = goalY + goalHeight - 30; // Trừ 30px để goalkeeper đứng trên sân
+        const bottomY = goalY + goalHeight; 
         
         this.setInitialPosition(centerX, bottomY);
-        
-        console.log('📍 Goalkeeper position:', centerX, bottomY);
+    }
+
+    public CheckBounds() {
+        const margin = (300/1080)*window.innerWidth;
+        const screenW = window.innerWidth;
+        if (this.x < margin) {
+            this.x = margin;
+            this.velocity.x = 0;
+        } else if (this.x > screenW - margin) {
+            this.x = screenW - margin;
+            this.velocity.x = 0;
+        }
+    }
+    //#endregion
+
+    //#region Time to catch ball
+
+
+
+    //#region Ball down
+    public reset() {
+        if (!this.spine) return;
+
+        this.x = this._initialPosition.x;
+        this.y = this._initialPosition.y;
+
+        this.isGrounded = true;
+        this.isFallen = false; 
+        this.rotation = 0;
+        this.spine.rotation = 0;
+        this.targetRotation = 0;
+        this.spine.skeleton.scaleX = 1;
+        this.isDiving = false;
+        this.isPrepared = false;
+
+
+        try {
+            this.spine.state.setAnimation(0, 'idle', true);
+        } catch {}
     }
 
     destroy(options?: any) {
+        window.removeEventListener('keydown', this.onKeyDown);
+        window.removeEventListener('keyup', this.onKeyUp);
         window.removeEventListener('resize', this._onResize);
         super.destroy(options);
     }
+    //#endregion
 }

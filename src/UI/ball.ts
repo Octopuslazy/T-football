@@ -118,7 +118,7 @@ export class BallGame extends Container {
         Ticker.shared.add(this.update, this);
     }
 
-
+    //#region swipe input
     onPointerDown(e: FederatedPointerEvent) {
         if (this.state !== BallState.Idle) return;
         if (this.hasLanched) return;
@@ -175,6 +175,7 @@ export class BallGame extends Container {
 
         this.LaunchBall();
     }
+    //#region Shoot the ball
     LaunchBall() {
         this.hasLanched = true;
         this.isFlying = true;
@@ -243,7 +244,7 @@ export class BallGame extends Container {
         this.netMinX = minLocal;
         this.netMaxX = maxLocal;
     }
-
+    //#region Update
     update(ticker: Ticker) {
 
         // net animation
@@ -343,7 +344,7 @@ export class BallGame extends Container {
         }
     }
     
-
+    //#region RenderBall
     // render ball & shadow
     renderBall(dt: number) {
         // Render
@@ -397,7 +398,7 @@ export class BallGame extends Container {
             }}
     }
 
-    // net catch
+    //#region Net catch
     public onNetCatch(targetGlobalX: number, targetGlobalY: number, impactForce: number = 0) {
         this.isFlying = false;
 
@@ -424,7 +425,7 @@ export class BallGame extends Container {
         this.isNetAnim = false;
     }
 
-    //reset
+    //#region Reset
     public reset(reason:string = "unknown"){
         this.state = BallState.Idle;
         this.isFlying = false;

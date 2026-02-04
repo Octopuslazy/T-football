@@ -16,26 +16,16 @@ export class SpinePlayer {
      */
     async load(skelPath: string): Promise<SpinePlayer | null> {
         try {
-            console.log(`[SPINE] Loading ${skelPath}...`);
-            
             // Load spine data using Pixi Assets
             const resource = await Assets.load(skelPath);
             
             if (!resource || !resource.spineData) {
-                console.error('[SPINE] Failed to load spine data');
                 return null;
             }
 
             // Create Spine instance
             this.spine = new Spine(resource.spineData);
             
-            console.log('[SPINE] Spine created:', {
-                hasSpine: !!this.spine,
-                hasSkeleton: !!this.spine.skeleton,
-                animations: this.spine.skeleton?.data?.animations?.length || 0,
-                animationNames: this.spine.skeleton?.data?.animations?.map((a: any) => a.name) || []
-            });
-
             // Setup visibility
             this.spine.visible = true;
             this.spine.alpha = 1;
@@ -65,10 +55,8 @@ export class SpinePlayer {
             // Initial update
             this.spine.update(0.016);
 
-            console.log('[SPINE] ✅ Spine loaded successfully');
             return this;
         } catch (err) {
-            console.error('[SPINE] Load failed:', err);
             return null;
         }
     }
@@ -78,17 +66,16 @@ export class SpinePlayer {
      */
     playAnimation(animationName: string, loop = true) {
         if (!this.spine || !this.spine.state) {
-            console.warn('[SPINE] Cannot play animation - spine not initialized');
             return;
         }
 
         try {
             this.spine.state.setAnimation(0, animationName, loop);
-            console.log(`[SPINE] Playing animation: ${animationName} (loop: ${loop})`);
         } catch (e) {
-            console.error(`[SPINE] Failed to play animation ${animationName}:`, e);
+            // Animation failed
         }
     }
+   
 
     /**
      * Get available animations
