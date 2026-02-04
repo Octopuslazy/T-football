@@ -1,4 +1,5 @@
 import {Container, Graphics, Point, FederatedPointerEvent, Ticker, Sprite } from "pixi.js";
+import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { BASE_WIDTH, BASE_HEIGHT } from "../constant/global";  
 import { BallCollision } from "./ballCollision";
 import Goal from "./goal";
@@ -28,6 +29,8 @@ export class BallGame extends Container {
     public hasLanched: boolean = false;
     private curveForce: number = 0;
     private goal!: Goal;
+    private playerSpine: Spine | null = null;
+    private isWaitingForAnimation: boolean = false;
 
     // 3d 
     public x3d: number = 0;
@@ -173,7 +176,8 @@ export class BallGame extends Container {
         this.line.clear();
         if (this.SwipeData.point.length < 3) return;
 
-        this.LaunchBall();
+        // Start player animation first
+        this.initShooter();
     }
     //#region Shoot the ball
     LaunchBall() {
@@ -238,6 +242,19 @@ export class BallGame extends Container {
     }
     public setGoal(goal: Goal) {
     this.goal = goal;
+    }
+
+    public setPlayerSpine(playerSpine: Spine | null) {
+        this.playerSpine = playerSpine;
+        console.log('🎯 Player spine set in ball:', !!this.playerSpine);
+        if (this.playerSpine) {
+            console.log('🎯 Player spine details:', {
+                x: this.playerSpine.x,
+                y: this.playerSpine.y,
+                visible: this.playerSpine.visible,
+                scale: this.playerSpine.scale.x
+            });
+        }
     }
 
     public setNetLimit(minLocal: number, maxLocal: number) {
@@ -425,10 +442,132 @@ export class BallGame extends Container {
         this.isNetAnim = false;
     }
 
+
+    //#region Calltheshooter
+    public initShooter(){
+        if (this.isWaitingForAnimation) return;
+        
+        console.log('🏃 InitShooter called');
+        console.log('🏃 Player spine exists:', !!this.playerSpine);
+        
+        this.isWaitingForAnimation = true;
+        
+        // Show player and play animations: Run -> Kick -> Launch ball
+        if (this.playerSpine && this.playerSpine.state) {
+            try {
+                console.log('🏃 Ball position:', this.ball.x, this.ball.y);
+                
+                // Set player starting position (40% of ball X position)
+                const startX = this.ball.x * 0.4;
+                const endX = this.ball.x * 0.65;
+                const playerY = this.ball.y*1.05;
+                
+                this.playerSpine.x = startX;
+                this.playerSpine.y = playerY;
+                this.playerSpine.scale.set(1.0);
+                this.playerSpine.alpha = 1.0;
+                
+                // Show player spine
+                this.playerSpine.visible = true;
+                
+                // Ensure player is on top layer (above ball)
+                if (this.playerSpine.parent) {
+                    this.playerSpine.parent.setChildIndex(this.playerSpine, this.playerSpine.parent.children.length - 1);
+                }
+                
+                console.log('🏃 Player starting position:', startX, 'target:', endX);
+                
+                // Start Run animation
+                this.playerSpine.state.setAnimation(0, 'Run', true);
+                
+                // Animate player movement during Run
+                const runDuration = 400; // Run duration in ms
+                const startTime = Date.now();
+                
+                const movePlayer = () => {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / runDuration, 1);
+                    
+                    // Interpolate position
+                    const currentX = startX + (endX - startX) * progress;
+                    if (this.playerSpine) {
+                        this.playerSpine.x = currentX;
+                    }
+                    
+                    // Continue movement until reaching target
+                    if (progress < 1) {
+                        requestAnimationFrame(movePlayer);
+                    } else {
+                        // Reached target position, start Kick animation
+                        if (this.playerSpine && this.playerSpine.state) {
+                            this.playerSpine.state.setAnimation(0, 'Kick', false);
+                            console.log('🦵 Kick animation started at position:', this.playerSpine.x);
+                            
+                            // After Kick animation, launch ball
+                            setTimeout(() => {
+                                this.LaunchBall();
+                                this.isWaitingForAnimation = false;
+                                
+                                // Fade out player alpha from 1 to 0 in 0.3s
+                                if (this.playerSpine) {
+                                    const fadeStartTime = Date.now();
+                                    const fadeDuration = 300; // 0.3s
+                                    
+                                    const fadeOut = () => {
+                                        const elapsed = Date.now() - fadeStartTime;
+                                        const progress = Math.min(elapsed / fadeDuration, 1);
+                                        
+                                        // Interpolate alpha from 1 to 0
+                                        const alpha = 1 - progress;
+                                        if (this.playerSpine) {
+                                            this.playerSpine.alpha = alpha;
+                                        }
+                                        
+                                        // Continue fade until complete
+                                        if (progress < 1) {
+                                            requestAnimationFrame(fadeOut);
+                                        } else {
+                                            // Fade complete, hide player
+                                            if (this.playerSpine) {
+                                                this.playerSpine.visible = false;
+                                                this.playerSpine.alpha = 1; // Reset alpha for next time
+                                            }
+                                        }
+                                    };
+                                    
+                                    // Start fade animation
+                                    fadeOut();
+                                }
+                            }, 200); // Kick animation duration
+                        }
+                    }
+                };
+                
+                // Start movement animation
+                movePlayer();
+                
+            } catch (e) {
+                // Fallback if animation fails
+                setTimeout(() => {
+                    this.LaunchBall();
+                    this.isWaitingForAnimation = false;
+                    if (this.playerSpine) {
+                        this.playerSpine.visible = false;
+                    }
+                }, 400);
+            }
+        } else {
+            // No player spine, launch immediately
+            this.LaunchBall();
+            this.isWaitingForAnimation = false;
+        }
+    }
+
     //#region Reset
     public reset(reason:string = "unknown"){
         this.state = BallState.Idle;
         this.isFlying = false;
+        this.isWaitingForAnimation = false;
         const CENTERX = BASE_WIDTH / 2;
         const CENTERY = BASE_HEIGHT * 0.79;
 

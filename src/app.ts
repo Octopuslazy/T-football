@@ -157,17 +157,15 @@ export default class App extends Application {
             await Assets.load(['playerData', 'playerAtlas']);
             
             // Create player spine instance
-            this.playerSpine = Spine.from({ skeleton: 'playerData', atlas: 'playerAtlas', scale: 0.3 });
+            this.playerSpine = Spine.from({ skeleton: 'playerData', atlas: 'playerAtlas', scale: 1 });
             
             if (this.playerSpine) {
                 // Set player position
                 this.playerSpine.x = 400;
                 this.playerSpine.y = 600;
                 
-                // Play idle animation
-                if (this.playerSpine.state) {
-                    this.playerSpine.state.setAnimation(0, 'idle', true);
-                }
+                // Hide player initially - will show when shooting
+                this.playerSpine.visible = false;
                 
                 // Add to game container
                 this.gameContainer.addChild(this.playerSpine);
@@ -202,6 +200,7 @@ export default class App extends Application {
             this.currentBall = null;
         }
         this.currentBall = new BallGame();
+        this.currentBall.setPlayerSpine(this.playerSpine);
         this.gameContainer.addChild(this.currentBall);
         
         // Reset thủ môn
