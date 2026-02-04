@@ -190,6 +190,7 @@ export default class Goalkeeper extends Container {
                 }
             };
         }
+        
     }
 
     private dive(direction: number, speed?: number, jump?: number) {
@@ -244,46 +245,55 @@ export default class Goalkeeper extends Container {
             case GoalkeeperAction.Case2:
                 if (this.isGrounded) {
                     this.Jump(15);
+                    this.TimetoCatchBall(0, 0, 15);
                 }
                 break;
             case GoalkeeperAction.Case3:
                 if (this.isGrounded) {
                     this.dive(-1, 1, 13);
+                    this.TimetoCatchBall(0, 0, 13);
                 }
                 break;
             case GoalkeeperAction.Case4:
                 if (this.isGrounded) {
                     this.dive(1, 1, 13);
+                    this.TimetoCatchBall(0, 0, 13);
                 }
                 break;
             case GoalkeeperAction.Case5:
                 if (this.isGrounded) {
                     this.dive(-1, 5, 18);
+                    this.TimetoCatchBall(0, 0, 18);
                 }
                 break;
             case GoalkeeperAction.Case6:
                 if (this.isGrounded) {
                     this.dive(1, 5, 18);
+                    this.TimetoCatchBall(0, 0, 18);
                 }
                 break;
             case GoalkeeperAction.Case7:
                 if (this.isGrounded) {
                     this.dive(-1, 6, 8);
+                    this.TimetoCatchBall(0, 0, 8);
                 }
                 break;
             case GoalkeeperAction.Case8:
                 if (this.isGrounded) {
                     this.dive(1, 6, 8);
+                    this.TimetoCatchBall(0, 0, 8);
                 }
                 break;
             case GoalkeeperAction.Case9:
                 if (this.isGrounded) {
                     this.dive(-1, 1, 18);
+                    this.TimetoCatchBall(0, 0, 18);
                 }
                 break;
             case GoalkeeperAction.Case10:
                 if (this.isGrounded) {
                     this.dive(1, 1, 18);
+                    this.TimetoCatchBall(0, 0, 18);
                 }
                 break;
             case GoalkeeperAction.Reset:
@@ -410,6 +420,24 @@ export default class Goalkeeper extends Container {
     //#endregion
 
     //#region Time to catch ball
+    public TimetoCatchBall(targetX: number, targetY: number, jumpForce: number = 0) {
+        let JumpAnimationTime = 0;
+        if (this.spine && this.spine.skeleton) {
+            const jumpAnim = this.spine.skeleton.data.findAnimation( 'Jump');
+            if (jumpAnim) {
+                JumpAnimationTime = jumpAnim.duration;
+            }
+        }
+        const Force = (jumpForce !== undefined)? jumpForce : this.jump; 
+        const physicsTime = (Force / this.gravity) / 60;
+        console.log('⏱️ Time to catch ball:', JumpAnimationTime + physicsTime);
+        return JumpAnimationTime + physicsTime;
+
+        // tobecontinued...
+    }
+
+
+
 
 
 
