@@ -1,6 +1,7 @@
 import { Container } from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import Goal from './goal';
+import { BASE_WIDTH } from '../constant/global';
 
 export enum GoalkeeperAction {
     Case1 = '1',
@@ -37,6 +38,9 @@ export default class Goalkeeper extends Container {
     private targetRotation: number = 0;
     private rotationSpeed: number = 0.11;
     private isPrepared: boolean = false;
+    private _targetBall: any = null; 
+    private _hasAIActed: boolean = false;
+
     constructor() {
         super();2
 
@@ -105,6 +109,8 @@ export default class Goalkeeper extends Container {
     //#region Moverment & Physics
     public UpdatePhysics() {
         if (!this.spine) return;
+
+        this.updateAI();
 
         if (this.isPrepared) {
             this.velocity.x = 0;
@@ -419,7 +425,7 @@ export default class Goalkeeper extends Container {
     }
     //#endregion
 
-    //#region Time to catch ball
+    //#region  catch ball
     public TimetoCatchBall(targetX: number, targetY: number, jumpForce: number = 0) {
         let JumpAnimationTime = 0;
         if (this.spine && this.spine.skeleton) {
@@ -436,9 +442,109 @@ export default class Goalkeeper extends Container {
         // tobecontinued...
     }
 
+    private getJumpForceForCase(action: GoalkeeperAction): number {
+        switch (action) {
+            case GoalkeeperAction.Case2: return 20; // Nhảy thẳng cao
+            case GoalkeeperAction.Case3: return 15; // Trái vừa
+            case GoalkeeperAction.Case4: return 15; // Phải vừa
+            case GoalkeeperAction.Case5: return 24; // Trái cao
+            case GoalkeeperAction.Case6: return 24; // Phải cao
+            case GoalkeeperAction.Case7: return 10; // Trái thấp
+            case GoalkeeperAction.Case8: return 10; // Phải thấp
+            case GoalkeeperAction.Case9: return 26; // Trái rất cao
+            case GoalkeeperAction.Case10: return 26; // Phải rất cao
+            default: return 0;
+        }
+    }
+
+    public calculateMaxY(action: GoalkeeperAction): number {
+        const force = this.getJumpForceForCase(action);
+        if (force === 0) return this._initialPosition.y;
+        const jumpHeight = (force * force) / (2 * this.gravity);
+        return this._initialPosition.y - jumpHeight;
+    }
+    /**
+     * @param targetX 
+     * @param targetY 
+     */
+    public checkBestCaseForHeight(targetX: number, targetY: number) {
+        if (this.isDiving || this.isFallen || this.isPrepared) return;
+
+        const CenterX = BASE_WIDTH / 2; 
+        const threshold = 30;
+        let candidateActions: GoalkeeperAction[] = [];
+
+        if (targetX < CenterX - threshold) {
+
+            candidateActions = [
+                GoalkeeperAction.Case3, 
+                GoalkeeperAction.Case5, 
+                GoalkeeperAction.Case7, 
+                GoalkeeperAction.Case9, 
+                GoalkeeperAction.Case2  
+            ];
+        } else if (targetX > CenterX + threshold) {
+            
+            candidateActions = [
+                GoalkeeperAction.Case4,
+                GoalkeeperAction.Case6,
+                GoalkeeperAction.Case8,
+                GoalkeeperAction.Case10,
+                GoalkeeperAction.Case2
+            ];
+        } else {
+            
+            candidateActions = [
+                GoalkeeperAction.Case2, 
+                GoalkeeperAction.Case3, 
+                GoalkeeperAction.Case4  
+            ];
+        }
+        let bestAction: GoalkeeperAction | null = null;
+        let minDiff = Infinity;
+
+        for (const action of candidateActions) {
+
+            const peakY = this.calculateMaxY(action);
+
+            const diff = Math.abs(peakY - targetY);
 
 
+            if (diff < minDiff) {
+                minDiff = diff;
+                bestAction = action;
+            }
+        }
 
+        if (bestAction) {
+            console.log(`✅ AI CHỐT ĐƠN: ${bestAction} (Độ lệch chỉ ${minDiff.toFixed(0)}px)`);
+            this.PerformFall(bestAction);
+        }
+    }
+
+    public setTargetBall(ballGame: any) {
+        this._targetBall = ballGame;
+    }
+
+
+    private updateAI() {
+
+        if (!this._targetBall || !this._targetBall.isFlying || this._targetBall.isNetAnim) return;
+        if (this._hasAIActed || this.isDiving || this.isFallen || this.isPrepared) return;
+
+        // Dự đoán vị trí bóng tại Scale 0.4
+        const prediction = this._targetBall.getSnap(0.4);
+
+        if (prediction) {
+
+            const myActionTime = this.TimetoCatchBall(0, 0, 20);
+            const timeToBall = prediction.timeFrames / 60;
+            if (timeToBall <= myActionTime + 0.1) {
+                this.checkBestCaseForHeight(prediction.x, prediction.y);
+                this._hasAIActed = true;
+            }
+        }
+    }
 
 
     //#region Ball down
@@ -456,6 +562,7 @@ export default class Goalkeeper extends Container {
         this.spine.skeleton.scaleX = 1;
         this.isDiving = false;
         this.isPrepared = false;
+        this._hasAIActed = false;
 
 
         try {

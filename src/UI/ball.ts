@@ -3,6 +3,7 @@ import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { BASE_WIDTH, BASE_HEIGHT } from "../constant/global";  
 import { BallCollision } from "./ballCollision";
 import Goal from "./goal";
+import Goalkeeper, { GoalkeeperAction } from "./goalkeeper";
 const CONFIG = {
     ballradius: 145,    
 
@@ -31,7 +32,7 @@ export class BallGame extends Container {
     private goal!: Goal;
     private playerSpine: Spine | null = null;
     private isWaitingForAnimation: boolean = false;
-
+    private goalkeeper: Goalkeeper | null = null;
     // 3d 
     public x3d: number = 0;
     public y3d: number = 0 ;
@@ -175,16 +176,23 @@ export class BallGame extends Container {
         this.SwipeData.isDown = false;
         this.line.clear();
         if (this.SwipeData.point.length < 3) return;
+        const snapResult = this.getSnap(0.5);
+        if (snapResult) {
+            console.log('✅ Predicted trajectory:', snapResult);
+        } else {
+            console.log('❌ Cannot predict trajectory');
+        }
 
         // Start player animation first
         this.initShooter();
+        
     }
     //#region Shoot the ball
     LaunchBall() {
         this.hasLanched = true;
         this.isFlying = true;
         // caculate time
-        let duration = Date.now() - this.SwipeData.startTime;
+        let duration = Date.now() - this.SwipeData.startTime - 650;
         if (duration < 150) duration = 150;
 
         // calculate distance
@@ -209,7 +217,7 @@ export class BallGame extends Container {
 
 
         // speed
-        let speed = 1.7*dist/duration;
+        let speed = 2*dist/duration;
         if (speed > 62) speed = 62;
         if (speed < 5) speed = 5;
 
@@ -219,8 +227,8 @@ export class BallGame extends Container {
         const ratioX = distX / dist;
         const ratioY = distY / dist;
 
-        this.vz = 0.8*totalForce * (0.96 - 0.1*ratioY) + 10; // vertical force
-        this.vy = 2 + totalForce *0.12 + ratioY * 0.22; // horizontal force y
+        this.vz = 0.9*totalForce * (0.96 - 0.1*ratioY) + 10; // vertical force
+        this.vy = 4 + totalForce *0.18 + ratioY * 0.22; // horizontal force y
         if (this.vy < 25) this.vy = 1;
         this.vx = totalForce * ratioX * 0.65; // horizontal force x
         this.vx = Math.max(-500, Math.min(500, this.vx));
@@ -347,7 +355,7 @@ export class BallGame extends Container {
             this.y3d = 0;
             this.vy *= -0.4; // bounce
             this.vx *= 0.96;
-            this.vz *= 0.8;
+            this.vz *= 0.9;
             if ((Math.abs(this.vx) < 0.5 && Math.abs(this.vy) < 1 && this.vz < 0.5) || this.ball.scale.x <= 0.1|| this.ball.rotation <= 0.1 && this.state === BallState.Flying) {
                 this.reset();
             }
@@ -396,8 +404,9 @@ export class BallGame extends Container {
             return;
         }
         //anim fadoff
-        const fade_start = 100000;
-        const fade_end = 120000;
+        const fade_start = 65000;
+        const fade_end = 70000;
+       
         if (this.z3d >= fade_start) {
             console.log('fly to the sky');
             const faderatio = (this.z3d - fade_start) / (fade_end - fade_start);
@@ -441,8 +450,114 @@ export class BallGame extends Container {
         this.isFlying = true;
         this.isNetAnim = false;
     }
+    //#region TakeSnap on Net
+    public getSnap(targetScale: number): { x: number, y: number, timeFrames: number } | null{
+        const focalLength = 900;
+        const targetZ = (focalLength *(1-targetScale))/ targetScale;
+        const pred = this.predictTrajectoryBeforeLaunch(targetZ);
 
+        if (!pred) {return null;}
+        const CenX = BASE_WIDTH / 2;
+        const CenY = BASE_HEIGHT * 0.79;
 
+        const ScreenX = CenX + pred.x* targetScale;
+        const ScreenY = CenY - pred.y* targetScale - targetZ* targetScale*1.2;
+        console.log(`Snap at scale ${targetScale.toFixed(2)} : x=${ScreenX.toFixed(1)}, y=${ScreenY.toFixed(1)}, frames=${pred.timeFrames}`);
+        return {
+            x: ScreenX,
+            y: ScreenY,
+            timeFrames: pred.timeFrames
+        };
+
+    }
+
+    
+    public predictTrajectoryBeforeLaunch(targetZ: number): { x: number, y: number, timeFrames: number } | null {
+        // Calculate velocity from current swipe data
+        const points = this.SwipeData.point;
+        if (points.length < 2) return null;
+    
+        const start = points[0];
+        const end = points[points.length - 1];
+    
+        const distX = (end.x - start.x)/1.1;
+        const distY = (start.y - end.y)/2; 
+        const dist = Math.sqrt(distX * distX + distY * distY);
+    
+        if (dist < 5) return null;
+    
+        let duration = Date.now() - this.SwipeData.startTime - 650;
+        if (duration < 150) duration = 150;
+    
+        let speed = 2*dist/duration;
+        if (speed > 62) speed = 62;
+        if (speed < 5) speed = 5;
+    
+        const Power = 50;
+        const totalForce = speed * Power;
+        const ratioX = distX / dist;
+        const ratioY = distY / dist;
+    
+        // Calculate predicted velocities (same as LaunchBall)
+        const predictVx = totalForce * ratioX * 0.65;
+        const predictVy = 4 + totalForce * 0.18 + ratioY * 0.22;
+        const predictVz = 0.9*totalForce * (0.96 - 0.1*ratioY) + 10;
+    
+        if (predictVz <= 0) return null;
+    
+        // Simulate trajectory with predicted velocities
+        return this.simulateTrajectory(targetZ, predictVx, predictVy, predictVz);
+    }
+
+    private simulateTrajectory(targetZ: number, startVx: number, startVy: number, startVz: number): { x: number, y: number, timeFrames: number } | null {
+        let simX = 0; // Start from origin
+        let simY = 0;
+        let simZ = 0;
+        let simVx = startVx;
+        let simVy = startVy;
+        let simVz = startVz;
+        let simCurve = this.curveForce;
+        
+        const dt = 1.0;
+        let frames = 0;
+        const maxFrames = 300;
+        
+        while (simZ < targetZ && frames < maxFrames) {
+            frames++;
+            
+            // Apply same physics as update()
+            if (simVy > 0) {
+                simVy -= this.fg * dt * 2.2;
+            } else {
+                simVy -= this.fg * dt * 3;
+            }
+            
+            simVx += simCurve * dt;
+            simCurve *= 0.94;
+            
+            simX += simVx * dt;
+            const fallMul = simVy < 0 ? 1.5 : 1.5;
+            simY += simVy * dt * fallMul;
+            simZ += simVz * dt;
+            
+            const flightRatio = simZ / Math.max(simZ + 1, 3000);
+            if (flightRatio > 0.55 && simVy < 0) {
+                simVy -= this.fg * dt * 2.5;
+            }
+            
+            if (simY <= 0) {
+                simY = 0;
+                simVy *= -0.4;
+                simVx *= 0.96;
+                simVz *= 0.8;
+                if (simVz < 0.1) return null;
+            }
+        }
+        
+        if (frames >= maxFrames) return null;
+        
+        return { x: simX, y: simY, timeFrames: frames };
+    }
     //#region Calltheshooter
     public initShooter(){
         if (this.isWaitingForAnimation) return;
@@ -564,6 +679,11 @@ export class BallGame extends Container {
     }
 
     //#region Reset
+
+
+    public setGoalkeeper(goalkeeper: Goalkeeper) {
+    this.goalkeeper = goalkeeper;
+    }
     public reset(reason:string = "unknown"){
         this.state = BallState.Idle;
         this.isFlying = false;
@@ -585,6 +705,7 @@ export class BallGame extends Container {
         this.ball.rotation = 0;
         this.line.clear();
         this.hasLanched = false; 
+        this.goalkeeper?.reset();
         
     }
     
@@ -594,5 +715,5 @@ export class BallGame extends Container {
   }
 
 }
-        
+
 

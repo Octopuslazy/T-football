@@ -102,6 +102,7 @@ export default class App extends Application {
         this.ballCountDisplay = new BallCountDisplay();
         this.ballCountDisplay.setGoal(this.goal);
         this.gameContainer.addChild(this.ballCountDisplay);
+        
 
         this.ticker.add(this.update.bind(this));
 
@@ -157,7 +158,7 @@ export default class App extends Application {
             await Assets.load(['playerData', 'playerAtlas']);
             
             // Create player spine instance
-            this.playerSpine = Spine.from({ skeleton: 'playerData', atlas: 'playerAtlas', scale: 1 });
+            this.playerSpine = Spine.from({ skeleton: 'playerData', atlas: 'playerAtlas', scale: 1.2 });
             
             if (this.playerSpine) {
                 // Set player position
@@ -201,6 +202,7 @@ export default class App extends Application {
         }
         this.currentBall = new BallGame();
         this.currentBall.setPlayerSpine(this.playerSpine);
+        this.currentBall.setGoalkeeper(this.goalkeeper);
         this.gameContainer.addChild(this.currentBall);
         
         // Reset thủ môn
@@ -215,6 +217,7 @@ export default class App extends Application {
         if (this.currentBall.isFlying) {
             this.ballcollision.checkCollision(this.currentBall, this.goal);
         }
+        this.goalkeeper.setTargetBall(this.currentBall);
     }
 
     handleShotEnd() {

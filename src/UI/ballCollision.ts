@@ -2,6 +2,7 @@ import {BallGame} from "./ball";
 import {Container, Graphics, Point, Ticker, FederatedPointerEvent} from "pixi.js";
 import { BASE_WIDTH, BASE_HEIGHT } from "../constant/global";
 import Goal from "./goal";
+import Goalkeeper, { GoalkeeperAction } from "./goalkeeper";
 
 enum CollisioneState {
     NONE = 'NONE',
