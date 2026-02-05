@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   root: '.',
-  publicDir: 'Assets',
+  publicDir: 'public',
   server: {
     port: 3000,
     open: true

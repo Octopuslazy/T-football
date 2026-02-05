@@ -14,8 +14,12 @@ export default class Goal extends PIXI.Container {
   
   private zoneVisualization: PIXI.Graphics;
   private _onResize: () => void;
+  private scaleX: number = 1;
+  private scaleY: number = 1;
   constructor() {
     super();
+    this.scaleX = screen.width / BASE_WIDTH;
+    this.scaleY = screen.height / BASE_HEIGHT;
     
    
     // 1. Goal Sprite (visual frame)
@@ -80,12 +84,12 @@ export default class Goal extends PIXI.Container {
     if (!this.goalSprite.texture || !this.goalSprite.texture.width) return;
 
     // Scale logic
-    const targetWidth = (BASE_WIDTH / 2) * 1.6; 
+    const targetWidth = (BASE_WIDTH / 2)*1.6 ; 
     const s = targetWidth / this.goalSprite.texture.width;
     
     this.goalSprite.scale.set(s, s);
     this.goalSprite.x = Math.round(BASE_WIDTH / 2);
-    this.goalSprite.y = Math.round(BASE_HEIGHT * 1 / 6.5);
+    this.goalSprite.y = Math.round(BASE_HEIGHT *this.scaleY / (6.5*this.scaleY));
 
     if (this.netSprite.texture) {
       this.netSprite.scale.set(s, s);

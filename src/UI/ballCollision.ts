@@ -30,9 +30,16 @@ export class BallCollision extends Container {
     private ballComing: boolean = false;
 
     private currentGoalkeeper!: Goalkeeper;
+    private isKeeperSaved: boolean = false;
+    private isKeeperProcessing: boolean = false;
+
+    private netResetTimer: any = null;
+    private scaleY: number = 1;
 
     constructor() {
         super();
+        
+        this.scaleY = screen.height / BASE_HEIGHT;
         
     }
 
@@ -41,15 +48,32 @@ export class BallCollision extends Container {
         this.currentBall = ball;
         this.currentGoal = goal; 
         const currentScale = ball.visualScale;
-        if (currentScale >= 0.43 && currentScale <= 0.5 && goalkeeper) {
-            if (this.checkGoalKeeperCollision(ball, goalkeeper)) {
-                return;
+
+        //set layer
+        if (goalkeeper) {
+            this.UpdateLayer(ball, goalkeeper);
         }
-    }
+
+
+        // keeper saved
+        if (currentScale < 0.42 || currentScale > 0.5) {
+            this.isKeeperProcessing = false; // Reset flag
+            this.isKeeperSaved = false;
+        }
+        if (currentScale >= 0.43 && currentScale <= 0.5 && goalkeeper && !this.isKeeperProcessing) {
+            if (this.checkGoalKeeperCollision(ball, goalkeeper)) {
+                
+                this.isKeeperProcessing = true;
+                return;
+            }
+        }
+        if (this.isKeeperSaved) {
+            return;
+        }
 
 
 
-        if (currentScale < 0.4 && currentScale > 0.2) {
+        if (currentScale < 0.4 && currentScale > 0.23) {
             this.activeCollision = true;
             // console.log('Checking Collision');
             // ballcollisionradius
@@ -105,8 +129,7 @@ export class BallCollision extends Container {
         }
 
         // check net collision
-        if (currentScale < 0.4 &&  currentScale > 0.19) {
-            if (this.state === CollisioneState.KEEPER_SAVED) return;
+        if (!this.isKeeperSaved && currentScale < 0.4 &&  currentScale > 0.23) {
             if (this.state === CollisioneState.POST_IN) return;
             if (this.state === CollisioneState.CROSS_IN) return;
             if (this.state === CollisioneState.REACH_NET) return;
@@ -133,9 +156,10 @@ export class BallCollision extends Container {
                 bright <= nright &&     
                 btop >= ntop &&        
                 bbottom <= nbottom;
+            
             if (isFullyInside) {
                 console.log('ball in net');
-                const lowestNetY = (netBounds.y + netBounds.height*0.9) - ballcollision;
+                const lowestNetY = ( netBounds.y + netBounds.height*0.9) - ballcollision*(screen.height / BASE_HEIGHT);
                 const LPost = goal.leftPost.getBounds();
                 const RPost = goal.rightPost.getBounds();
                 const minX = LPost.x + LPost.width + ballcollision;
@@ -155,6 +179,7 @@ export class BallCollision extends Container {
     }}
 
     public checkGoalKeeperCollision(ball: BallGame, goalkeeper: Goalkeeper): boolean {
+
         const ballcollision = this.ballradius * ball.visualScale;
         const ballGlobal = ball.ball.getGlobalPosition();
         const ballX = ballGlobal.x;
@@ -177,7 +202,18 @@ export class BallCollision extends Container {
         
         if (this.isCircleRect(ballX, ballY, ballcollision, expandedBounds.x, expandedBounds.y, expandedBounds.width, expandedBounds.height)) {
             console.log('Collision Goalkeeper Saved');
-            this.Col_Keeper_Saved();
+            console.log('🥅 GOALKEEPER SAVED! Ball state:', {
+        isFlying: this.currentBall.isFlying,
+        hasLanched: this.currentBall.hasLanched,
+        isNetAnim: this.currentBall.isNetAnim,
+        netPhase: this.currentBall.netPhase,
+        currentVx: this.currentBall.vx,
+        currentVy: this.currentBall.vy,
+        currentVz: this.currentBall.vz
+    });
+            if (!this.isKeeperProcessing) {
+                this.Col_Keeper_Saved();
+            }
             this.state = CollisioneState.KEEPER_SAVED;
             return true;
         }
@@ -237,41 +273,127 @@ export class BallCollision extends Container {
         this.INGoal(this.currentGoal, this.currentBall);
     }
     public Col_Cross_Out() {
-        if (this.activeCollision === false) return;
-        this.activeCollision = true;
-        const Vx = 0;
-        const Vy = -50;
-        const Vz = -1800;
-
-        this.currentBall.reboundBall(Vx, Vy, Vz);
-        console.log('Crossbar Out Collision Handled');
+        if (this.isKeeperSaved || this.isKeeperProcessing) {
+            return;
+        }
+        
+        this.isKeeperSaved = true;
+        this.isKeeperProcessing = true;
+        this.currentBall.isKeeperSaved = true;
+        
+        const ballGlobal = this.currentBall.ball.getGlobalPosition();
+        const goalCenterX = BASE_WIDTH / 2;
+        
+        const directionX = ballGlobal.x - goalCenterX;
+        const bounceDirection = directionX > 0 ? 1 : -1; 
+        
+        const Vx = bounceDirection * (10 + Math.random() * 10); 
+        const Vy = 110 - Math.random() * 20; 
+        const Vz = -280 - Math.random() * 20; 
+        
+        
+        // Apply velocities
+        this.currentBall.vx = Vx;
+        this.currentBall.vy = Vy;
+        this.currentBall.vz = Vz;
+        
+        if (this.currentBall.z3d < 50) {
+            this.currentBall.z3d = 50; 
+        }
+        
+        this.currentBall.isFlying = true;
+        this.currentBall.isNetAnim = false;
+        
+        this.state = CollisioneState.KEEPER_SAVED;
     }
     public Col_Keeper_Saved() {
-        if (this.activeCollision === false) return;
-        console.log('Goalkeeper Saved Collision Handled');
-
-        const randomDirection = Math.random() < 0.5 ? -1 : 1;
-        const Vx = randomDirection * (50 + Math.random() * 50);
-        const Vy = -30 - Math.random() * 20;
-        const Vz = -100 - Math.random() * 50;
-
-        this.currentBall.reboundBall(Vx, Vy, Vz);
-        this.activeCollision = true;
-
-       
+        if (this.isKeeperSaved || this.isKeeperProcessing) {
+            return;
+        }
+        
+        this.isKeeperSaved = true;
+        this.isKeeperProcessing = true;
+        this.currentBall.isKeeperSaved = true;
+        
+        const ballGlobal = this.currentBall.ball.getGlobalPosition();
+        const goalCenterX = BASE_WIDTH / 2;
+        
+        const directionX = ballGlobal.x - goalCenterX;
+        const bounceDirection = directionX > 0 ? 1 : -1; 
+        
+        const Vx = bounceDirection * (20 + Math.random() * 20); 
+        const Vy = 70 - Math.random() * 20; 
+        const Vz = -80 - Math.random() * 20; 
+        
+        
+        // Apply velocities
+        this.currentBall.vx = Vx;
+        this.currentBall.vy = Vy;
+        this.currentBall.vz = Vz;
+        
+        if (this.currentBall.z3d < 50) {
+            this.currentBall.z3d = 50; 
+        }
+        
+        this.currentBall.isFlying = true;
+        this.currentBall.isNetAnim = false;
+        
+        this.state = CollisioneState.KEEPER_SAVED;
     }
     public Col_Reach_Net() {
         if (this.activeCollision === false) return;
         console.log('cham bong roi ne');
-        this.resetCollision();
-        
-    }  
-    //#endregion
     
 
+        this.netResetTimer = setTimeout(() => {
+            if (this.currentBall && this.currentBall.reset) {
+                this.currentBall.reset();
+                this.resetCollision();
+            }
+            this.netResetTimer = null;
+        }, 1500);
+    }
+        
+    
+    //#endregion
+    
+    //#region setlayer handlers
+    public UpdateLayer(ball: BallGame, goalkeeper: Goalkeeper) {
+        if (!ball.parent || !goalkeeper.parent || ball.parent !== goalkeeper.parent) return;
+        const currentScale = ball.visualScale;
+        const parent = ball.parent;
+
+        if (currentScale < 0.42 && !this.isKeeperSaved && !this.isKeeperProcessing) {
+            const keeperIndex = parent.getChildIndex(goalkeeper);
+            const ballIndex = parent.getChildIndex(ball);
+            if (ballIndex > keeperIndex) {
+                parent.setChildIndex(ball, Math.max(0, keeperIndex - 1));
+            }
+        } else {
+            const keeperIndex = parent.getChildIndex(goalkeeper);
+            const ballIndex = parent.getChildIndex(ball);
+            if (ballIndex < keeperIndex) {
+                parent.setChildIndex(ball, keeperIndex);
+            }
+        }
+    }
+
+
     private resetCollision() {
+        
         this.activeCollision = false;
         this.state = CollisioneState.NONE;
+        this.ballComing = false;
+        this.isKeeperSaved = false;
+        this.isKeeperProcessing = false;
+        
+
+        if (this.netResetTimer) {
+            clearTimeout(this.netResetTimer);
+            this.netResetTimer = null;
+        }
+
+        this.currentBall = null as any;
 
     }
     public INGoal(goal: Goal, ball: BallGame) {
@@ -287,7 +409,7 @@ export class BallCollision extends Container {
             const ballY = ballGlobal.y;
             if (this.isCircleRect(ballX, ballY, ballcollision, netBounds.x, netBounds.y, netBounds.width, netBounds.height)) {
                 console.log('ball in net');
-                const lowestNetY = (netBounds.y + netBounds.height*0.9) - ballcollision;
+                const lowestNetY = (netBounds.y + netBounds.height*0.9) - ballcollision*(screen.height / BASE_HEIGHT);
                 const LPost = goal.leftPost.getBounds();
                 const RPost = goal.rightPost.getBounds();
                 const minX = LPost.x + LPost.width + ballcollision;

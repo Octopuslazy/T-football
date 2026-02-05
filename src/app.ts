@@ -77,6 +77,9 @@ export default class App extends Application {
 
         this.stage.addChild(this.gameContainer);
         
+        // Add hitbox debug to gameContainer để scale cùng game
+        this.gameContainer.addChild(this.hitboxDebug);
+
         // ... Root Scale Logic (Giữ nguyên) ...
         const updateRootScale = () => {
             try {
@@ -95,6 +98,9 @@ export default class App extends Application {
 
         this.ground = new Ground();
         this.gameContainer.addChild(this.ground);
+
+        this.goalkeeper = new Goalkeeper();
+        this.gameContainer.addChild(this.goalkeeper);
 
         this.goal = new Goal();
         this.gameContainer.addChild(this.goal);
@@ -220,6 +226,10 @@ export default class App extends Application {
             this.currentBall = null;
         }
         this.currentBall = new BallGame();
+
+        this.currentBall.x = 0;
+        this.currentBall.y = 0;
+        
         this.currentBall.setPlayerSpine(this.playerSpine);
         this.currentBall.setGoalkeeper(this.goalkeeper);
         this.gameContainer.addChild(this.currentBall);

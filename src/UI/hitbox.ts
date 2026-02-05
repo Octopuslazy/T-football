@@ -39,12 +39,12 @@ export class HitboxDebug extends Container {
             
 
             // Draw ball collision circle
-            this.ballHitbox.lineStyle(3, 0x00FF00, 0.8); // Green circle
+            this.ballHitbox.lineStyle(3, 0x00FF00, 0); // Green circle
             this.ballHitbox.drawCircle(ballX, ballY, ballCollision);
             
             // Draw center point
             this.ballHitbox.lineStyle(0);
-            this.ballHitbox.beginFill(0x00FF00, 1);
+            this.ballHitbox.beginFill(0x00FF00, 0);
             this.ballHitbox.drawCircle(ballX, ballY, 3);
             this.ballHitbox.endFill();
         } catch (error) {
@@ -75,7 +75,7 @@ export class HitboxDebug extends Container {
             };
             
             // Original keeper core bounds (blue)
-            this.keeperHitbox.lineStyle(3, 0x0000FF, 0.8);
+            this.keeperHitbox.lineStyle(3, 0x0000FF, 0);
             this.keeperHitbox.drawRect(
                 coreBounds.x, 
                 coreBounds.y, 
@@ -91,7 +91,7 @@ export class HitboxDebug extends Container {
                 height: coreBounds.height + 10
             };
 
-            this.keeperExpandedHitbox.lineStyle(2, 0xFF0000, 0.6);
+            this.keeperExpandedHitbox.lineStyle(2, 0xFF0000, 0);
             this.keeperExpandedHitbox.drawRect(
                 expandedBounds.x, 
                 expandedBounds.y, 
@@ -101,7 +101,7 @@ export class HitboxDebug extends Container {
 
             // Draw center point
             this.keeperHitbox.lineStyle(0);
-            this.keeperHitbox.beginFill(0x0000FF, 1);
+            this.keeperHitbox.beginFill(0x0000FF, 0);
             this.keeperHitbox.drawCircle(centerX, centerY, 2);
             this.keeperHitbox.endFill();
 
@@ -143,7 +143,7 @@ export class HitboxDebug extends Container {
 
             // Draw connection line if colliding
             if (isColliding) {
-                this.ballHitbox.lineStyle(5, 0xFFFF00, 0.9); // Yellow line
+                this.ballHitbox.lineStyle(5, 0xFFFF00, 0); // Yellow line
                 this.ballHitbox.moveTo(ballX, ballY);
                 this.ballHitbox.lineTo(centerX, centerY);
             }

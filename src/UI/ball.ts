@@ -33,6 +33,8 @@ export class BallGame extends Container {
     private playerSpine: Spine | null = null;
     private isWaitingForAnimation: boolean = false;
     private goalkeeper: Goalkeeper | null = null;
+    public isKeeperSaved: boolean = false;
+    private isfadoff: boolean = false;
     // 3d 
     public x3d: number = 0;
     public y3d: number = 0 ;
@@ -66,11 +68,11 @@ export class BallGame extends Container {
     public isFlying: boolean = false;
     constructor() {
         super();
-        this.initball();
+        
         this.initshadow();
+        this.initball();
         this.initline();
        
-        this.initball();
         
 
         // Input swipe
@@ -96,7 +98,7 @@ export class BallGame extends Container {
         }
         this.ball = new Container();
         const ballSprite = Sprite.from('/Assets/arts/ball.png');
-        ballSprite.anchor.set(0.5);
+        ballSprite.anchor.set(0.5,0.5);
         const ballwidth = CONFIG.ballradius * 2;
         const ballheight = CONFIG.ballradius * 2;
         ballSprite.width = ballwidth;
@@ -228,8 +230,13 @@ export class BallGame extends Container {
         const ratioY = distY / dist;
 
         this.vz = 0.9*totalForce * (0.96 - 0.1*ratioY) + 10; // vertical force
-        this.vy = 4 + totalForce *0.18 + ratioY * 0.22; // horizontal force y
-        if (this.vy < 25) this.vy = 1;
+        this.vy = 4 + totalForce *0.17 + ratioY * 0.22; // horizontal force y
+        if (this.vy < 55.5) {
+            this.vy = 5;
+            this.vz += 90;
+            this.scale.y *= 0.98;
+            this.scale.x *= 0.98;
+        }
         this.vx = totalForce * ratioX * 0.65; // horizontal force x
         this.vx = Math.max(-500, Math.min(500, this.vx));
 
@@ -328,9 +335,16 @@ export class BallGame extends Container {
         
         if (!this.isFlying) return;
         this.timescale += (0.85 - this.timescale) * 0.15;
-
-        const frameMultiplier = 1.5;
+        
+        const frameMultiplier = 1.7;
         const dt = (ticker.deltaMS / 16)*this.timescale; // normalize to 60fps
+
+        if (this.isKeeperSaved && this.visualScale < 1.0) {
+            this.visualScale += 0.02 * dt; // Tốc độ scale up
+            if (this.visualScale > 1.0) {
+                this.visualScale = 1.0;
+            }
+        }
 
         for (let i =0 ; i< frameMultiplier; i++) {
             this.renderBall(dt/frameMultiplier);
@@ -355,6 +369,17 @@ export class BallGame extends Container {
             this.vy -= this.fg * dt * 2.5;
         }    
 
+        //Baymutchi
+        if (!this.isKeeperSaved && this.isfadoff) {
+            this.vz  *=2;
+            this.vy *=1.2;
+            this.rotationSpeed *=1.2;
+            this.visualScale *=0.98;
+            console.log('bay mutchi');
+            console.log(`vz: ${this.vz.toFixed(2)}, vy: ${this.vy.toFixed(2)}`);
+
+        }
+
 
         //reach ground
         if (this.y3d <= 0) {
@@ -368,7 +393,7 @@ export class BallGame extends Container {
         }
 
         this.renderBall(dt);
-        if (this.ball.x < -100 || this.ball.x > BASE_WIDTH + 75) {
+        if (this.ball.x < -5000 || this.ball.x > BASE_WIDTH + 5000) {
             console.log('out screen');
             this.reset();
             return;
@@ -380,12 +405,15 @@ export class BallGame extends Container {
     renderBall(dt: number) {
         // Render
         const focalLength = 900;
+        
         const scale = focalLength / (focalLength + this.z3d);
         const CENTERX = BASE_WIDTH / 2;
         const START_Y = BASE_HEIGHT * 0.79;
 
         this.ball.x = CENTERX + this.x3d * scale;
         this.ball.y = START_Y - this.y3d * scale - this.z3d*scale*1.2;
+        
+
         if (this.isFlying) {
             if (this.vz >= 10 || this.vy > 0.1){
                 this.visualScale += 0.01+(scale - this.visualScale) * 0.051;
@@ -414,11 +442,12 @@ export class BallGame extends Container {
         const fade_end = 70000;
        
         if (this.z3d >= fade_start) {
+            this.isfadoff = true;
             console.log('fly to the sky');
             const faderatio = (this.z3d - fade_start) / (fade_end - fade_start);
-            const newalpha = 1.0 - faderatio;
+            const newalpha = 1.0 - faderatio*0.7;
             this.ball.alpha = Math.max(0, newalpha);
-            this.shadow.alpha = 0;
+            this.shadow.alpha = Math.max(0, 0.5 - faderatio);
             if (this.ball.alpha <= 0.1 || this.z3d >= fade_end) {
                 this.reset();
                 return;
@@ -455,6 +484,9 @@ export class BallGame extends Container {
         this.rotationSpeed = (Math.random() > 0.5 ? 1 : -1) * Math.random() * 2;
         this.isFlying = true;
         this.isNetAnim = false;
+        if (this.state !== undefined) {
+        this.state = BallState.Flying; 
+        }
     }
     //#region TakeSnap on Net
     public getSnap(targetScale: number): { x: number, y: number, timeFrames: number } | null{
@@ -664,19 +696,28 @@ export class BallGame extends Container {
     }
     public reset(reason:string = "unknown"){
         this.state = BallState.Idle;
-        this.isFlying = false;
         this.isWaitingForAnimation = false;
         const CENTERX = BASE_WIDTH / 2;
         const CENTERY = BASE_HEIGHT * 0.79;
 
+
         this.x3d = 0; this.y3d = 0; this.z3d = 0;
         this.vx = 0; this.vy = 0; this.vz = 0;
-        this.initball();
-        this.ball.position.set(CENTERX, CENTERY);
+
+        if (this.parent && this.goalkeeper) {
+            const parent = this.parent;
+            const keeperIndex = parent.getChildIndex(this.goalkeeper);
+            const ballIndex = parent.getChildIndex(this);
+            if (ballIndex < keeperIndex) {
+                parent.setChildIndex(this, keeperIndex -1);
+            }
+        }
+        
+        
         this.visualScale = 1;
         this.ball.scale.set(this.visualScale);
         this.ball.alpha = 1;
-        this.shadow.position.set(CENTERX, CONFIG.ballradius+ CENTERY);
+        
         this.shadow.scale.set(1);
         this.shadow.alpha = 0.5;
         this.rotationSpeed = 0;
@@ -684,6 +725,18 @@ export class BallGame extends Container {
         this.line.clear();
         this.hasLanched = false; 
         this.goalkeeper?.reset();
+        this.isKeeperSaved = false;
+        this.isfadoff = false;
+
+        this.position.set(0, 0);
+        this.scale.set(1, 1);
+        this.pivot.set(0, 0);
+
+        this.isFlying = true;
+        this.renderBall(0);
+        this.isFlying = false;
+        console.log('RESET ball pos:', this.ball.x, this.ball.y);
+
         
     }
     

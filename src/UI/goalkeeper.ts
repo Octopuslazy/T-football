@@ -40,15 +40,20 @@ export default class Goalkeeper extends Container {
     private isPrepared: boolean = false;
     private _targetBall: any = null; 
     private _hasAIActed: boolean = false;
+    private scleX: number = 0;
+    private scleY: number = 0;
 
     constructor() {
-        super();2
+        super();
 
         this._onResize = this.updateScale.bind(this);
         window.addEventListener('resize', this._onResize);
 
         window.addEventListener('keydown', this.onKeyDown.bind(this));
         window.addEventListener('keyup', this.onKeyUp.bind(this));
+
+       
+
     }
 
     //#region Keys test
@@ -71,6 +76,7 @@ export default class Goalkeeper extends Container {
             }
         }
         if (this.keys['Digit2']) {
+            console.log(screen.width, 'Toi da o day');
             this.PerformFall(GoalkeeperAction.Case2);
         }
         if (this.keys['Digit3']) {
@@ -102,6 +108,7 @@ export default class Goalkeeper extends Container {
     }
     private onKeyUp(e: KeyboardEvent) {
         this.keys[e.code] = false;
+        
     }
 
     //#endregion
@@ -252,6 +259,8 @@ export default class Goalkeeper extends Container {
                 if (this.isGrounded) {
                     this.Jump(15);
                     this.TimetoCatchBall(0, 0, 15);
+                    
+                    console.log(this._goal.x, this._goal.y, this.x, this.y);
                 }
                 break;
             case GoalkeeperAction.Case3:
@@ -406,20 +415,22 @@ export default class Goalkeeper extends Container {
         }
         
         // Đặt goalkeeper tại giữa goal (center X, bottom Y)
-        const centerX = goalX;
+        const centerX = goal.x;
         const bottomY = goalY + goalHeight; 
         
         this.setInitialPosition(centerX, bottomY);
     }
 
     public CheckBounds() {
-        const margin = (300/1080)*window.innerWidth;
-        const screenW = window.innerWidth;
-        if (this.x < margin) {
-            this.x = margin;
+        const margin = 200; // Khoảng cách từ cột dọc vào trong (đơn vị logic)
+        const leftLimit = BASE_WIDTH / 2 - margin;
+        const rightLimit = BASE_WIDTH / 2 + margin;
+
+        if (this.x < leftLimit) {
+            this.x = leftLimit;
             this.velocity.x = 0;
-        } else if (this.x > screenW - margin) {
-            this.x = screenW - margin;
+        } else if (this.x > rightLimit) {
+            this.x = rightLimit;
             this.velocity.x = 0;
         }
     }
@@ -427,7 +438,7 @@ export default class Goalkeeper extends Container {
 
     //#region  catch ball
     public TimetoCatchBall(targetX: number, targetY: number, jumpForce: number = 0) {
-        let JumpAnimationTime = 0.1;
+        let JumpAnimationTime = 0;
         if (this.spine && this.spine.skeleton) {
             const jumpAnim = this.spine.skeleton.data.findAnimation( 'Jump');
             if (jumpAnim) {
@@ -470,7 +481,7 @@ export default class Goalkeeper extends Container {
     public checkBestCaseForHeight(targetX: number, targetY: number) {
         if (this.isDiving || this.isFallen || this.isPrepared) return;
 
-        const CenterX = BASE_WIDTH / 2; 
+        const CenterX =   BASE_WIDTH / 2; 
         const threshold = 90;
         let candidateActions: GoalkeeperAction[] = [];
 
@@ -532,8 +543,8 @@ export default class Goalkeeper extends Container {
         if (!this._targetBall || !this._targetBall.isFlying || this._targetBall.isNetAnim) return;
         if (this._hasAIActed || this.isDiving || this.isFallen || this.isPrepared) return;
 
-        // Dự đoán vị trí bóng tại Scale 0.5
-        const prediction = this._targetBall.getSnap(0.5);
+        // Dự đoán vị trí bóng tại Scale 0.4
+        const prediction = this._targetBall.getSnap(0.4);
 
         if (prediction) {
 
