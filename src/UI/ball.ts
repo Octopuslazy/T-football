@@ -217,12 +217,12 @@ export class BallGame extends Container {
 
 
         // speed
-        let speed = 2*dist/duration;
-        if (speed > 62) speed = 62;
+        let speed = 3*dist/duration;
+        if (speed > 75) speed = 75;
         if (speed < 5) speed = 5;
 
         // force
-        const Power = 50;
+        const Power = 60;
         const totalForce = speed * Power;
         const ratioX = distX / dist;
         const ratioY = distY / dist;
@@ -327,8 +327,8 @@ export class BallGame extends Container {
 
         
         if (!this.isFlying) return;
-        this.timescale += (0.7 - this.timescale) * 0.12;
-        const dt = (ticker.deltaMS / 18)*this.timescale; // normalize to 60fps
+        this.timescale += (0.85 - this.timescale) * 0.15;
+        const dt = (ticker.deltaMS / 16)*this.timescale; // normalize to 60fps
         if (this.vy > 0) {
             
             this.vy -= this.fg * dt * 2.2;
@@ -493,7 +493,7 @@ export class BallGame extends Container {
         if (speed > 62) speed = 62;
         if (speed < 5) speed = 5;
     
-        const Power = 50;
+        const Power = 60;
         const totalForce = speed * Power;
         const ratioX = distX / dist;
         const ratioY = distY / dist;

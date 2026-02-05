@@ -19,7 +19,7 @@ export default class Goal extends PIXI.Container {
     
    
     // 1. Goal Sprite (visual frame)
-    const tex = PIXI.Texture.from('/Assets/arts/goal_1_a.png');
+    const tex = PIXI.Texture.from('/Assets/arts/Goal_1_a.png');
     this.goalSprite = new PIXI.Sprite(tex);
     this.goalSprite.anchor.set(0.5, 0); 
     // Hide visual goal sprite (keep net visible)
@@ -27,7 +27,7 @@ export default class Goal extends PIXI.Container {
     
    
     // 2. Net Sprite (net)
-    const netTex = PIXI.Texture.from('/Assets/arts/goal_1_b.png');
+    const netTex = PIXI.Texture.from('/Assets/arts/Goal_1_b.png');
     this.netSprite = new PIXI.Sprite(netTex);
     this.netSprite.anchor.set(0.5, 0); 
     this.netSprite.alpha = 1; // Show net normally (sits behind the ball)

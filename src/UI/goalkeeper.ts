@@ -176,7 +176,7 @@ export default class Goalkeeper extends Container {
         this.velocity.y = -jump;
         this.velocity.x = dir * speed;
 
-        this.PlayAnimation('FlyingCatch', true);
+        this.PlayAnimation('FlyingCatch', false);
     }
 
 

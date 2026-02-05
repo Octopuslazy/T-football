@@ -59,10 +59,10 @@ export default class App extends Application {
                         { alias: '/Assets/arts/ball.png', src: '/Assets/arts/ball.png' },
                         { alias: '/Assets/arts/BG_1.png', src: '/Assets/arts/BG_1.png' },
                         { alias: '/Assets/arts/DEMO_1.png', src: '/Assets/arts/DEMO_1.png' },
-                        { alias: '/Assets/arts/goal_1_a.png', src: '/Assets/arts/goal_1_a.png' },
-                        { alias: '/Assets/arts/goal_1_b.png', src: '/Assets/arts/goal_1_b.png' },
-                        { alias: '/Assets/arts/goal_2_a.png', src: '/Assets/arts/goal_2_a.png' },
-                        { alias: '/Assets/arts/goal_2_b.png', src: '/Assets/arts/goal_2_b.png' }
+                        { alias: '/Assets/arts/Goal_1_a.png', src: '/Assets/arts/Goal_1_a.png' },
+                        { alias: '/Assets/arts/Goal_1_b.png', src: '/Assets/arts/Goal_1_b.png' },
+                        { alias: '/Assets/arts/Goal_2_a.png', src: '/Assets/arts/Goal_2_a.png' },
+                        { alias: '/Assets/arts/Goal_2_b.png', src: '/Assets/arts/Goal_2_b.png' }
                     ],
                 },
             ],
