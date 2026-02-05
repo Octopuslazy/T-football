@@ -9,6 +9,7 @@ import BallCountDisplay from './UI/ballCountDisplay';
 import { BASE_WIDTH, BASE_HEIGHT } from './constant/global';
 import { BallCollision } from './UI/ballCollision';
 import Goalkeeper from './UI/goalkeeper';
+import { HitboxDebug } from './UI/hitbox';
 
 export default class App extends Application {
     private ground!: Ground;
@@ -26,12 +27,14 @@ export default class App extends Application {
 
     private ballcollision: BallCollision;
     private resetButton!: Container;
+    private hitboxDebug!: HitboxDebug;
 
     constructor() {
         super();
         this.gameContainer = new Container();
         this.gameContainer.visible = false;
         this.ballcollision = new BallCollision();
+        this.hitboxDebug = new HitboxDebug();
     }
 
     async init() {
@@ -73,7 +76,7 @@ export default class App extends Application {
         const loadedAssets = await Assets.loadBundle('game-screen');
 
         this.stage.addChild(this.gameContainer);
-
+        
         // ... Root Scale Logic (Giữ nguyên) ...
         const updateRootScale = () => {
             try {
@@ -103,10 +106,20 @@ export default class App extends Application {
         this.ballCountDisplay.setGoal(this.goal);
         this.gameContainer.addChild(this.ballCountDisplay);
         
+        // Add hitbox debug to gameContainer at top layer
+        this.gameContainer.addChild(this.hitboxDebug);
+        
 
         this.ticker.add(this.update.bind(this));
 
         this.createResetButton();
+
+        // Keyboard controls for debug
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'h' || e.key === 'H') {
+                this.hitboxDebug.toggleDebugMode();
+            }
+        });
 
         this.startScreen = new StartScreen();
         this.startScreen.onSelect = (mode) => this.startGame(mode);
@@ -188,6 +201,12 @@ export default class App extends Application {
         
         // Reset thủ môn
         if (this.goalkeeper) this.goalkeeper.reset();
+        
+        // Ensure hitbox debug is visible
+        if (this.hitboxDebug) {
+            this.hitboxDebug.visible = true;
+            console.log('🎯 Hitbox debug enabled for game');
+        }
     }
 
     createNewBall() {
@@ -213,10 +232,18 @@ export default class App extends Application {
         if (this.goalkeeper) {
             this.goalkeeper.UpdatePhysics();
         }
-        if (!this.isGameActive || !this.currentBall) return;
-        if (this.currentBall.isFlying) {
-            this.ballcollision.checkCollision(this.currentBall, this.goal);
+        
+        // Update hitbox debug luôn nếu có ball và goalkeeper
+        if (this.currentBall && this.goalkeeper && this.hitboxDebug) {
+            this.hitboxDebug.update(this.currentBall, this.goalkeeper);
         }
+        
+        if (!this.isGameActive || !this.currentBall) return;
+        
+        if (this.currentBall.isFlying) {
+            this.ballcollision.checkCollision(this.currentBall, this.goal, this.goalkeeper);
+        }
+        
         this.goalkeeper.setTargetBall(this.currentBall);
     }
 

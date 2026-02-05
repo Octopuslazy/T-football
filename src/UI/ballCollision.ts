@@ -29,14 +29,26 @@ export class BallCollision extends Container {
 
     private ballComing: boolean = false;
 
+    private currentGoalkeeper!: Goalkeeper;
+
     constructor() {
         super();
         
     }
-    public checkCollision(ball: BallGame, goal: Goal) {
+
+    //#region Check Collision
+    public checkCollision(ball: BallGame, goal: Goal, goalkeeper?: Goalkeeper) {
         this.currentBall = ball;
         this.currentGoal = goal; 
         const currentScale = ball.visualScale;
+        if (currentScale >= 0.43 && currentScale <= 0.5 && goalkeeper) {
+            if (this.checkGoalKeeperCollision(ball, goalkeeper)) {
+                return;
+        }
+    }
+
+
+
         if (currentScale < 0.4 && currentScale > 0.2) {
             this.activeCollision = true;
             // console.log('Checking Collision');
@@ -141,6 +153,29 @@ export class BallCollision extends Container {
             }
             
     }}
+
+    public checkGoalKeeperCollision(ball: BallGame, goalkeeper: Goalkeeper): boolean {
+        const ballcollision = this.ballradius * ball.visualScale;
+        const ballGlobal = ball.ball.getGlobalPosition();
+        const ballX = ballGlobal.x;
+        const ballY = ballGlobal.y;
+
+        const keeperBounds = goalkeeper.getBounds();
+        const expandedBounds = {
+            x: keeperBounds.x - ballcollision*0.3,
+            y: keeperBounds.y - ballcollision*0.3,
+            width: keeperBounds.width + ballcollision*0.6,
+            height: keeperBounds.height + ballcollision*0.6
+        };
+        if (this.isCircleRect(ballX, ballY, ballcollision, expandedBounds.x, expandedBounds.y, expandedBounds.width, expandedBounds.height)) {
+            console.log('Collision Goalkeeper Saved');
+            this.Col_Keeper_Saved();
+            this.state = CollisioneState.KEEPER_SAVED;
+            return true;
+        }
+        return false;
+    }
+
     public isCircleRect(cx: number, cy: number, radius: number, rx: number, ry: number, rw: number, rh: number): boolean {
         const testX = Math.max(rx, Math.min(cx, rx + rw));
         const testY = Math.max(ry, Math.min(cy, ry + rh));
@@ -205,6 +240,17 @@ export class BallCollision extends Container {
     }
     public Col_Keeper_Saved() {
         if (this.activeCollision === false) return;
+        console.log('Goalkeeper Saved Collision Handled');
+
+        const randomDirection = Math.random() < 0.5 ? -1 : 1;
+        const Vx = randomDirection * (50 + Math.random() * 50);
+        const Vy = -30 - Math.random() * 20;
+        const Vz = -100 - Math.random() * 50;
+
+        this.currentBall.reboundBall(Vx, Vy, Vz);
+        this.activeCollision = true;
+
+       
     }
     public Col_Reach_Net() {
         if (this.activeCollision === false) return;
