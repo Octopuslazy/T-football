@@ -161,12 +161,20 @@ export class BallCollision extends Container {
         const ballY = ballGlobal.y;
 
         const keeperBounds = goalkeeper.getBounds();
+        
+        // Sử dụng core bounds giống như trong hitbox debug
+        const coreWidth = keeperBounds.width * 0.5;
+        const coreHeight = keeperBounds.height * 0.8;
+        const centerX = keeperBounds.x + keeperBounds.width / 2;
+        const centerY = keeperBounds.y + keeperBounds.height / 2;
+        
         const expandedBounds = {
-            x: keeperBounds.x - ballcollision*0.3,
-            y: keeperBounds.y - ballcollision*0.3,
-            width: keeperBounds.width + ballcollision*0.6,
-            height: keeperBounds.height + ballcollision*0.6
+            x: centerX - coreWidth / 2 - 5,
+            y: centerY - coreHeight / 2 - 5,
+            width: coreWidth + 10,
+            height: coreHeight + 10
         };
+        
         if (this.isCircleRect(ballX, ballY, ballcollision, expandedBounds.x, expandedBounds.y, expandedBounds.width, expandedBounds.height)) {
             console.log('Collision Goalkeeper Saved');
             this.Col_Keeper_Saved();
