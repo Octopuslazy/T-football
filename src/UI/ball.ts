@@ -573,7 +573,7 @@ export class BallGame extends Container {
                 console.log('🏃 Ball position:', this.ball.x, this.ball.y);
                 
                 // Set player starting position (40% of ball X position)
-                const startX = this.ball.x * 0.4;
+                const startX = this.ball.x * 0.65;
                 const endX = this.ball.x * 0.65;
                 const playerY = this.ball.y*1.05;
                 
@@ -592,74 +592,46 @@ export class BallGame extends Container {
                 
                 console.log('🏃 Player starting position:', startX, 'target:', endX);
                 
-                // Start Run animation
-                this.playerSpine.state.setAnimation(0, 'Run', true);
+                // Skip Run animation, go directly to Kick
+                this.playerSpine.state.setAnimation(0, 'Kick', false);
+                console.log('🦵 Kick animation started immediately at position:', this.playerSpine.x);
                 
-                // Animate player movement during Run
-                const runDuration = 400; // Run duration in ms
-                const startTime = Date.now();
-                
-                const movePlayer = () => {
-                    const elapsed = Date.now() - startTime;
-                    const progress = Math.min(elapsed / runDuration, 1);
+                // Launch ball after 0.1s (100ms) kick animation
+                setTimeout(() => {
+                    this.LaunchBall();
+                    this.isWaitingForAnimation = false;
                     
-                    // Interpolate position
-                    const currentX = startX + (endX - startX) * progress;
+                    // Fade out player alpha from 1 to 0 in 0.3s
                     if (this.playerSpine) {
-                        this.playerSpine.x = currentX;
-                    }
-                    
-                    // Continue movement until reaching target
-                    if (progress < 1) {
-                        requestAnimationFrame(movePlayer);
-                    } else {
-                        // Reached target position, start Kick animation
-                        if (this.playerSpine && this.playerSpine.state) {
-                            this.playerSpine.state.setAnimation(0, 'Kick', false);
-                            console.log('🦵 Kick animation started at position:', this.playerSpine.x);
+                        const fadeStartTime = Date.now();
+                        const fadeDuration = 300; // 0.3s
+                        
+                        const fadeOut = () => {
+                            const elapsed = Date.now() - fadeStartTime;
+                            const progress = Math.min(elapsed / fadeDuration, 1);
                             
-                            // After Kick animation, launch ball
-                            setTimeout(() => {
-                                this.LaunchBall();
-                                this.isWaitingForAnimation = false;
-                                
-                                // Fade out player alpha from 1 to 0 in 0.3s
+                            // Interpolate alpha from 1 to 0
+                            const alpha = 1 - progress;
+                            if (this.playerSpine) {
+                                this.playerSpine.alpha = alpha;
+                            }
+                            
+                            // Continue fade until complete
+                            if (progress < 1) {
+                                requestAnimationFrame(fadeOut);
+                            } else {
+                                // Fade complete, hide player
                                 if (this.playerSpine) {
-                                    const fadeStartTime = Date.now();
-                                    const fadeDuration = 300; // 0.3s
-                                    
-                                    const fadeOut = () => {
-                                        const elapsed = Date.now() - fadeStartTime;
-                                        const progress = Math.min(elapsed / fadeDuration, 1);
-                                        
-                                        // Interpolate alpha from 1 to 0
-                                        const alpha = 1 - progress;
-                                        if (this.playerSpine) {
-                                            this.playerSpine.alpha = alpha;
-                                        }
-                                        
-                                        // Continue fade until complete
-                                        if (progress < 1) {
-                                            requestAnimationFrame(fadeOut);
-                                        } else {
-                                            // Fade complete, hide player
-                                            if (this.playerSpine) {
-                                                this.playerSpine.visible = false;
-                                                this.playerSpine.alpha = 1; // Reset alpha for next time
-                                            }
-                                        }
-                                    };
-                                    
-                                    // Start fade animation
-                                    fadeOut();
+                                    this.playerSpine.visible = false;
+                                    this.playerSpine.alpha = 1; // Reset alpha for next time
                                 }
-                            }, 200); // Kick animation duration
-                        }
+                            }
+                        };
+                        
+                        // Start fade animation
+                        fadeOut();
                     }
-                };
-                
-                // Start movement animation
-                movePlayer();
+                }, 100); // 0.1s kick animation duration
                 
             } catch (e) {
                 // Fallback if animation fails

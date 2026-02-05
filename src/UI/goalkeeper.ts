@@ -444,15 +444,15 @@ export default class Goalkeeper extends Container {
 
     private getJumpForceForCase(action: GoalkeeperAction): number {
         switch (action) {
-            case GoalkeeperAction.Case2: return 20; // Nhảy thẳng cao
-            case GoalkeeperAction.Case3: return 15; // Trái vừa
-            case GoalkeeperAction.Case4: return 15; // Phải vừa
-            case GoalkeeperAction.Case5: return 24; // Trái cao
-            case GoalkeeperAction.Case6: return 24; // Phải cao
-            case GoalkeeperAction.Case7: return 10; // Trái thấp
-            case GoalkeeperAction.Case8: return 10; // Phải thấp
-            case GoalkeeperAction.Case9: return 26; // Trái rất cao
-            case GoalkeeperAction.Case10: return 26; // Phải rất cao
+            case GoalkeeperAction.Case2: return 15; // Nhảy thẳng cao
+            case GoalkeeperAction.Case3: return 13; // Trái vừa
+            case GoalkeeperAction.Case4: return 13; // Phải vừa
+            case GoalkeeperAction.Case5: return 18; // Trái cao
+            case GoalkeeperAction.Case6: return 18; // Phải cao
+            case GoalkeeperAction.Case7: return 8; // Trái thấp
+            case GoalkeeperAction.Case8: return 8; // Phải thấp
+            case GoalkeeperAction.Case9: return 18; // Trái rất cao
+            case GoalkeeperAction.Case10: return 18; // Phải rất cao
             default: return 0;
         }
     }
@@ -471,7 +471,7 @@ export default class Goalkeeper extends Container {
         if (this.isDiving || this.isFallen || this.isPrepared) return;
 
         const CenterX = BASE_WIDTH / 2; 
-        const threshold = 30;
+        const threshold = 90;
         let candidateActions: GoalkeeperAction[] = [];
 
         if (targetX < CenterX - threshold) {
@@ -557,6 +557,7 @@ export default class Goalkeeper extends Container {
         this.isGrounded = true;
         this.isFallen = false; 
         this.rotation = 0;
+        this.velocity.x = 0;
         this.spine.rotation = 0;
         this.targetRotation = 0;
         this.spine.skeleton.scaleX = 1;
