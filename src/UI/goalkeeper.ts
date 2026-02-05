@@ -427,7 +427,7 @@ export default class Goalkeeper extends Container {
 
     //#region  catch ball
     public TimetoCatchBall(targetX: number, targetY: number, jumpForce: number = 0) {
-        let JumpAnimationTime = 0;
+        let JumpAnimationTime = 0.1;
         if (this.spine && this.spine.skeleton) {
             const jumpAnim = this.spine.skeleton.data.findAnimation( 'Jump');
             if (jumpAnim) {
@@ -532,8 +532,8 @@ export default class Goalkeeper extends Container {
         if (!this._targetBall || !this._targetBall.isFlying || this._targetBall.isNetAnim) return;
         if (this._hasAIActed || this.isDiving || this.isFallen || this.isPrepared) return;
 
-        // Dự đoán vị trí bóng tại Scale 0.4
-        const prediction = this._targetBall.getSnap(0.4);
+        // Dự đoán vị trí bóng tại Scale 0.5
+        const prediction = this._targetBall.getSnap(0.5);
 
         if (prediction) {
 

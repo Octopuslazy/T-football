@@ -328,7 +328,13 @@ export class BallGame extends Container {
         
         if (!this.isFlying) return;
         this.timescale += (0.85 - this.timescale) * 0.15;
+
+        const frameMultiplier = 1.5;
         const dt = (ticker.deltaMS / 16)*this.timescale; // normalize to 60fps
+
+        for (let i =0 ; i< frameMultiplier; i++) {
+            this.renderBall(dt/frameMultiplier);
+        }
         if (this.vy > 0) {
             
             this.vy -= this.fg * dt * 2.2;
