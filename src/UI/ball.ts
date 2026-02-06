@@ -97,7 +97,7 @@ export class BallGame extends Container {
             this.ball.destroy({ children: true });  
         }
         this.ball = new Container();
-        const ballSprite = Sprite.from('/Assets/arts/ball.png');
+        const ballSprite = Sprite.from('/assets/arts/ball.png');
         ballSprite.anchor.set(0.5,0.5);
         const ballwidth = CONFIG.ballradius * 2;
         const ballheight = CONFIG.ballradius * 2;

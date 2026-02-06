@@ -11,7 +11,7 @@ export default class Ground extends PIXI.Container {
     super();
 
     // bgimagine
-    this.bgimagine = PIXI.Sprite.from('/Assets/arts/BG_1.png');
+    this.bgimagine = PIXI.Sprite.from('/assets/arts/BG_1.png');
     this.bgimagine.anchor.set(0.5,1);
     
     

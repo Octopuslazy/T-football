@@ -55,17 +55,17 @@ export default class App extends Application {
                 {
                     name: 'game-screen',
                     assets: [
-                        { alias: '/Assets/arts/goal.png', src: '/Assets/arts/goal.png' },
-                        { alias: '/Assets/arts/net.png', src: '/Assets/arts/net.png' },
+                        { alias: '/assets/arts/goal.png', src: '/assets/arts/goal.png' },
+                        { alias: '/assets/arts/net.png', src: '/assets/arts/net.png' },
 
-                        { alias: '/Assets/arts/startscreen.png', src: '/Assets/arts/startscreen.png' },
-                        { alias: '/Assets/arts/ball.png', src: '/Assets/arts/ball.png' },
-                        { alias: '/Assets/arts/BG_1.png', src: '/Assets/arts/BG_1.png' },
-                        { alias: '/Assets/arts/DEMO_1.png', src: '/Assets/arts/DEMO_1.png' },
-                        { alias: '/Assets/arts/Goal_1_a.png', src: '/Assets/arts/Goal_1_a.png' },
-                        { alias: '/Assets/arts/Goal_1_b.png', src: '/Assets/arts/Goal_1_b.png' },
-                        { alias: '/Assets/arts/Goal_2_a.png', src: '/Assets/arts/Goal_2_a.png' },
-                        { alias: '/Assets/arts/Goal_2_b.png', src: '/Assets/arts/Goal_2_b.png' }
+                        { alias: '/assets/arts/startscreen.png', src: '/assets/arts/startscreen.png' },
+                        { alias: '/assets/arts/ball.png', src: '/assets/arts/ball.png' },
+                        { alias: '/assets/arts/BG_1.png', src: '/assets/arts/BG_1.png' },
+                        { alias: '/assets/arts/DEMO_1.png', src: '/assets/arts/DEMO_1.png' },
+                        { alias: '/assets/arts/Goal_1_a.png', src: '/assets/arts/Goal_1_a.png' },
+                        { alias: '/assets/arts/Goal_1_b.png', src: '/assets/arts/Goal_1_b.png' },
+                        { alias: '/assets/arts/Goal_2_a.png', src: '/assets/arts/Goal_2_a.png' },
+                        { alias: '/assets/arts/Goal_2_b.png', src: '/assets/arts/Goal_2_b.png' }
                     ],
                 },
             ],
@@ -141,8 +141,8 @@ export default class App extends Application {
     private async loadGoalkeeperSpine() {
         try {
             // Load skeleton and atlas using PIXI.Assets
-            Assets.add({ alias: 'goalkeeperData', src: '/Assets/anim/Gkeeper/skeleton.json' });
-            Assets.add({ alias: 'goalkeeperAtlas', src: '/Assets/anim/Gkeeper/skeleton.atlas' });
+            Assets.add({ alias: 'goalkeeperData', src: '/assets/anim/Gkeeper/skeleton.json' });
+            Assets.add({ alias: 'goalkeeperAtlas', src: '/assets/anim/Gkeeper/skeleton.atlas' });
             await Assets.load(['goalkeeperData', 'goalkeeperAtlas']);
             
             // Create Spine instance
@@ -172,8 +172,8 @@ export default class App extends Application {
     private async loadPlayerSpine() {
         try {
             // Load player spine assets
-            Assets.add({ alias: 'playerData', src: '/Assets/anim/player/skeleton.json' });
-            Assets.add({ alias: 'playerAtlas', src: '/Assets/anim/player/skeleton.atlas' });
+            Assets.add({ alias: 'playerData', src: '/assets/anim/player/skeleton.json' });
+            Assets.add({ alias: 'playerAtlas', src: '/assets/anim/player/skeleton.atlas' });
             await Assets.load(['playerData', 'playerAtlas']);
             
             // Create player spine instance
