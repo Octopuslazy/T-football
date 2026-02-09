@@ -204,7 +204,7 @@ export class BallGame extends Container {
         const start = points[0];
         const end = points[points.length - 1];
 
-        const distX = (end.x - start.x)/1.1;
+        const distX = (end.x - start.x)/1;
         const distY = (start.y - end.y)/2; 
         const dist = Math.sqrt(distX * distX + distY * distY);
 
@@ -353,14 +353,15 @@ export class BallGame extends Container {
             return;
         }
 
-
-        const isNotMoving = Math.abs(this.vx) < 0.05 && Math.abs(this.vy) < 1.5 && Math.abs(this.vz) < 0.5;
+        // Khi bóng ở ngoài viewport, chỉ check vx và vz (bỏ qua vy vì gravity luôn tác động)
+        const isHorizontalStopped = Math.abs(this.vx) < 0.5 && Math.abs(this.vz) < 0.5;
         const isOutsideView = this.ball.x < 0 || this.ball.x > BASE_WIDTH ||
                               this.ball.y < 0 || this.ball.y > BASE_HEIGHT;
 
-        // Reset nếu bóng đứng yên ngoài viewport (bất kể isNetAnim)
-        if (isNotMoving && isOutsideView && this.hasLanched) {
+        // Reset nếu bóng dừng horizontal movement ngoài viewport (bất kể isNetAnim)
+        if (isHorizontalStopped && isOutsideView && this.hasLanched) {
             console.log('⏸️ STUCK OUTSIDE - vx:', this.vx.toFixed(2), 'vy:', this.vy.toFixed(2), 'vz:', this.vz.toFixed(2));
+            console.log('   Position:', this.ball.x.toFixed(0), this.ball.y.toFixed(0));
             console.log('   isNetAnim:', this.isNetAnim, 'netPhase:', this.netPhase, 'isFlying:', this.isFlying);
             this.reset('Ball stopped outside viewport');
             return;
@@ -567,35 +568,42 @@ export class BallGame extends Container {
         // Calculate velocity from current swipe data
         const points = this.SwipeData.point;
         if (points.length < 2) return null;
-    
+
         const start = points[0];
         const end = points[points.length - 1];
-    
+
         const distX = (end.x - start.x)/1.1;
-        const distY = (start.y - end.y)/2; 
+        const distY = (start.y - end.y)/2;
         const dist = Math.sqrt(distX * distX + distY * distY);
-    
+
         if (dist < 5) return null;
-    
-        let duration = Date.now() - this.SwipeData.startTime - 650;
-        if (duration < 150) duration = 150;
-    
-        let speed = 2*dist/duration;
-        if (speed > 62) speed = 62;
+
+        // PHẢI KHỚP với LaunchBall()
+        let duration = Date.now() - this.SwipeData.startTime;
+        if (duration < 200) duration = 200; // ✓ Khớp với LaunchBall
+
+        let speed = 3*dist/duration; // ✓ Khớp với LaunchBall (3* thay vì 2*)
+        if (speed > 75) speed = 75; // ✓ Khớp với LaunchBall (75 thay vì 62)
         if (speed < 5) speed = 5;
-    
-        const Power = 60;
+
+        const Power = 50; // ✓ Khớp với LaunchBall (50 thay vì 60)
         const totalForce = speed * Power;
         const ratioX = distX / dist;
         const ratioY = distY / dist;
-    
-        // Calculate predicted velocities (same as LaunchBall)
-        const predictVx = totalForce * ratioX * 0.65;
-        const predictVy = 4 + totalForce * 0.18 + ratioY * 0.22;
+
+        // Calculate predicted velocities (PHẢI GIỐNG HỆT LaunchBall)
         const predictVz = 0.9*totalForce * (0.96 - 0.1*ratioY) + 10;
-    
+        let predictVy = 4 + totalForce * 0.17 + ratioY * 0.22; // ✓ 0.17 (không phải 0.18)
+
+        // Áp dụng cùng logic min check như LaunchBall
+        if (predictVy < 55.5) {
+            predictVy = 5;
+        }
+
+        const predictVx = totalForce * ratioX * 0.65;
+
         if (predictVz <= 0) return null;
-    
+
         // Simulate trajectory with predicted velocities
         return this.simulateTrajectory(targetZ, predictVx, predictVy, predictVz);
     }
@@ -640,7 +648,7 @@ export class BallGame extends Container {
                 simY = 0;
                 simVy *= -0.4;
                 simVx *= 0.96;
-                simVz *= 0.8;
+                simVz *= 0.9; // ✓ Khớp với update() (0.9 thay vì 0.8)
                 if (simVz < 0.1) return null;
             }
         }
