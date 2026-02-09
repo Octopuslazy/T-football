@@ -35,6 +35,7 @@ export class BallGame extends Container {
     private goalkeeper: Goalkeeper | null = null;
     public isKeeperSaved: boolean = false;
     private isfadoff: boolean = false;
+    public isPost: boolean = false;
     // 3d 
     public x3d: number = 0;
     public y3d: number = 0 ;
@@ -470,7 +471,7 @@ export class BallGame extends Container {
 
         this.isNetAnim = true;
         this.netPhase = 'falling';
-        this.veTargetY = Math.min( impactForce * 0.05, 8);
+        this.veTargetY = Math.min( impactForce * 0.03, 6);
         const deltaX = (this.netTargetX - this.ball.x) * 0.05;
         this.veTargetX = Math.max(-10, Math.min(10, deltaX));
         console.log('veTargetX:', this.veTargetX, this.veTargetY);

@@ -75,7 +75,7 @@ export class HitboxDebug extends Container {
             };
             
             // Original keeper core bounds (blue)
-            this.keeperHitbox.lineStyle(3, 0x0000FF, 0);
+            this.keeperHitbox.lineStyle(3, 0x0000FF, 1);
             this.keeperHitbox.drawRect(
                 coreBounds.x, 
                 coreBounds.y, 
@@ -91,7 +91,7 @@ export class HitboxDebug extends Container {
                 height: coreBounds.height + 10
             };
 
-            this.keeperExpandedHitbox.lineStyle(2, 0xFF0000, 0);
+            this.keeperExpandedHitbox.lineStyle(2, 0xFF0000, 1);
             this.keeperExpandedHitbox.drawRect(
                 expandedBounds.x, 
                 expandedBounds.y, 
@@ -143,7 +143,7 @@ export class HitboxDebug extends Container {
 
             // Draw connection line if colliding
             if (isColliding) {
-                this.ballHitbox.lineStyle(5, 0xFFFF00, 0); // Yellow line
+                this.ballHitbox.lineStyle(5, 0xFFFF00, 1); // Yellow line
                 this.ballHitbox.moveTo(ballX, ballY);
                 this.ballHitbox.lineTo(centerX, centerY);
             }

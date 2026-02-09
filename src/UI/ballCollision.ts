@@ -73,14 +73,34 @@ export class BallCollision extends Container {
 
 
 
-        if (currentScale < 0.4 && currentScale > 0.23) {
+        if (currentScale < 0.4 && currentScale > 0.24) {
             this.activeCollision = true;
             // console.log('Checking Collision');
+
+            
             // ballcollisionradius
             const ballcollision = this.ballradius * currentScale;
             const ballGlobal = ball.ball.getGlobalPosition();
             const ballX = ballGlobal.x;
             const ballY = ballGlobal.y;
+
+            // check crossbar
+            const Crossbar = goal.crossbar.getBounds();
+            const crossbarcheckX = Crossbar.x * 0.7;
+            const CRX = Crossbar.x + (Crossbar.width - crossbarcheckX) * 0.5;
+            if (this.isCircleRect(ballX, ballY, ballcollision, CRX, Crossbar.y, crossbarcheckX, Crossbar.height)) {
+            
+                const CrossCenterY = Crossbar.y + Crossbar.height*0.5;
+                console.log('Collision Crossbar');
+                if (ballY > CrossCenterY) {
+                    this.Col_Cross_In();
+                    this.state = CollisioneState.CROSS_IN;
+                    ball.isPost = true;
+                } else {
+                    this.Col_Cross_Out();
+                    this.state = CollisioneState.CROSS_OUT;
+                } return;
+            }
 
             // check left post    
             const LPost = goal.leftPost.getBounds();
@@ -99,6 +119,8 @@ export class BallCollision extends Container {
             // check right post
             const RPost = goal.rightPost.getBounds();
             if (this.isCircleRect(ballX, ballY, ballcollision, RPost.x, RPost.y, RPost.width, RPost.height)) {
+                if (this.state === CollisioneState.POST_IN) return;
+                if (this.state === CollisioneState.REACH_NET) return;
                 const PostCenterX = RPost.x - RPost.width*0.5;
                 console.log('Collision Right Post');
                 if (ballX < PostCenterX) {
@@ -110,26 +132,14 @@ export class BallCollision extends Container {
                 } return;
             }
 
-            // check crossbar
-            const Crossbar = goal.crossbar.getBounds();
-            if (this.isCircleRect(ballX, ballY, ballcollision, Crossbar.x, Crossbar.y, Crossbar.width, Crossbar.height)) {
-                const CrossCenterY = Crossbar.y + Crossbar.height*0.5;
-                console.log('Collision Crossbar');
-                if (ballY > CrossCenterY) {
-                    this.Col_Cross_In();
-                    this.state = CollisioneState.CROSS_IN;
-                } else {
-                    this.Col_Cross_Out();
-                    this.state = CollisioneState.CROSS_OUT;
-                } return;
-            }
+            
         } else {
             this.activeCollision = false;
             this.state = CollisioneState.NONE;
         }
 
         // check net collision
-        if (!this.isKeeperSaved && currentScale < 0.4 &&  currentScale > 0.23) {
+        if (!this.isKeeperSaved && !ball.isPost && currentScale < 0.36 &&  currentScale > 0.24) {
             if (this.state === CollisioneState.POST_IN) return;
             if (this.state === CollisioneState.CROSS_IN) return;
             if (this.state === CollisioneState.REACH_NET) return;
@@ -157,7 +167,7 @@ export class BallCollision extends Container {
                 btop >= ntop &&        
                 bbottom <= nbottom;
             
-            if (isFullyInside) {
+            if (isFullyInside && !ball.isPost ) {
                 console.log('ball in net');
                 const lowestNetY = ( netBounds.y + netBounds.height*0.9) - ballcollision*(screen.height / BASE_HEIGHT);
                 const LPost = goal.leftPost.getBounds();
@@ -270,6 +280,7 @@ export class BallCollision extends Container {
     public Col_Cross_In() {
         if (this.activeCollision === false) return;
         if (this.state === CollisioneState.KEEPER_SAVED) return;
+        console.log('Crossbar In Collision Handled');
         this.INGoal(this.currentGoal, this.currentBall);
     }
     public Col_Cross_Out() {
@@ -401,6 +412,8 @@ export class BallCollision extends Container {
         if (this.state === CollisioneState.CROSS_OUT) return;
         if (this.state === CollisioneState.REACH_NET) return;       
         if (this.state === CollisioneState.KEEPER_SAVED) return;
+        if (this.state === CollisioneState.POST_IN) return;
+            ball.isPost = true
             const currentScale = ball.visualScale;
             const netBounds = goal.netSprite.getBounds();
             const ballcollision = this.ballradius * currentScale;
@@ -408,7 +421,7 @@ export class BallCollision extends Container {
             const ballX = ballGlobal.x;
             const ballY = ballGlobal.y;
             if (this.isCircleRect(ballX, ballY, ballcollision, netBounds.x, netBounds.y, netBounds.width, netBounds.height)) {
-                console.log('ball in net');
+                console.log('simple check');
                 const lowestNetY = (netBounds.y + netBounds.height*0.9) - ballcollision*(screen.height / BASE_HEIGHT);
                 const LPost = goal.leftPost.getBounds();
                 const RPost = goal.rightPost.getBounds();
