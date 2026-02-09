@@ -10,6 +10,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'es2020',
+    
     rollupOptions: {
       input: './index.html'
     }

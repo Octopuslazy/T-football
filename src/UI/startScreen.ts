@@ -22,7 +22,7 @@ export default class StartScreen extends PIXI.Container {
     // background image (optional). Use project-relative path; texture may be loaded by the app preloader.
     try {
       // Create sprite with a texture; prefer the texture stored in PIXI.Assets if available
-      const key = '/Assets/arts/startscreen.png';
+      const key = '/assets/arts/startscreen.png';
       let tex: PIXI.Texture | null = null;
       try {
         const assetsGet = (PIXI as any).Assets && (PIXI as any).Assets.get;
