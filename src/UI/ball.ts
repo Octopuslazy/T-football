@@ -383,7 +383,7 @@ export class BallGame extends Container {
         this.timescale += (0.85 - this.timescale) * 0.15;
         
         const frameMultiplier = 1.7;
-        const dt = (ticker.deltaMS / 16)*this.timescale; // normalize to 60fps
+        const dt = (ticker.deltaMS / 14)*this.timescale; // normalize to 60fps
 
         if (this.isKeeperSaved && this.visualScale < 1.0) {
             this.visualScale += 0.02 * dt; // Tốc độ scale up

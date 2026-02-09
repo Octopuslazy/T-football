@@ -278,7 +278,7 @@ export default class App extends Application {
         bg.roundRect(0, 0, 120, 40, 6);
         bg.fill({ color: 0x000000, alpha: 0.6 });
         const style = new TextStyle({ fill: '#ffffff', fontSize: 14 });
-        const label = new Text({ text: 'Reset Ball', style });
+        const label = new Text({ text: 'Build 10', style });
         label.anchor.set(0.5, 0.5);
         label.x = 60;
         label.y = 20;
