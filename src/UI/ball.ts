@@ -727,6 +727,8 @@ export class BallGame extends Container {
         this.goalkeeper?.reset();
         this.isKeeperSaved = false;
         this.isfadoff = false;
+        this.isNetAnim = false;
+        this.netPhase = 'stopped';
 
         this.position.set(0, 0);
         this.scale.set(1, 1);
