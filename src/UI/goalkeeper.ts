@@ -446,7 +446,7 @@ export default class Goalkeeper extends Container {
             }
         }
         const Force = (jumpForce !== undefined)? jumpForce : this.jump; 
-        const physicsTime = (Force / this.gravity) / 60;
+        const physicsTime = (Force / this.gravity) / (1000/14);
         console.log('⏱️ Time to catch ball:', JumpAnimationTime + physicsTime);
         return JumpAnimationTime + physicsTime;
 
