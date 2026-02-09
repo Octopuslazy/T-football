@@ -67,6 +67,7 @@ export class BallGame extends Container {
 
     // state
     public isFlying: boolean = false;
+    private isResetting: boolean = false; // Flag để tránh double reset
     constructor() {
         super();
         
@@ -87,10 +88,10 @@ export class BallGame extends Container {
         this.on('pointerupoutside', this.onPointerUp.bind(this));
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space'){
-                this.reset();
+                this.reset('User pressed Space key');
             }
         });
-        this.reset();
+        this.reset('Initial setup');
     }
     initball() {
         //ball handle
@@ -195,8 +196,8 @@ export class BallGame extends Container {
         this.hasLanched = true;
         this.isFlying = true;
         // caculate time
-        let duration = Date.now() - this.SwipeData.startTime - 650;
-        if (duration < 150) duration = 150;
+        let duration = Date.now() - this.SwipeData.startTime ;
+        if (duration < 200) duration = 200;
 
         // calculate distance
         const points = this.SwipeData.point;
@@ -206,6 +207,7 @@ export class BallGame extends Container {
         const distX = (end.x - start.x)/1.1;
         const distY = (start.y - end.y)/2; 
         const dist = Math.sqrt(distX * distX + distY * distY);
+
         console.log(`Distance: ${dist.toFixed(2)} px, Duration: ${duration} ms`);
         if (dist < 5) {
             console.log('Swipe too short');
@@ -333,7 +335,49 @@ export class BallGame extends Container {
             }
         }
 
-        
+
+        // if (this.hasLanched && Math.random() < 0.016) {
+        //     console.log('📊 Ball Status:', {
+        //         pos: `(${this.ball.x.toFixed(0)}, ${this.ball.y.toFixed(0)})`,
+        //         vel: `vx:${this.vx.toFixed(2)} vy:${this.vy.toFixed(2)} vz:${this.vz.toFixed(2)}`,
+        //         state: `isFlying:${this.isFlying} isNetAnim:${this.isNetAnim} netPhase:${this.netPhase}`,
+        //         rotation: this.ball.rotation.toFixed(3)
+        //     });
+        // }
+
+        const margin = 300; 
+        if (this.ball.x < -margin || this.ball.x > BASE_WIDTH + margin ||
+            this.ball.y < -margin || this.ball.y > BASE_HEIGHT + margin) {
+            console.log('🚫 OUT OF BOUNDS - Position:', this.ball.x.toFixed(0), this.ball.y.toFixed(0));
+            this.reset('Ball went out of screen bounds');
+            return;
+        }
+
+
+        const isNotMoving = Math.abs(this.vx) < 0.05 && Math.abs(this.vy) < 1.5 && Math.abs(this.vz) < 0.5;
+        const isOutsideView = this.ball.x < 0 || this.ball.x > BASE_WIDTH ||
+                              this.ball.y < 0 || this.ball.y > BASE_HEIGHT;
+
+        // Reset nếu bóng đứng yên ngoài viewport (bất kể isNetAnim)
+        if (isNotMoving && isOutsideView && this.hasLanched) {
+            console.log('⏸️ STUCK OUTSIDE - vx:', this.vx.toFixed(2), 'vy:', this.vy.toFixed(2), 'vz:', this.vz.toFixed(2));
+            console.log('   isNetAnim:', this.isNetAnim, 'netPhase:', this.netPhase, 'isFlying:', this.isFlying);
+            this.reset('Ball stopped outside viewport');
+            return;
+        }
+
+        // Reset nếu bóng đã dừng hẳn (chỉ check khi KHÔNG trong net animation)
+        if (!this.isNetAnim) {
+            const isFullyStopped = Math.abs(this.vx) < 0.05 && Math.abs(this.vy) < 0.1 && Math.abs(this.vz) < 0.1;
+            const isRotationStopped = Math.abs(this.ball.rotation) < 0.01;
+
+            if (isFullyStopped && isRotationStopped && this.hasLanched) {
+                console.log('🛑 FULLY STOPPED - vx:', this.vx.toFixed(2), 'vy:', this.vy.toFixed(2), 'vz:', this.vz.toFixed(2), 'rotation:', this.ball.rotation.toFixed(3));
+                this.reset('Ball fully stopped');
+                return;
+            }
+        }
+
         if (!this.isFlying) return;
         this.timescale += (0.85 - this.timescale) * 0.15;
         
@@ -373,7 +417,7 @@ export class BallGame extends Container {
         //Baymutchi
         if (!this.isKeeperSaved && this.isfadoff) {
             this.vz  *=2;
-            this.vy *=1.2;
+            this.vy *=1.2
             this.rotationSpeed *=1.2;
             this.visualScale *=0.98;
             console.log('bay mutchi');
@@ -388,17 +432,18 @@ export class BallGame extends Container {
             this.vy *= -0.4; // bounce
             this.vx *= 0.96;
             this.vz *= 0.9;
-            if ((Math.abs(this.vx) < 0.5 && Math.abs(this.vy) < 1 && this.vz < 0.5) || this.ball.scale.x <= 0.1|| this.ball.rotation <= 0.1 && this.state === BallState.Flying) {
-                this.reset();
-            }
+            // // Reset nếu bóng dừng hoàn toàn (không cần yêu cầu isNetAnim)
+            // const isFullyStopped = Math.abs(this.vx) < 0.05 && Math.abs(this.vy) < 1.5 && this.vz < 0.1;
+            // const isTooSmall = this.ball.scale.x <= 0.1;
+            // const isNotRotating = this.ball.rotation <= 0.05 && this.state === BallState.Flying;
+
+            // if (isFullyStopped || isTooSmall || isNotRotating) {
+            //     console.log('Ball stopped - vx:', this.vx.toFixed(2), 'vy:', this.vy.toFixed(2), 'vz:', this.vz.toFixed(2));
+            //     this.reset('Ball stopped moving on ground');
+            // }
         }
 
         this.renderBall(dt);
-        if (this.ball.x < -5000 || this.ball.x > BASE_WIDTH + 5000) {
-            console.log('out screen');
-            this.reset();
-            return;
-        }
     }
     
     //#region RenderBall
@@ -450,7 +495,7 @@ export class BallGame extends Container {
             this.ball.alpha = Math.max(0, newalpha);
             this.shadow.alpha = Math.max(0, 0.5 - faderatio);
             if (this.ball.alpha <= 0.1 || this.z3d >= fade_end) {
-                this.reset();
+                this.reset('Ball faded out (too far away)');
                 return;
             }
 
@@ -489,7 +534,7 @@ export class BallGame extends Container {
         this.vx = Vx;
         this.vy = Vy;
         this.vz = Vz;
-        this.rotationSpeed = (Math.random() > 0.5 ? 1 : -1) * Math.random() * 3;
+        this.rotationSpeed = (Math.random() > 0.5 ? 1 : -1) * Math.random() * 1;
         this.isFlying = true;
         this.isNetAnim = false;
         if (this.state !== undefined) {
@@ -606,95 +651,95 @@ export class BallGame extends Container {
     }
     //#region Calltheshooter
     public initShooter(){
-        if (this.isWaitingForAnimation) return;
+        // if (this.isWaitingForAnimation) return;
         
-        console.log('🏃 InitShooter called');
-        console.log('🏃 Player spine exists:', !!this.playerSpine);
+        // console.log('🏃 InitShooter called');
+        // console.log('🏃 Player spine exists:', !!this.playerSpine);
         
-        this.isWaitingForAnimation = true;
+        // this.isWaitingForAnimation = true;
         
-        // Show player and play animations: Run -> Kick -> Launch ball
-        if (this.playerSpine && this.playerSpine.state) {
-            try {
-                console.log('🏃 Ball position:', this.ball.x, this.ball.y);
+        // // Show player and play animations: Run -> Kick -> Launch ball
+        // if (this.playerSpine && this.playerSpine.state) {
+        //     try {
+        //         console.log('🏃 Ball position:', this.ball.x, this.ball.y);
                 
-                // Set player starting position (40% of ball X position)
-                const startX = this.ball.x * 0.65;
-                const endX = this.ball.x * 0.65;
-                const playerY = this.ball.y*1.05;
+        //         // Set player starting position (40% of ball X position)
+        //         const startX = this.ball.x * 0.65;
+        //         const endX = this.ball.x * 0.65;
+        //         const playerY = this.ball.y*1.05;
                 
-                this.playerSpine.x = startX;
-                this.playerSpine.y = playerY;
-                this.playerSpine.scale.set(1.0);
-                this.playerSpine.alpha = 1.0;
+        //         this.playerSpine.x = startX;
+        //         this.playerSpine.y = playerY;
+        //         this.playerSpine.scale.set(1.0);
+        //         this.playerSpine.alpha = 1.0;
                 
-                // Show player spine
-                this.playerSpine.visible = true;
+        //         // Show player spine
+        //         this.playerSpine.visible = true;
                 
-                // Ensure player is on top layer (above ball)
-                if (this.playerSpine.parent) {
-                    this.playerSpine.parent.setChildIndex(this.playerSpine, this.playerSpine.parent.children.length - 1);
-                }
+        //         // Ensure player is on top layer (above ball)
+        //         if (this.playerSpine.parent) {
+        //             this.playerSpine.parent.setChildIndex(this.playerSpine, this.playerSpine.parent.children.length - 1);
+        //         }
                 
-                console.log('🏃 Player starting position:', startX, 'target:', endX);
+        //         console.log('🏃 Player starting position:', startX, 'target:', endX);
                 
-                // Skip Run animation, go directly to Kick
-                this.playerSpine.state.setAnimation(0, 'Kick', false);
-                console.log('🦵 Kick animation started immediately at position:', this.playerSpine.x);
+        //         // Skip Run animation, go directly to Kick
+        //         this.playerSpine.state.setAnimation(0, 'Kick', false);
+        //         console.log('🦵 Kick animation started immediately at position:', this.playerSpine.x);
                 
-                // Launch ball after 0.1s (100ms) kick animation
-                setTimeout(() => {
-                    this.LaunchBall();
-                    this.isWaitingForAnimation = false;
+        //         // Launch ball after 0.1s (100ms) kick animation
+        //         setTimeout(() => {
+        //             this.LaunchBall();
+        //             this.isWaitingForAnimation = false;
                     
-                    // Fade out player alpha from 1 to 0 in 0.3s
-                    if (this.playerSpine) {
-                        const fadeStartTime = Date.now();
-                        const fadeDuration = 300; // 0.3s
+        //             // Fade out player alpha from 1 to 0 in 0.3s
+        //             if (this.playerSpine) {
+        //                 const fadeStartTime = Date.now();
+        //                 const fadeDuration = 300; // 0.3s
                         
-                        const fadeOut = () => {
-                            const elapsed = Date.now() - fadeStartTime;
-                            const progress = Math.min(elapsed / fadeDuration, 1);
+        //                 const fadeOut = () => {
+        //                     const elapsed = Date.now() - fadeStartTime;
+        //                     const progress = Math.min(elapsed / fadeDuration, 1);
                             
-                            // Interpolate alpha from 1 to 0
-                            const alpha = 1 - progress;
-                            if (this.playerSpine) {
-                                this.playerSpine.alpha = alpha;
-                            }
+        //                     // Interpolate alpha from 1 to 0
+        //                     const alpha = 1 - progress;
+        //                     if (this.playerSpine) {
+        //                         this.playerSpine.alpha = alpha;
+        //                     }
                             
-                            // Continue fade until complete
-                            if (progress < 1) {
-                                requestAnimationFrame(fadeOut);
-                            } else {
-                                // Fade complete, hide player
-                                if (this.playerSpine) {
-                                    this.playerSpine.visible = false;
-                                    this.playerSpine.alpha = 1; // Reset alpha for next time
-                                }
-                            }
-                        };
+        //                     // Continue fade until complete
+        //                     if (progress < 1) {
+        //                         requestAnimationFrame(fadeOut);
+        //                     } else {
+        //                         // Fade complete, hide player
+        //                         if (this.playerSpine) {
+        //                             this.playerSpine.visible = false;
+        //                             this.playerSpine.alpha = 1; // Reset alpha for next time
+        //                         }
+        //                     }
+        //                 };
                         
-                        // Start fade animation
-                        fadeOut();
-                    }
-                }, 100); // 0.1s kick animation duration
+        //                 // Start fade animation
+        //                 fadeOut();
+        //             }
+        //         }, 100); // 0.1s kick animation duration
                 
-            } catch (e) {
-                // Fallback if animation fails
-                setTimeout(() => {
-                    this.LaunchBall();
-                    this.isWaitingForAnimation = false;
-                    if (this.playerSpine) {
-                        this.playerSpine.visible = false;
-                    }
-                }, 400);
-            }
-        } else {
-            // No player spine, launch immediately
+        //     } catch (e) {
+        //         // Fallback if animation fails
+        //         setTimeout(() => {
+        //             this.LaunchBall();
+        //             this.isWaitingForAnimation = false;
+        //             if (this.playerSpine) {
+        //                 this.playerSpine.visible = false;
+        //             }
+        //         }, 400);
+        //     }
+        // } else {
+        //     // No player spine, launch immediately
             this.LaunchBall();
-            this.isWaitingForAnimation = false;
+          
         }
-    }
+    
 
     //#region Reset
 
@@ -703,6 +748,14 @@ export class BallGame extends Container {
     this.goalkeeper = goalkeeper;
     }
     public reset(reason:string = "unknown"){
+        // Ngăn double reset - nếu đang reset thì bỏ qua
+        if (this.isResetting) {
+            console.log('⚠️ Reset already in progress, skipping...');
+            return;
+        }
+
+        console.log(`🔄 RESET BALL - Reason: ${reason}`);
+        this.isResetting = true;
         this.state = BallState.Idle;
         this.isWaitingForAnimation = false;
         const CENTERX = BASE_WIDTH / 2;
@@ -720,23 +773,24 @@ export class BallGame extends Container {
                 parent.setChildIndex(this, keeperIndex -1);
             }
         }
-        
-        
+
+
         this.visualScale = 1;
         this.ball.scale.set(this.visualScale);
         this.ball.alpha = 1;
-        
+
         this.shadow.scale.set(1);
         this.shadow.alpha = 0.5;
         this.rotationSpeed = 0;
         this.ball.rotation = 0;
         this.line.clear();
-        this.hasLanched = false; 
+        this.hasLanched = false;
         this.goalkeeper?.reset();
         this.isKeeperSaved = false;
         this.isfadoff = false;
         this.isNetAnim = false;
         this.netPhase = 'stopped';
+        this.isPost = false; // Reset isPost để net collision có thể hoạt động lần sau
 
         this.position.set(0, 0);
         this.scale.set(1, 1);
@@ -746,6 +800,9 @@ export class BallGame extends Container {
         this.renderBall(0);
         this.isFlying = false;
         console.log('RESET ball pos:', this.ball.x, this.ball.y);
+
+        // Reset flag sau khi hoàn thành
+        this.isResetting = false;
 
         
     }

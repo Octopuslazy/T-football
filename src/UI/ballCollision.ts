@@ -37,6 +37,7 @@ export class BallCollision extends Container {
     private scaleY: number = 1;
 
     private isfirtCollision: boolean = true;
+    private shootId: number = 0; // Unique ID cho mỗi lần bắn để tránh race condition
 
     constructor() {
         super();
@@ -144,7 +145,7 @@ export class BallCollision extends Container {
         }
 
         // check net collision
-        if (!this.isKeeperSaved && this.isfirtCollision && !ball.isPost && currentScale < 0.36 &&  currentScale > 0.24) {
+        if (!this.isKeeperSaved && this.isfirtCollision && !ball.isPost && currentScale < 0.36 &&  currentScale > 0.22) {
             if (this.state === CollisioneState.POST_IN) return;
             if (this.state === CollisioneState.CROSS_IN) return;
             if (this.state === CollisioneState.REACH_NET) return;
@@ -259,19 +260,26 @@ export class BallCollision extends Container {
 
         // Rebound nhẹ về bên phải để bóng di chuyển mượt trước khi vào lưới
         const Vx = 30 + Math.random() * 20; // 30 đến 50
-        const Vy = -45 - Math.random() * 15; // -25 đến -40
+        const Vy = -35 - Math.random() * 15; // -25 đến -40
         const Vz = -20 - Math.random() * 15; // -20 đến -35
 
         this.currentBall.reboundBall(Vx, Vy, Vz);
         this.ballComing = true;
         console.log('Left Post In - Rebound then transition to net');
 
-        // Sau 150ms, tự động gọi INGoal để bóng rơi vào lưới
+        // Increment shootId để tránh race condition
+        const currentShootId = ++this.shootId;
         const ball = this.currentBall;
         const goal = this.currentGoal;
+
         setTimeout(() => {
-            if (ball && goal && ball.isFlying && !ball.isNetAnim) {
-                this.INGoal(goal, ball);
+            try {
+                // Chỉ gọi INGoal nếu shootId vẫn khớp (không có lần bắn mới)
+                if (this.shootId === currentShootId && ball?.isFlying && !ball?.isNetAnim) {
+                    this.INGoal(goal, ball);
+                }
+            } catch (e) {
+                console.error('INGoal error in Left Post In:', e);
             }
         }, 150);
     }  
@@ -302,12 +310,19 @@ export class BallCollision extends Container {
         this.ballComing = true;
         console.log('Right Post In - Rebound then transition to net');
 
-        // Sau 150ms, tự động gọi INGoal để bóng rơi vào lưới
+        // Increment shootId để tránh race condition
+        const currentShootId = ++this.shootId;
         const ball = this.currentBall;
         const goal = this.currentGoal;
+
         setTimeout(() => {
-            if (ball && goal && ball.isFlying && !ball.isNetAnim) {
-                this.INGoal(goal, ball);
+            try {
+                // Chỉ gọi INGoal nếu shootId vẫn khớp (không có lần bắn mới)
+                if (this.shootId === currentShootId && ball?.isFlying && !ball?.isNetAnim) {
+                    this.INGoal(goal, ball);
+                }
+            } catch (e) {
+                console.error('INGoal error in Right Post In:', e);
             }
         }, 150);
     }
@@ -338,12 +353,19 @@ export class BallCollision extends Container {
         this.ballComing = true;
         console.log('Crossbar In - Rebound then transition to net');
 
-        // Sau 150ms, tự động gọi INGoal để bóng rơi vào lưới
+        // Increment shootId để tránh race condition
+        const currentShootId = ++this.shootId;
         const ball = this.currentBall;
         const goal = this.currentGoal;
+
         setTimeout(() => {
-            if (ball && goal && ball.isFlying && !ball.isNetAnim) {
-                this.INGoal(goal, ball);
+            try {
+                // Chỉ gọi INGoal nếu shootId vẫn khớp (không có lần bắn mới)
+                if (this.shootId === currentShootId && ball?.isFlying && !ball?.isNetAnim) {
+                    this.INGoal(goal, ball);
+                }
+            } catch (e) {
+                console.error('INGoal error in Crossbar In:', e);
             }
         }, 150);
     }
@@ -418,11 +440,16 @@ export class BallCollision extends Container {
     public Col_Reach_Net() {
         if (this.activeCollision === false) return;
         console.log('cham bong roi ne');
-    
+
+        // Clear timer cũ trước khi tạo mới để tránh memory leak
+        if (this.netResetTimer) {
+            clearTimeout(this.netResetTimer);
+            this.netResetTimer = null;
+        }
 
         this.netResetTimer = setTimeout(() => {
             if (this.currentBall && this.currentBall.reset) {
-                this.currentBall.reset();
+                this.currentBall.reset('Ball reached net - auto reset after 1.5s');
                 this.resetCollision();
             }
             this.netResetTimer = null;
