@@ -36,6 +36,8 @@ export class BallCollision extends Container {
     private netResetTimer: any = null;
     private scaleY: number = 1;
 
+    private isfirtCollision: boolean = true;
+
     constructor() {
         super();
         
@@ -89,7 +91,8 @@ export class BallCollision extends Container {
             const crossbarcheckX = Crossbar.x * 0.7;
             const CRX = Crossbar.x + (Crossbar.width - crossbarcheckX) * 0.5;
             if (this.isCircleRect(ballX, ballY, ballcollision, CRX, Crossbar.y, crossbarcheckX, Crossbar.height)) {
-            
+                if (this.state === CollisioneState.CROSS_IN) return;
+                if (this.state === CollisioneState.REACH_NET) return;
                 const CrossCenterY = Crossbar.y + Crossbar.height*0.5;
                 console.log('Collision Crossbar');
                 if (ballY > CrossCenterY) {
@@ -102,9 +105,11 @@ export class BallCollision extends Container {
                 } return;
             }
 
-            // check left post    
+            // check left post
             const LPost = goal.leftPost.getBounds();
             if (this.isCircleRect(ballX, ballY, ballcollision, LPost.x, LPost.y, LPost.width, LPost.height)) {
+                if (this.state === CollisioneState.POST_IN) return;
+                if (this.state === CollisioneState.REACH_NET) return;
                 const PostCenterX = LPost.x + LPost.width*0.5;
                 console.log('Collision Left Post');
                 if (ballX < PostCenterX) {
@@ -139,11 +144,12 @@ export class BallCollision extends Container {
         }
 
         // check net collision
-        if (!this.isKeeperSaved && !ball.isPost && currentScale < 0.36 &&  currentScale > 0.24) {
+        if (!this.isKeeperSaved && this.isfirtCollision && !ball.isPost && currentScale < 0.36 &&  currentScale > 0.24) {
             if (this.state === CollisioneState.POST_IN) return;
             if (this.state === CollisioneState.CROSS_IN) return;
             if (this.state === CollisioneState.REACH_NET) return;
             if (this.state === CollisioneState.POST_OUT) return;
+            
             
 
             const netBounds = goal.netSprite.getBounds();
@@ -157,9 +163,9 @@ export class BallCollision extends Container {
             const btop = ballY - ballcollision;
             const bbottom = ballY + ballcollision;
 
-            const nleft = netBounds.x;
+            const nleft = netBounds.x ;
             const nright = (netBounds.x + netBounds.width);
-            const ntop = netBounds.y;
+            const ntop = netBounds.y ;
             const nbottom = (netBounds.y + netBounds.height);
             const isFullyInside = 
                 bleft >= nleft &&      
@@ -167,14 +173,16 @@ export class BallCollision extends Container {
                 btop >= ntop &&        
                 bbottom <= nbottom;
             
-            if (isFullyInside && !ball.isPost ) {
+            if (isFullyInside && !ball.isPost  ) {
+                this.isfirtCollision = true;
                 console.log('ball in net');
                 const lowestNetY = ( netBounds.y + netBounds.height*0.9) - ballcollision*(screen.height / BASE_HEIGHT);
                 const LPost = goal.leftPost.getBounds();
                 const RPost = goal.rightPost.getBounds();
                 const minX = LPost.x + LPost.width + ballcollision;
                 const maxX = RPost.x - ballcollision;
-                const targetGlobalX = Math.random() * (maxX - minX) + minX;
+                // Dựa vào vị trí bóng thực tế, clamp trong khoảng giữa 2 cột
+                const targetGlobalX = Math.max(minX, Math.min(maxX, ballX));
                 const impactForce = Math.abs(ball.vy) + Math.abs(ball.vz * 0.02);
                 ball.onNetCatch(targetGlobalX, lowestNetY, impactForce);
                 const minLocal = ball.toLocal(new Point(minX, 0)).x;
@@ -245,10 +253,27 @@ export class BallCollision extends Container {
     public Col_Post_LEFT_In() {
         if (this.activeCollision === false) return;
         if (this.state === CollisioneState.KEEPER_SAVED) return;
-        this.INGoal(this.currentGoal, this.currentBall);
+        if (this.state === CollisioneState.REACH_NET) return;
 
-        
-        console.log('Left Post In Collision Handled');
+        this.activeCollision = true;
+
+        // Rebound nhẹ về bên phải để bóng di chuyển mượt trước khi vào lưới
+        const Vx = 30 + Math.random() * 20; // 30 đến 50
+        const Vy = -45 - Math.random() * 15; // -25 đến -40
+        const Vz = -20 - Math.random() * 15; // -20 đến -35
+
+        this.currentBall.reboundBall(Vx, Vy, Vz);
+        this.ballComing = true;
+        console.log('Left Post In - Rebound then transition to net');
+
+        // Sau 150ms, tự động gọi INGoal để bóng rơi vào lưới
+        const ball = this.currentBall;
+        const goal = this.currentGoal;
+        setTimeout(() => {
+            if (ball && goal && ball.isFlying && !ball.isNetAnim) {
+                this.INGoal(goal, ball);
+            }
+        }, 150);
     }  
     public Col_Post_LEFT_Out() {
         if (this.activeCollision) return;
@@ -264,7 +289,27 @@ export class BallCollision extends Container {
     public Col_Post_RIGHT_In() {
         if (this.activeCollision === false) return;
         if (this.state === CollisioneState.KEEPER_SAVED) return;
-        this.INGoal(this.currentGoal, this.currentBall);
+        if (this.state === CollisioneState.REACH_NET) return;
+
+        this.activeCollision = true;
+
+        // Rebound nhẹ để bóng di chuyển mượt trước khi vào lưới
+        const Vx = -30 - Math.random() * 20; // -30 đến -50
+        const Vy = -45 - Math.random() * 15; // -25 đến -40
+        const Vz = -20 - Math.random() * 15; // -20 đến -35
+
+        this.currentBall.reboundBall(Vx, Vy, Vz);
+        this.ballComing = true;
+        console.log('Right Post In - Rebound then transition to net');
+
+        // Sau 150ms, tự động gọi INGoal để bóng rơi vào lưới
+        const ball = this.currentBall;
+        const goal = this.currentGoal;
+        setTimeout(() => {
+            if (ball && goal && ball.isFlying && !ball.isNetAnim) {
+                this.INGoal(goal, ball);
+            }
+        }, 150);
     }
     public Col_Post_RIGHT_Out() {
         if (this.activeCollision === false) return;
@@ -280,8 +325,27 @@ export class BallCollision extends Container {
     public Col_Cross_In() {
         if (this.activeCollision === false) return;
         if (this.state === CollisioneState.KEEPER_SAVED) return;
-        console.log('Crossbar In Collision Handled');
-        this.INGoal(this.currentGoal, this.currentBall);
+        if (this.state === CollisioneState.REACH_NET) return;
+
+        this.activeCollision = true;
+
+        // Rebound xuống dưới để bóng di chuyển mượt trước khi vào lưới
+        const Vx = this.currentBall.vx * 0.6; // Giữ 60% vận tốc ngang
+        const Vy = -30 - Math.random() * 20; // -30 đến -50 (nảy xuống)
+        const Vz = -25 - Math.random() * 15; // -25 đến -40
+
+        this.currentBall.reboundBall(Vx, Vy, Vz);
+        this.ballComing = true;
+        console.log('Crossbar In - Rebound then transition to net');
+
+        // Sau 150ms, tự động gọi INGoal để bóng rơi vào lưới
+        const ball = this.currentBall;
+        const goal = this.currentGoal;
+        setTimeout(() => {
+            if (ball && goal && ball.isFlying && !ball.isNetAnim) {
+                this.INGoal(goal, ball);
+            }
+        }, 150);
     }
     public Col_Cross_Out() {
         if (this.isKeeperSaved || this.isKeeperProcessing) {
@@ -397,6 +461,7 @@ export class BallCollision extends Container {
         this.ballComing = false;
         this.isKeeperSaved = false;
         this.isKeeperProcessing = false;
+        this.isfirtCollision = false;
         
 
         if (this.netResetTimer) {
@@ -412,7 +477,9 @@ export class BallCollision extends Container {
         if (this.state === CollisioneState.CROSS_OUT) return;
         if (this.state === CollisioneState.REACH_NET) return;       
         if (this.state === CollisioneState.KEEPER_SAVED) return;
-        if (this.state === CollisioneState.POST_IN) return;
+        
+            this.isfirtCollision = true;
+        // if (this.isfirtCollision === true) return;
             ball.isPost = true
             const currentScale = ball.visualScale;
             const netBounds = goal.netSprite.getBounds();
@@ -421,13 +488,15 @@ export class BallCollision extends Container {
             const ballX = ballGlobal.x;
             const ballY = ballGlobal.y;
             if (this.isCircleRect(ballX, ballY, ballcollision, netBounds.x, netBounds.y, netBounds.width, netBounds.height)) {
+                
                 console.log('simple check');
                 const lowestNetY = (netBounds.y + netBounds.height*0.9) - ballcollision*(screen.height / BASE_HEIGHT);
                 const LPost = goal.leftPost.getBounds();
                 const RPost = goal.rightPost.getBounds();
                 const minX = LPost.x + LPost.width + ballcollision;
                 const maxX = RPost.x - ballcollision;
-                const targetGlobalX = Math.random() * (maxX - minX) + minX;
+                // Dựa vào vị trí bóng thực tế, clamp trong khoảng giữa 2 cột
+                const targetGlobalX = Math.max(minX, Math.min(maxX, ballX));
                 const impactForce = Math.abs(ball.vz * 0.025);
                 ball.onNetCatch(targetGlobalX, lowestNetY, impactForce);
                 this.state = CollisioneState.REACH_NET;

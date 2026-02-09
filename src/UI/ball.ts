@@ -471,10 +471,17 @@ export class BallGame extends Container {
 
         this.isNetAnim = true;
         this.netPhase = 'falling';
-        this.veTargetY = Math.min( impactForce * 0.03, 6);
-        const deltaX = (this.netTargetX - this.ball.x) * 0.05;
-        this.veTargetX = Math.max(-10, Math.min(10, deltaX));
-        console.log('veTargetX:', this.veTargetX, this.veTargetY);
+
+        // Kế thừa vận tốc hiện tại thay vì chỉ dùng impactForce
+        // Damping factor để giảm tốc khi chạm lưới
+        const dampingY = 0.25; // Giữ 25% vận tốc rơi
+        const dampingX = 0.15; // Giữ 15% vận tốc ngang
+
+        this.veTargetY = Math.abs(this.vy) * dampingY; // Dùng vy hiện tại
+        this.veTargetX = this.vx * dampingX; // Dùng vx hiện tại
+        this.veTargetX = Math.max(-10, Math.min(10, this.veTargetX)); // Clamp -10 đến 10
+
+        console.log('veTargetX:', this.veTargetX, this.veTargetY, 'from vx:', this.vx, 'vy:', this.vy);
     }
 
     // post collision out
@@ -482,7 +489,7 @@ export class BallGame extends Container {
         this.vx = Vx;
         this.vy = Vy;
         this.vz = Vz;
-        this.rotationSpeed = (Math.random() > 0.5 ? 1 : -1) * Math.random() * 2;
+        this.rotationSpeed = (Math.random() > 0.5 ? 1 : -1) * Math.random() * 3;
         this.isFlying = true;
         this.isNetAnim = false;
         if (this.state !== undefined) {
