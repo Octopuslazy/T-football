@@ -16,6 +16,9 @@ export default class Goal extends PIXI.Container {
   private _onResize: () => void;
   private scaleX: number = 1;
   private scaleY: number = 1;
+
+  public Targethitbox: PIXI.Container;
+  public TargetZones: PIXI.Graphics[] = [];
   constructor() {
     super();
     this.scaleX = screen.width / BASE_WIDTH;
@@ -35,6 +38,10 @@ export default class Goal extends PIXI.Container {
     this.netSprite = new PIXI.Sprite(netTex);
     this.netSprite.anchor.set(0.5, 0); 
     this.netSprite.alpha = 1; // Show net normally (sits behind the ball)
+
+    //2.5 Target Zone (for visualizing scoring area, optional)
+    this.Targethitbox = new PIXI.Container();
+    
     
     // 3. Create HITBOX for posts/crossbar (Important: add to Goal)
     this.leftPost = new PIXI.Graphics();
@@ -48,7 +55,7 @@ export default class Goal extends PIXI.Container {
     this.zoneVisualization = new PIXI.Graphics();
 
     this.addChild(this.netSprite);
-    // 2. Goal frame (below/above ball depending on layer logic)
+    this.addChild(this.Targethitbox);
     this.addChild(this.goalSprite);
     // 3. Hitboxes (invisible)
     this.addChild(this.leftPost);
@@ -79,7 +86,7 @@ export default class Goal extends PIXI.Container {
     frontLayer.addChild(right);
     return frontLayer;
   }
-
+  //#region Update Scale
   updateScale() {
     if (!this.goalSprite.texture || !this.goalSprite.texture.width) return;
 
@@ -97,10 +104,12 @@ export default class Goal extends PIXI.Container {
       this.netSprite.y = this.goalSprite.y;
     }
 
+    this.CreateTargetZones(s);
+
     // Update posts/crossbar hitbox
     this.updateGoalPostsHitbox(s);
   }
-
+  //#region Posts/Crossbar Hitbox (red rectangles)
   // Redraw rectangular hitboxes to match goal art
   public updateGoalPostsHitbox(scale: number) {
     // Estimated post size in the art (may need tuning)
@@ -183,6 +192,40 @@ export default class Goal extends PIXI.Container {
       }
     } catch (e) {}
   }
+  //#region Target Zone Visualization (green rectangle, optional)
+  public CreateTargetZones(scale: number) {
+    this.Targethitbox.removeChildren();
+    this.TargetZones = [];
+    
+    const NetWidth = this.netSprite.width;
+    const NetHeight = this.netSprite.height;
+    const NetX = this.netSprite.x - NetWidth / 2; 
+    const NetY = this.netSprite.y;
+
+    const columns = 4;
+        const rows = 2;
+        const zoneW = NetWidth / columns;
+        const zoneH = NetHeight / rows;
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < columns; c++) {
+                const zone = new PIXI.Graphics();
+                
+                // Vẽ màu vàng nhạt có viền đen như ảnh mẫu
+                zone.setStrokeStyle({ width: 2, color: 0x000000, alpha: 0.5 });
+                zone.beginFill(0xFFD700, 0.5);
+                zone.drawRect(0, 0, zoneW, zoneH);
+                zone.endFill();
+
+                zone.x = NetX + c * zoneW;
+                zone.y = NetY + r * zoneH;
+
+                this.Targethitbox.addChild(zone);
+                this.TargetZones.push(zone); // Lưu vào mảng để check va chạm sau này
+            } 
+        }
 
    
   }
+
+}
