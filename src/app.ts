@@ -27,6 +27,7 @@ export default class App extends Application {
 
     private ballcollision: BallCollision;
     private resetButton!: Container;
+    private homeButton!: Container;
     private hitboxDebug!: HitboxDebug;
 
     constructor() {
@@ -119,6 +120,7 @@ export default class App extends Application {
         this.ticker.add(this.update.bind(this));
 
         this.createResetButton();
+        this.createHomeButton();
 
         // Keyboard controls for debug
         window.addEventListener('keydown', (e) => {
@@ -204,7 +206,8 @@ export default class App extends Application {
         // this.ballCountDisplay.setCount(this.shotsLeft);
         this.createNewBall();
         if (this.resetButton) this.resetButton.visible = true;
-        
+        if (this.homeButton) this.homeButton.visible = true;
+
         // Reset thủ môn
         if (this.goalkeeper) this.goalkeeper.reset();
         
@@ -270,6 +273,7 @@ export default class App extends Application {
         this.gameContainer.visible = false;
         this.startScreen.visible = true;
         if (this.resetButton) this.resetButton.visible = false;
+        if (this.homeButton) this.homeButton.visible = false;
     }
 
     private createResetButton() {
@@ -299,6 +303,34 @@ export default class App extends Application {
         window.addEventListener('resize', () => {
             this.resetButton.x = this.gameContainer.x + 12;
             this.resetButton.y = this.gameContainer.y + 12;
+        });
+    }
+
+    private createHomeButton() {
+        this.homeButton = new Container();
+        const bg = new Graphics();
+        bg.roundRect(0, 0, 100, 40, 6);
+        bg.fill({ color: 0x4CAF50, alpha: 0.8 }); // Green background
+        const style = new TextStyle({ fill: '#ffffff', fontSize: 16, fontWeight: 'bold' });
+        const label = new Text({ text: '🏠 Home', style });
+        label.anchor.set(0.5, 0.5);
+        label.x = 50;
+        label.y = 20;
+        this.homeButton.addChild(bg);
+        this.homeButton.addChild(label);
+        this.homeButton.x = this.gameContainer.x + 142; // 12 + 120 + 10 spacing
+        this.homeButton.y = this.gameContainer.y + 12;
+        this.homeButton.eventMode = 'static';
+        this.homeButton.cursor = 'pointer';
+        this.homeButton.on('pointerdown', () => {
+            // Return to start screen
+            this.endGame();
+        });
+        this.homeButton.visible = false;
+        this.stage.addChild(this.homeButton);
+        window.addEventListener('resize', () => {
+            this.homeButton.x = this.gameContainer.x + 142;
+            this.homeButton.y = this.gameContainer.y + 12;
         });
     }
 }
