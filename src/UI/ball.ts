@@ -36,6 +36,9 @@ export class BallGame extends Container {
     public isKeeperSaved: boolean = false;
     private isfadoff: boolean = false;
     public isPost: boolean = false;
+    public isCorner: boolean = false;
+    public isLowShot: boolean = false; // Track special low shot case (vy < 55.5)
+
     // 3d 
     public x3d: number = 0;
     public y3d: number = 0 ;
@@ -224,10 +227,10 @@ export class BallGame extends Container {
         // speed
         let speed = 3*dist/duration;
         if (speed > 75) speed = 75;
-        if (speed < 5) speed = 5;
+        if (speed < 6) speed = 4.6;
 
         // force
-        const Power = 60;
+        const Power = 50;
         const totalForce = speed * Power;
         const ratioX = distX / dist;
         const ratioY = distY / dist;
@@ -235,10 +238,16 @@ export class BallGame extends Container {
         this.vz = 0.9*totalForce * (0.96 - 0.1*ratioY) + 10; // vertical force
         this.vy = 4 + totalForce *0.17 + ratioY * 0.22; // horizontal force y
         if (this.vy < 55.5) {
+            // Special low shot case - needs to maintain height to reach net
             this.vy = 5;
-            this.vz += 90;
-            this.scale.y *= 0.98;
-            this.scale.x *= 0.98;
+            this.vz += Math.random()*30 + 100;
+            this.scale.y *= 0.97;
+            this.scale.x *= 0.97;
+            this.vx *= 2;
+            this.isLowShot = true; // Flag to maintain minimum height for net collision
+            console.log('🔽 Low shot mode - will maintain stable height');
+        } else {
+            this.isLowShot = false;
         }
         this.vx = totalForce * ratioX * 0.65; // horizontal force x
         this.vx = Math.max(-500, Math.min(500, this.vx));
@@ -284,10 +293,11 @@ export class BallGame extends Container {
 
         // net animation
         if (this.isNetAnim == true) {
+            this.isCorner = false;
             if (this.netPhase === 'falling') {
                 this.veTargetY += this.fg;
-                this.ball.scale.x *=0.998;
-                this.ball.scale.y *=0.998;
+                this.ball.scale.x *=0.999;
+                this.ball.scale.y *=0.999;
                 this.ball.y += this.veTargetY;
                 this.ball.x += this.veTargetX;
 
@@ -334,6 +344,7 @@ export class BallGame extends Container {
                 }
             }
         }
+        
 
 
         // if (this.hasLanched && Math.random() < 0.016) {
@@ -422,10 +433,21 @@ export class BallGame extends Container {
             this.rotationSpeed *=1.2;
             this.visualScale *=0.98;
             console.log('bay mutchi');
-            console.log(`vz: ${this.vz.toFixed(2)}, vy: ${this.vy.toFixed(2)}`);
+         
 
         }
 
+        // Low shot: maintain minimum height to ensure net collision
+        if (this.isLowShot && this.z3d > 500) { // Only apply after ball has traveled forward
+            const MIN_HEIGHT_LOW_SHOT = 180; // Minimum height to reach net
+            if (this.y3d < MIN_HEIGHT_LOW_SHOT) {
+                this.y3d = MIN_HEIGHT_LOW_SHOT;
+                // Stabilize vertical velocity to maintain height
+                if (this.vy < -5) {
+                    this.vy = -5; // Slow down falling
+                }
+            }
+        }
 
         //reach ground
         if (this.y3d <= 0) {
@@ -462,10 +484,16 @@ export class BallGame extends Container {
         
 
         if (this.isFlying) {
-            if (this.vz >= 10 || this.vy > 0.1){
-                this.visualScale += 0.01+(scale - this.visualScale) * 0.051;
-                this.ball.scale.set(this.visualScale);
+            // Don't change scale during corner collision - preserve current scale
+            if (!this.isCorner) {
+                if (this.vz >= 10 || this.vy > 0.1){
+                    this.visualScale += 0.01+(scale - this.visualScale) * 0.051;
+                    this.ball.scale.set(this.visualScale);
+                } else {
+                    this.ball.scale.set(this.visualScale);
+                }
             } else {
+                // During corner collision, maintain current scale
                 this.ball.scale.set(this.visualScale);
             }
         // Rotation update
@@ -803,6 +831,8 @@ export class BallGame extends Container {
         this.isNetAnim = false;
         this.netPhase = 'stopped';
         this.isPost = false; // Reset isPost để net collision có thể hoạt động lần sau
+        this.isCorner = false; // Reset isCorner flag
+        this.isLowShot = false; // Reset low shot flag
 
         this.position.set(0, 0);
         this.scale.set(1, 1);

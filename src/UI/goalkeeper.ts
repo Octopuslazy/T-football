@@ -607,7 +607,7 @@ export default class Goalkeeper extends Container {
 
             // MISS LOGIC: 15% bắt hụt, 85% bắt trúng
             const missChance = Math.random();
-            const isMiss = missChance < 0.15;
+            const isMiss = missChance < 1;
 
             if (bestAction) {
                 // Nếu bắt hụt → random case 2-10 (trừ case đúng)

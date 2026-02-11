@@ -39,6 +39,7 @@ export class BallCollision extends Container {
     private isfirtCollision: boolean = true;
     private shootId: number = 0; // Unique ID cho mỗi lần bắn để tránh race condition
     private isBallBehindGoal: boolean = false; // Track if ball passed behind goal
+    
 
     constructor() {
         super();
@@ -56,7 +57,7 @@ export class BallCollision extends Container {
         // Auto-reset collision state when starting new shot (ball at starting position)
         if (currentScale >= 0.95 && this.isBallBehindGoal) {
             console.log('🔄 Auto-reset collision state for new shot');
-            this.resetCollision();
+            this.resetCollision(ball);
         }
 
         //set layer
@@ -102,7 +103,7 @@ export class BallCollision extends Container {
 
 
 
-        if (currentScale < 0.36 && currentScale > 0.19) {
+        if (currentScale < 0.37 && currentScale > 0.29) {
             this.activeCollision = true;
             // console.log('Checking Collision');
 
@@ -113,12 +114,129 @@ export class BallCollision extends Container {
             const ballX = ballGlobal.x;
             const ballY = ballGlobal.y;
 
-            // check crossbar
+            // CHECK CORNERS FIRST - smoother collision at post-crossbar junction
             const Crossbar = goal.crossbar.getBounds();
+            const LPost = goal.leftPost.getBounds();
+            const RPost = goal.rightPost.getBounds();
+
+            // Corner positions (where post meets crossbar)
+            const leftCornerX = LPost.x + LPost.width;
+            const leftCornerY = Crossbar.y + Crossbar.height;
+            const rightCornerX = RPost.x;
+            const rightCornerY = Crossbar.y + Crossbar.height;
+
+            const cornerRadius = ballcollision * 1.5; // Slightly larger detection area for smooth transition
+
+            // Check LEFT CORNER collision (circle-to-circle for smooth physics)
+            const distToLeftCorner = Math.sqrt(
+                Math.pow(ballX - leftCornerX, 2) + Math.pow(ballY - leftCornerY, 2)
+            );
+            if (distToLeftCorner < cornerRadius) {
+                if (this.state === CollisioneState.POST_IN || this.state === CollisioneState.REACH_NET) return;
+
+                // Check if ball is coming from INSIDE or OUTSIDE goal
+                if (ballX < leftCornerX) {
+                    // Ball is LEFT of corner = OUTSIDE → bounce OUT
+                    console.log('🔴 Collision LEFT CORNER - bounce OUT');
+                    this.activeCollision = true;
+                    this.state = CollisioneState.POST_OUT;
+                    ball.isCorner = true;
+
+                    // Bounce OUT to the left (like Col_Post_LEFT_Out)
+                    const Vx = -150 - Math.random() * 50; // Strong bounce left
+                    const Vy = -Math.abs(ball.vy) * 0.5; // Maintain downward
+                    const Vz = Math.abs(ball.vz) * 0.3; // Forward away from goal
+
+                    this.currentBall.reboundBall(Vx, Vy, Vz);
+                    this.ballComing = true;
+                } else {
+                    // Ball is RIGHT of corner = INSIDE → bounce IN
+                    console.log('🔴 Collision LEFT CORNER - bounce INTO goal');
+                    this.activeCollision = true;
+                    this.state = CollisioneState.POST_IN;
+                    ball.isCorner = true;
+
+                    // Bounce diagonally INTO goal (like Col_Post_LEFT_In)
+                    const Vx = 30 + Math.random() * 20; // Bounce right into goal
+                    const Vy = -35 - Math.random() * 15; // Downward
+                    const Vz = -20 - Math.random() * 15; // Backward into net
+
+                    this.currentBall.reboundBall(Vx, Vy, Vz);
+                    this.ballComing = true;
+
+                    // Delayed transition to net via INGoal
+                    const currentShootId = ++this.shootId;
+                    setTimeout(() => {
+                        try {
+                            if (this.shootId === currentShootId && ball?.isFlying && !ball?.isNetAnim) {
+                                this.INGoal(goal, ball);
+                            }
+                        } catch (e) {
+                            console.error('Corner collision error:', e);
+                        }
+                    }, 0);
+                }
+                return;
+            }
+
+            // Check RIGHT CORNER collision
+            const distToRightCorner = Math.sqrt(
+                Math.pow(ballX - rightCornerX, 2) + Math.pow(ballY - rightCornerY, 2)
+            );
+            if (distToRightCorner < cornerRadius) {
+                if (this.state === CollisioneState.POST_IN || this.state === CollisioneState.REACH_NET) return;
+
+                // Check if ball is coming from INSIDE or OUTSIDE goal
+                if (ballX > rightCornerX) {
+                    // Ball is RIGHT of corner = OUTSIDE → bounce OUT
+                    console.log('🔴 Collision RIGHT CORNER - bounce OUT');
+                    this.activeCollision = true;
+                    this.state = CollisioneState.POST_OUT;
+                    ball.isCorner = true;
+
+                    // Bounce OUT to the right (like Col_Post_RIGHT_Out)
+                    const Vx = 150 + Math.random() * 50; // Strong bounce right
+                    const Vy = -Math.abs(ball.vy) * 0.5; // Maintain downward
+                    const Vz = Math.abs(ball.vz) * 0.3; // Forward away from goal
+
+                    this.currentBall.reboundBall(Vx, Vy, Vz);
+                    this.ballComing = true;
+                } else {
+                    // Ball is LEFT of corner = INSIDE → bounce IN
+                    console.log('🔴 Collision RIGHT CORNER - bounce INTO goal');
+                    this.activeCollision = true;
+                    this.state = CollisioneState.POST_IN;
+                    ball.isCorner = true;
+
+                    // Bounce diagonally INTO goal (like Col_Post_RIGHT_In)
+                    const Vx = -30 - Math.random() * 20; // Bounce left into goal
+                    const Vy = -45 - Math.random() * 15; // Downward
+                    const Vz = -20 - Math.random() * 15; // Backward into net
+
+                    this.currentBall.reboundBall(Vx, Vy, Vz);
+                    this.ballComing = true;
+
+                    // Delayed transition to net via INGoal
+                    const currentShootId = ++this.shootId;
+                    setTimeout(() => {
+                        try {
+                            if (this.shootId === currentShootId && ball?.isFlying && !ball?.isNetAnim) {
+                                this.INGoal(goal, ball);
+                            }
+                        } catch (e) {
+                            console.error('Corner collision error:', e);
+                        }
+                    }, 0);
+                }
+                return;
+            }
+
+            // check crossbar
             const crossbarcheckX = Crossbar.x * 0.7;
             const CRX = Crossbar.x + (Crossbar.width - crossbarcheckX) * 0.5;
             if (this.isCircleRect(ballX, ballY, ballcollision, CRX, Crossbar.y, crossbarcheckX, Crossbar.height)) {
                 if (this.state === CollisioneState.CROSS_IN) return;
+                if (this.state === CollisioneState.POST_IN || this.state === CollisioneState.POST_OUT) return;
                 if (this.state === CollisioneState.REACH_NET) return;
                 const CrossCenterY = Crossbar.y + Crossbar.height*0.7;
                 console.log('Collision Crossbar');
@@ -133,10 +251,10 @@ export class BallCollision extends Container {
             }
 
             // check left post
-            const LPost = goal.leftPost.getBounds();
             if (this.isCircleRect(ballX, ballY, ballcollision, LPost.x, LPost.y, LPost.width, LPost.height)) {
                 if (this.state === CollisioneState.POST_IN) return;
                 if (this.state === CollisioneState.REACH_NET) return;
+                if (this.state === CollisioneState.CROSS_IN || this.state === CollisioneState.CROSS_OUT) return; // Don't collide if already hit crossbar
                 const PostCenterX = LPost.x + LPost.width;
                 console.log('Collision Left Post');
                 if (ballX < PostCenterX) {
@@ -149,10 +267,10 @@ export class BallCollision extends Container {
             }
 
             // check right post
-            const RPost = goal.rightPost.getBounds();
             if (this.isCircleRect(ballX, ballY, ballcollision, RPost.x, RPost.y, RPost.width, RPost.height)) {
                 if (this.state === CollisioneState.POST_IN) return;
                 if (this.state === CollisioneState.REACH_NET) return;
+                if (this.state === CollisioneState.CROSS_IN || this.state === CollisioneState.CROSS_OUT) return; // Don't collide if already hit crossbar
                 const PostCenterX = RPost.x - RPost.width*0.5;
                 console.log('Collision Right Post');
                 if (ballX < PostCenterX) {
@@ -598,7 +716,7 @@ export class BallCollision extends Container {
         this.netResetTimer = setTimeout(() => {
             if (this.currentBall && this.currentBall.reset) {
                 this.currentBall.reset('Ball reached net - auto reset after 1.5s');
-                this.resetCollision();
+                this.resetCollision(this.currentBall);
             }
             this.netResetTimer = null;
         }, 1500);
@@ -659,8 +777,8 @@ export class BallCollision extends Container {
             }
         }
     }
-
-    public resetCollision() {
+    //#region Reset Collision
+    public resetCollision(ball: BallGame) {
 
         this.activeCollision = false;
         this.state = CollisioneState.NONE;
@@ -668,7 +786,8 @@ export class BallCollision extends Container {
         this.isKeeperSaved = false;
         this.isKeeperProcessing = false;
         this.isfirtCollision = true; // ✓ TRUE để sẵn sàng cho shot mới
-        this.isBallBehindGoal = false; // ✓ Reset flag for next shot
+        this.isBallBehindGoal = false;
+        ball.isCorner = false; // ✓ Reset flag for next shot
 
 
         if (this.netResetTimer) {
