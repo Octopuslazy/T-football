@@ -2,6 +2,7 @@ import { Container } from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import Goal from './goal';
 import { BASE_WIDTH } from '../constant/global';
+import { BallCollision } from './ballCollision';
 
 export enum GoalkeeperAction {
     Case1 = '1',
@@ -437,22 +438,29 @@ export default class Goalkeeper extends Container {
     //#endregion
 
     //#region  catch ball
-    public TimetoCatchBall(targetX: number, targetY: number, jumpForce: number = 0) {
+    public TimetoCatchBall(targetX: number, targetY: number, jumpForce: number, horizontalSpeed: number = 5): number {
         let JumpAnimationTime = 0;
         if (this.spine && this.spine.skeleton) {
-            const jumpAnim = this.spine.skeleton.data.findAnimation( 'Jump');
+            const jumpAnim = this.spine.skeleton.data.findAnimation('Jump');
             if (jumpAnim) {
-                JumpAnimationTime = jumpAnim.duration;
+                JumpAnimationTime = jumpAnim.duration; // Thời gian chạy animation Jump
             }
         }
-        const Force = (jumpForce !== undefined)? jumpForce : this.jump; 
-        const physicsTime = (Force / this.gravity) / (1000/14);
-        console.log('⏱️ Time to catch ball:', JumpAnimationTime + physicsTime);
-        return JumpAnimationTime + physicsTime;
 
-        // tobecontinued...
+        // 1. Tính thời gian di chuyển ngang (vx)
+        const distDeltaX = Math.abs(targetX - this.x);
+        const timeToX = horizontalSpeed > 0 ? (distDeltaX / horizontalSpeed) / 60 : 0;
+
+        // 2. Tính thời gian di chuyển dọc (vy)
+        const Force = (jumpForce !== undefined) ? jumpForce : this.jump; 
+        const timeToY = (Force / this.gravity) / 60; // Công thức v/g dựa trên 60 FPS
+
+        // Thủ môn cần hoàn thành cả 2 việc: bay lên đủ cao VÀ bay xa đủ tầm
+        const physicsTimeSeconds = Math.max(timeToX, timeToY);
+        
+        console.log(`⏱️ AI Estimate: Anim(${JumpAnimationTime.toFixed(2)}s) + Phys(${physicsTimeSeconds.toFixed(2)}s)`);
+        return JumpAnimationTime + physicsTimeSeconds;
     }
-
     private getJumpForceForCase(action: GoalkeeperAction): number {
         switch (action) {
             case GoalkeeperAction.Case2: return 15; // Nhảy thẳng cao
@@ -537,22 +545,61 @@ export default class Goalkeeper extends Container {
         this._targetBall = ballGame;
     }
 
+    public getActionFromZone(zoneIndex: number): GoalkeeperAction | null {
+        switch (zoneIndex) {
+            case 1: return GoalkeeperAction.Case3; // Ô 1 -> Case 5
+            case 2: 
+                // Ô 2: Random Case 2 hoặc Case 9
+                return Math.random() > 0.5 ? GoalkeeperAction.Case2 : GoalkeeperAction.Case9;
+            case 3: 
+                // Ô 3: Random Case 2 hoặc Case 10
+                return Math.random() > 0.5 ? GoalkeeperAction.Case2 : GoalkeeperAction.Case10;
+            case 4: return GoalkeeperAction.Case4; // Ô 4 -> Case 6
+            case 5: return GoalkeeperAction.Case7; // Ô 5 -> Case 7
+            case 6: return GoalkeeperAction.Case5; // Ô 6 -> Case 3
+            case 7: return GoalkeeperAction.Case6; // Ô 7 -> Case 4
+            case 8: return GoalkeeperAction.Case8; // Ô 8 -> Case 8
+            default: return null;
+        }
+    }
+
 
     private updateAI() {
+    if (!this._targetBall || !this._targetBall.isFlying || this._targetBall.isNetAnim) return;
+    if (this._hasAIActed || this.isDiving || this.isFallen || this.isPrepared) return;
 
-        if (!this._targetBall || !this._targetBall.isFlying || this._targetBall.isNetAnim) return;
-        if (this._hasAIActed || this.isDiving || this.isFallen || this.isPrepared) return;
+        // Lấy snap ở scale 0.42 (xa hơn để ball ở ĐÚNG vị trí goal frame)
+        const prediction = this._targetBall.getSnap(0.38);
 
-        // Dự đoán vị trí bóng tại Scale 0.4
-        const prediction = this._targetBall.getSnap(0.4);
+        if (prediction && this._goal) {
+            const collisionChecker = new BallCollision();
 
-        if (prediction) {
+            const fakeBall = {
+                ball: {
+                    // prediction.x và y từ getSnap() đã được tính là tọa độ màn hình
+                    getGlobalPosition: () => ({ x: prediction.x, y: prediction.y })
+                },
+                width: 145 * 0.38 // Bán kính bóng tại thời điểm tới khung thành (scale 0.42)
+            };
 
-            const myActionTime = this.TimetoCatchBall(0, 0, 20);
-            const timeToBall = prediction.timeFrames / 60;
-            if (timeToBall <= myActionTime + 0.1) {
-                this.checkBestCaseForHeight(prediction.x, prediction.y);
-                this._hasAIActed = true;
+            const zoneIndex = collisionChecker.checkTargetZone(fakeBall, this._goal);
+            const bestAction = this.getActionFromZone(zoneIndex);
+
+            if (bestAction) {
+                const vy = this.getJumpForceForCase(bestAction);
+                const myActionTime = this.TimetoCatchBall(prediction.x, prediction.y, vy);
+                const timeToBall = prediction.timeFrames / 60;
+
+                console.log(`⏱️ Timing Check - Zone: ${zoneIndex}, Ball: ${timeToBall.toFixed(2)}s, Action: ${myActionTime.toFixed(2)}s, Buffer: 0.3s`);
+
+                // Tăng buffer từ 0.15s → 0.3s để trigger sớm hơn
+                if (timeToBall <= myActionTime + 0.3) {
+                    this.PerformFall(bestAction);
+                    this._hasAIActed = true;
+                    console.log(`🧤 Goalkeeper executing Case ${bestAction}! (Zone ${zoneIndex})`);
+                }
+            } else {
+                console.log(`❌ No action for zone ${zoneIndex}`);
             }
         }
     }

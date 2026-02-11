@@ -199,31 +199,28 @@ export default class Goal extends PIXI.Container {
     
     const NetWidth = this.netSprite.width;
     const NetHeight = this.netSprite.height;
-    const NetX = this.netSprite.x - NetWidth / 2; 
-    const NetY = this.netSprite.y;
+    // Chuyển tọa độ Net về Global tạm thời để tính toán startX/Y chuẩn
+    const netGlobal = this.netSprite.getGlobalPosition();
+    
+    const zoneW = NetWidth / 4;
+    const zoneH = NetHeight / 2;
 
-    const columns = 4;
-        const rows = 2;
-        const zoneW = NetWidth / columns;
-        const zoneH = NetHeight / rows;
+    for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 4; c++) {
+            const zone = new PIXI.Graphics();
+            zone.beginFill(0xFFD700, 0.4);
+            zone.lineStyle(2, 0x000000, 1);
+            zone.drawRect(0, 0, zoneW, zoneH);
+            zone.endFill();
 
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < columns; c++) {
-                const zone = new PIXI.Graphics();
-                
-                // Vẽ màu vàng nhạt có viền đen như ảnh mẫu
-                zone.setStrokeStyle({ width: 2, color: 0x000000, alpha: 0.5 });
-                zone.beginFill(0xFFD700, 0.5);
-                zone.drawRect(0, 0, zoneW, zoneH);
-                zone.endFill();
+            // Đặt vị trí tương đối trong Targethitbox
+            zone.x = (this.netSprite.x - NetWidth / 2) + c * zoneW;
+            zone.y = this.netSprite.y + r * zoneH;
 
-                zone.x = NetX + c * zoneW;
-                zone.y = NetY + r * zoneH;
-
-                this.Targethitbox.addChild(zone);
-                this.TargetZones.push(zone); // Lưu vào mảng để check va chạm sau này
-            } 
+            this.Targethitbox.addChild(zone);
+            this.TargetZones.push(zone);
         }
+    }
 
    
   }

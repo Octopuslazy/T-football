@@ -230,17 +230,17 @@ export class BallCollision extends Container {
 
         const keeperBounds = goalkeeper.getBounds();
 
-        // Mở rộng collision bounds để dễ bắt hơn
-        const coreWidth = keeperBounds.width * 0.7; // Tăng từ 0.5 → 0.7
-        const coreHeight = keeperBounds.height * 0.9; // Tăng từ 0.8 → 0.9
+        // Thu nhỏ collision bounds để khó bắt hơn
+        const coreWidth = keeperBounds.width * 0.5; // Giảm từ 0.7 → 0.5
+        const coreHeight = keeperBounds.height * 0.7; // Giảm từ 0.9 → 0.7
         const centerX = keeperBounds.x + keeperBounds.width / 2;
         const centerY = keeperBounds.y + keeperBounds.height / 2;
 
         const expandedBounds = {
-            x: centerX - coreWidth / 2 - 10, // Tăng margin từ 5 → 10
-            y: centerY - coreHeight / 2 - 10,
-            width: coreWidth + 20, // Tăng từ 10 → 20
-            height: coreHeight + 20
+            x: centerX - coreWidth / 2 - 5, // Giảm margin từ 10 → 5
+            y: centerY - coreHeight / 2 - 5,
+            width: coreWidth + 10, // Giảm từ 20 → 10
+            height: coreHeight + 10
         };
 
 
@@ -254,6 +254,124 @@ export class BallCollision extends Container {
         }
         return false;
     }
+
+    public checkTargetZone(fakeBall: any, goal: Goal): number {
+        // 1. Get prediction coordinates (in BASE_WIDTH/BASE_HEIGHT space)
+        const predictionPos = fakeBall.ball.getGlobalPosition();
+
+        // 2. Get ball radius (width is at fakeBall top level, not in ball object)
+        const ballRadius = fakeBall.width / 2;
+
+        // 3. Get gameContainer scale to convert ball to screen space
+        const gameContainerScale = goal.parent ? goal.parent.scale.x : 1;
+        const gameContainerOffsetX = goal.parent ? goal.parent.x : 0;
+        const gameContainerOffsetY = goal.parent ? goal.parent.y : 0;
+
+        // 4. Convert ball from BASE coordinates to SCREEN coordinates (same as zone.getBounds())
+        const ballX = predictionPos.x * gameContainerScale + gameContainerOffsetX;
+        const ballY = predictionPos.y * gameContainerScale + gameContainerOffsetY;
+        const ballRadiusScaled = ballRadius * gameContainerScale;
+
+        console.log(`🔍 Ball - Base: (${predictionPos.x.toFixed(0)}, ${predictionPos.y.toFixed(0)}), Screen: (${ballX.toFixed(0)}, ${ballY.toFixed(0)}), Radius: ${ballRadiusScaled.toFixed(1)}, Scale: ${gameContainerScale.toFixed(2)}`);
+
+        let maxOverlapArea = 0;
+        let targetZone = -1;
+
+        // 4. Compare with zones using GLOBAL positions
+        goal.TargetZones.forEach((zone, index) => {
+            // Get zone GLOBAL bounds (accounts for all transforms)
+            const zoneBounds = zone.getBounds();
+            const zoneX = zoneBounds.x;
+            const zoneY = zoneBounds.y;
+            const zoneW = zoneBounds.width*0.8;
+            const zoneH = zoneBounds.height * 1.5; // Tăng zone height để detect đầy đủ vertical range
+
+            // Debug ALL zones to see which ones match
+            console.log(`📦 Zone ${index+1}: X=[${zoneX.toFixed(0)}-${(zoneX+zoneW).toFixed(0)}], Y=[${zoneY.toFixed(0)}-${(zoneY+zoneH).toFixed(0)}]`);
+
+            // Calculate overlap in SCREEN space
+            const xOverlap = Math.max(0, Math.min(ballX + ballRadiusScaled, zoneX + zoneW) - Math.max(ballX - ballRadiusScaled, zoneX));
+            const yOverlap = Math.max(0, Math.min(ballY + ballRadiusScaled, zoneY + zoneH) - Math.max(ballY - ballRadiusScaled, zoneY));
+
+            const area = xOverlap * yOverlap;
+
+            if (area > 0) {
+                console.log(`  ✓ Zone ${index + 1}: overlap ${area.toFixed(0)}px²`);
+            }
+
+            if (area > maxOverlapArea && area > 0) {
+                maxOverlapArea = area;
+                targetZone = index + 1; // Return 1-8
+            }
+        });
+
+        // Nếu không có zone overlap, tìm zone THÔNG MINH dựa trên vị trí
+        if (targetZone === -1) {
+            // Tìm zone max/min Y để xác định ball ở trên hay dưới goal
+            let minZoneY = Infinity;
+            let maxZoneY = -Infinity;
+            goal.TargetZones.forEach((zone) => {
+                const zoneBounds = zone.getBounds();
+                minZoneY = Math.min(minZoneY, zoneBounds.y);
+                maxZoneY = Math.max(maxZoneY, zoneBounds.y + zoneBounds.height);
+            });
+
+            const ballIsBelowGoal = ballY > maxZoneY;
+            const ballIsAboveGoal = ballY < minZoneY;
+
+            console.log(`📍 Ball Y=${ballY.toFixed(0)}, Goal Y range=[${minZoneY.toFixed(0)}-${maxZoneY.toFixed(0)}], Below=${ballIsBelowGoal}, Above=${ballIsAboveGoal}`);
+
+            // Nếu ball ở dưới goal (Y cao) → ưu tiên TOP zones (1-4) theo X
+            // Nếu ball ở trên goal (Y thấp) → ưu tiên BOTTOM zones (5-8) theo X
+            if (ballIsBelowGoal || ballIsAboveGoal) {
+                const preferredRow = ballIsBelowGoal ? 0 : 1; // 0 = top row (zones 1-4), 1 = bottom row (5-8)
+                let bestXMatch = -1;
+                let minXDistance = Infinity;
+
+                for (let col = 0; col < 4; col++) {
+                    const zoneIndex = preferredRow * 4 + col;
+                    const zone = goal.TargetZones[zoneIndex];
+                    const zoneBounds = zone.getBounds();
+                    const zoneCenterX = zoneBounds.x + zoneBounds.width / 2;
+                    const xDistance = Math.abs(ballX - zoneCenterX);
+
+                    if (xDistance < minXDistance) {
+                        minXDistance = xDistance;
+                        bestXMatch = zoneIndex;
+                    }
+                }
+
+                if (bestXMatch !== -1) {
+                    targetZone = bestXMatch + 1;
+                    console.log(`⚠️ Ball ${ballIsBelowGoal ? 'BELOW' : 'ABOVE'} goal → using ${ballIsBelowGoal ? 'TOP' : 'BOTTOM'} row zone ${targetZone} (X distance: ${minXDistance.toFixed(0)}px)`);
+                }
+            } else {
+                // Ball trong range Y của goal → dùng nearest distance
+                let minDistance = Infinity;
+                goal.TargetZones.forEach((zone, index) => {
+                    const zoneBounds = zone.getBounds();
+                    const zoneCenterX = zoneBounds.x + zoneBounds.width / 2;
+                    const zoneCenterY = zoneBounds.y + zoneBounds.height / 2;
+
+                    const distance = Math.sqrt(
+                        Math.pow(ballX - zoneCenterX, 2) +
+                        Math.pow(ballY - zoneCenterY, 2)
+                    );
+
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        targetZone = index + 1;
+                    }
+                });
+                console.log(`⚠️ No overlap - using NEAREST zone ${targetZone} (distance: ${minDistance.toFixed(0)}px)`);
+            }
+        } else {
+            console.log(`🎯 Best zone: ${targetZone} (overlap: ${maxOverlapArea.toFixed(0)}px²)`);
+        }
+
+        return targetZone;
+    }
+    
 
     public isCircleRect(cx: number, cy: number, radius: number, rx: number, ry: number, rw: number, rh: number): boolean {
         const testX = Math.max(rx, Math.min(cx, rx + rw));

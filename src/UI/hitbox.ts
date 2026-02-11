@@ -29,23 +29,23 @@ export class HitboxDebug extends Container {
         if (!this.debugMode) return;
 
         this.ballHitbox.clear();
-        
+
         try {
-            const ballCollision = this.ballRadius * ball.visualScale;
+            // SYNC VỚI ballCollision.ts line 226 - PHẢI GIỐNG HỆT!
+            const ballCollisionRadius = this.ballRadius * ball.visualScale;
+
             const ballGlobal = ball.ball.getGlobalPosition();
             const ballX = ballGlobal.x;
             const ballY = ballGlobal.y;
 
-            
+            // Draw ball collision circle - match exact collision detection
+            this.ballHitbox.lineStyle(3, 0x00FF00, 1); // Green circle - VISIBLE
+            this.ballHitbox.drawCircle(ballX, ballY, ballCollisionRadius);
 
-            // Draw ball collision circle
-            this.ballHitbox.lineStyle(3, 0x00FF00, 0); // Green circle
-            this.ballHitbox.drawCircle(ballX, ballY, ballCollision);
-            
             // Draw center point
             this.ballHitbox.lineStyle(0);
-            this.ballHitbox.beginFill(0x00FF00, 0);
-            this.ballHitbox.drawCircle(ballX, ballY, 3);
+            this.ballHitbox.beginFill(0x00FF00, 1); // Green center - VISIBLE
+            this.ballHitbox.drawCircle(ballX, ballY, 5);
             this.ballHitbox.endFill();
         } catch (error) {
             console.error('Error drawing ball hitbox:', error);
@@ -60,49 +60,34 @@ export class HitboxDebug extends Container {
 
         try {
             const keeperBounds = goalkeeper.getBounds();
-            
-            // Tạo hitbox nhỏ hơn, chỉ bao quanh phần thân chính
-            const coreWidth = keeperBounds.width * 0.5; // Giảm width xuống 50%
-            const coreHeight = keeperBounds.height * 0.8; // Giảm height xuống 80%
+
+            // SYNC VỚI ballCollision.ts - PHẢI GIỐNG HỆT collision detection code!
+            const coreWidth = keeperBounds.width * 0.5; // Match line 234 ballCollision.ts
+            const coreHeight = keeperBounds.height * 0.7; // Match line 235 ballCollision.ts (was 0.8, now 0.7)
             const centerX = keeperBounds.x + keeperBounds.width / 2;
             const centerY = keeperBounds.y + keeperBounds.height / 2;
-            
-            const coreBounds = {
-                x: centerX - coreWidth / 2,
-                y: centerY - coreHeight / 2,
-                width: coreWidth,
-                height: coreHeight
-            };
-            
-            // Original keeper core bounds (blue)
-            this.keeperHitbox.lineStyle(3, 0x0000FF, 1);
-            this.keeperHitbox.drawRect(
-                coreBounds.x, 
-                coreBounds.y, 
-                coreBounds.width, 
-                coreBounds.height
-            );
 
-            // Expanded collision bounds nhỏ (red) - chỉ expand một chút từ core
+            // PHẢI GIỐNG ballCollision.ts expandedBounds (lines 239-244)
             const expandedBounds = {
-                x: coreBounds.x - 5,
-                y: coreBounds.y - 5,
-                width: coreBounds.width + 10,
-                height: coreBounds.height + 10
+                x: centerX - coreWidth / 2 - 5,
+                y: centerY - coreHeight / 2 - 5,
+                width: coreWidth + 10,
+                height: coreHeight + 10
             };
 
-            this.keeperExpandedHitbox.lineStyle(2, 0xFF0000, 1);
+            // Draw ONLY the RED expanded bounds - đây là collision thực tế!
+            this.keeperExpandedHitbox.lineStyle(3, 0xFF0000, 1); // Red = actual collision
             this.keeperExpandedHitbox.drawRect(
-                expandedBounds.x, 
-                expandedBounds.y, 
-                expandedBounds.width, 
+                expandedBounds.x,
+                expandedBounds.y,
+                expandedBounds.width,
                 expandedBounds.height
             );
 
-            // Draw center point
+            // Draw center point for reference
             this.keeperHitbox.lineStyle(0);
-            this.keeperHitbox.beginFill(0x0000FF, 0);
-            this.keeperHitbox.drawCircle(centerX, centerY, 2);
+            this.keeperHitbox.beginFill(0xFF0000, 1); // Red center to match collision box
+            this.keeperHitbox.drawCircle(centerX, centerY, 5);
             this.keeperHitbox.endFill();
 
         } catch (error) {

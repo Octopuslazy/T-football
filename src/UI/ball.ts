@@ -543,24 +543,28 @@ export class BallGame extends Container {
         }
     }
     //#region TakeSnap on Net
-    public getSnap(targetScale: number): { x: number, y: number, timeFrames: number } | null{
+    public getSnap(targetScale: number): { x: number, y: number, timeFrames: number } | null {
         const focalLength = 900;
-        const targetZ = (focalLength *(1-targetScale))/ targetScale;
+        const targetZ = (focalLength * (1 - targetScale)) / targetScale;
         const pred = this.predictTrajectoryBeforeLaunch(targetZ);
 
-        if (!pred) {return null;}
-        const CenX = BASE_WIDTH / 2;
-        const CenY = BASE_HEIGHT * 0.79;
+        if (!pred) return null;
 
-        const ScreenX = CenX + pred.x* targetScale;
-        const ScreenY = CenY - pred.y* targetScale - targetZ* targetScale*1.2;
-        console.log(`Snap at scale ${targetScale.toFixed(2)} : x=${ScreenX.toFixed(1)}, y=${ScreenY.toFixed(1)}, frames=${pred.timeFrames}`);
+        const CenX = BASE_WIDTH / 2;
+        // START_Y phải là gốc tọa độ mặt đất nơi bóng bắt đầu bay
+        const START_Y = BASE_HEIGHT * 0.79; 
+
+        // CHỈNH SỬA: Tọa độ ScreenY dự đoán phải khớp với công thức trong renderBall
+        const ScreenX = CenX + pred.x * targetScale;
+        
+        // Công thức này tính toán độ cao bóng (pred.y) và vị trí Z (targetZ) theo phối cảnh
+        const ScreenY = START_Y - (pred.y * targetScale) - (targetZ * targetScale * 1.2); 
+
         return {
             x: ScreenX,
             y: ScreenY,
             timeFrames: pred.timeFrames
         };
-
     }
 
     
