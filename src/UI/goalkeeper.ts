@@ -31,6 +31,8 @@ export default class Goalkeeper extends Container {
     private keys: { [key: string]: boolean } = {};
     private isFallen: boolean = false;
     private isDiving: boolean = false;
+    private fallenTime: number = 0; // Track thời gian fallen
+    private readonly MAX_FALLEN_TIME: number = 3000; // 3 giây (milliseconds)
 
     private speed: number = 10;
     private jump: number = 19;
@@ -136,6 +138,16 @@ export default class Goalkeeper extends Container {
             if (Math.abs(this.velocity.x) < 0.1) this.velocity.x = 0;
             this.x += this.velocity.x;
             this.y = this._initialPosition.y;
+
+            // Check nếu fallen quá 3 giây thì auto reset
+            if (Date.now() - this.fallenTime > this.MAX_FALLEN_TIME) {
+                console.log('⏰ Goalkeeper fallen > 3s, auto reset!');
+                this.reset();
+                // Reset ball cùng lúc
+                if (this._targetBall && typeof this._targetBall.reset === 'function') {
+                    this._targetBall.reset('goalkeeper fallen timeout');
+                }
+            }
             return;
         }
 
@@ -163,6 +175,7 @@ export default class Goalkeeper extends Container {
             if (this.isDiving) {
                 this.isDiving = false;
                 this.isFallen = true;
+                this.fallenTime = Date.now(); // Bắt đầu đếm thời gian fallen
                 this.isGrounded = true;
                 this.y = this._initialPosition.y;
             } else {    
@@ -242,7 +255,14 @@ export default class Goalkeeper extends Container {
         if (!this.spine) return null;
 
         if (this.spine.state.getCurrent(0)?.animation?.name !== animationName) {
-            return this.spine.state.setAnimation(0, animationName, loop);
+            const trackEntry = this.spine.state.setAnimation(0, animationName, loop);
+
+            // Tăng tốc độ Jump animation lên 1.5x
+            if (animationName === 'Jump') {
+                trackEntry.timeScale = 1.5;
+            }
+
+            return trackEntry;
         }
 
         return this.spine.state.getCurrent(0);
@@ -563,7 +583,7 @@ export default class Goalkeeper extends Container {
         }
     }
 
-
+    //#region AI to catch ball
     private updateAI() {
     if (!this._targetBall || !this._targetBall.isFlying || this._targetBall.isNetAnim) return;
     if (this._hasAIActed || this.isDiving || this.isFallen || this.isPrepared) return;
@@ -583,9 +603,39 @@ export default class Goalkeeper extends Container {
             };
 
             const zoneIndex = collisionChecker.checkTargetZone(fakeBall, this._goal);
-            const bestAction = this.getActionFromZone(zoneIndex);
+            let bestAction = this.getActionFromZone(zoneIndex);
+
+            // MISS LOGIC: 15% bắt hụt, 85% bắt trúng
+            const missChance = Math.random();
+            const isMiss = missChance < 0.15;
 
             if (bestAction) {
+                // Nếu bắt hụt → random case 2-10 (trừ case đúng)
+                if (isMiss) {
+                    const allCases = [
+                        GoalkeeperAction.Case2,
+                        GoalkeeperAction.Case3,
+                        GoalkeeperAction.Case4,
+                        GoalkeeperAction.Case5,
+                        GoalkeeperAction.Case6,
+                        GoalkeeperAction.Case7,
+                        GoalkeeperAction.Case8,
+                        GoalkeeperAction.Case9,
+                        GoalkeeperAction.Case10
+                    ];
+
+                    // Lọc bỏ case đúng
+                    const wrongCases = allCases.filter(c => c !== bestAction);
+
+                    // Random 1 case sai
+                    const randomWrongCase = wrongCases[Math.floor(Math.random() * wrongCases.length)];
+
+                    console.log(`❌ MISS! (${(missChance * 100).toFixed(1)}%) - Correct: ${bestAction}, Random wrong: ${randomWrongCase}`);
+                    bestAction = randomWrongCase;
+                } else {
+                    console.log(`✅ CATCH! (${(missChance * 100).toFixed(1)}%) - Using correct case: ${bestAction}`);
+                }
+
                 const vy = this.getJumpForceForCase(bestAction);
                 const myActionTime = this.TimetoCatchBall(prediction.x, prediction.y, vy);
                 const timeToBall = prediction.timeFrames / 60;
@@ -613,7 +663,8 @@ export default class Goalkeeper extends Container {
         this.y = this._initialPosition.y;
 
         this.isGrounded = true;
-        this.isFallen = false; 
+        this.isFallen = false;
+        this.fallenTime = 0; // Reset fallen timer
         this.rotation = 0;
         this.velocity.x = 0;
         this.spine.rotation = 0;

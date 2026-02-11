@@ -281,10 +281,24 @@ export class BallCollision extends Container {
         goal.TargetZones.forEach((zone, index) => {
             // Get zone GLOBAL bounds (accounts for all transforms)
             const zoneBounds = zone.getBounds();
-            const zoneX = zoneBounds.x;
-            const zoneY = zoneBounds.y;
-            const zoneW = zoneBounds.width*0.8;
-            const zoneH = zoneBounds.height * 1.5; // Tăng zone height để detect đầy đủ vertical range
+            let zoneX = zoneBounds.x;
+            let zoneY = zoneBounds.y;
+            let zoneW = zoneBounds.width;
+            let zoneH = zoneBounds.height; // Không extend Y - dùng fallback logic thay vì extend
+
+            // Extend TẤT CẢ zones theo X để dễ detect hơn
+            const xExtension = zoneBounds.width * 0.3; // Extension 30% cho tất cả zones
+
+            // Zone 1 (top-left) và zone 5 (bottom-left) - extend TRÁI
+            if (index === 0 || index === 4) {
+                zoneX -= xExtension*1.5; // Di chuyển sang trái
+                zoneW += xExtension; // Tăng width đúng bằng phần di chuyển
+            }
+            // Zone 4 (top-right) và zone 8 (bottom-right) - extend PHẢI
+            else if (index === 3 || index === 7) {
+                zoneW += xExtension; // Chỉ tăng width, giữ nguyên X
+            }
+            
 
             // Debug ALL zones to see which ones match
             console.log(`📦 Zone ${index+1}: X=[${zoneX.toFixed(0)}-${(zoneX+zoneW).toFixed(0)}], Y=[${zoneY.toFixed(0)}-${(zoneY+zoneH).toFixed(0)}]`);

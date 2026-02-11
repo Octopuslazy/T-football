@@ -39,12 +39,12 @@ export class HitboxDebug extends Container {
             const ballY = ballGlobal.y;
 
             // Draw ball collision circle - match exact collision detection
-            this.ballHitbox.lineStyle(3, 0x00FF00, 1); // Green circle - VISIBLE
+            this.ballHitbox.lineStyle(3, 0x00FF00, 0); // Green circle - VISIBLE
             this.ballHitbox.drawCircle(ballX, ballY, ballCollisionRadius);
 
             // Draw center point
             this.ballHitbox.lineStyle(0);
-            this.ballHitbox.beginFill(0x00FF00, 1); // Green center - VISIBLE
+            this.ballHitbox.beginFill(0x00FF00, 0); // Green center - VISIBLE
             this.ballHitbox.drawCircle(ballX, ballY, 5);
             this.ballHitbox.endFill();
         } catch (error) {
@@ -76,7 +76,7 @@ export class HitboxDebug extends Container {
             };
 
             // Draw ONLY the RED expanded bounds - đây là collision thực tế!
-            this.keeperExpandedHitbox.lineStyle(3, 0xFF0000, 1); // Red = actual collision
+            this.keeperExpandedHitbox.lineStyle(3, 0xFF0000, 0); // Red = actual collision
             this.keeperExpandedHitbox.drawRect(
                 expandedBounds.x,
                 expandedBounds.y,
@@ -86,7 +86,7 @@ export class HitboxDebug extends Container {
 
             // Draw center point for reference
             this.keeperHitbox.lineStyle(0);
-            this.keeperHitbox.beginFill(0xFF0000, 1); // Red center to match collision box
+            this.keeperHitbox.beginFill(0xFF0000, 0); // Red center to match collision box
             this.keeperHitbox.drawCircle(centerX, centerY, 5);
             this.keeperHitbox.endFill();
 
@@ -128,7 +128,7 @@ export class HitboxDebug extends Container {
 
             // Draw connection line if colliding
             if (isColliding) {
-                this.ballHitbox.lineStyle(5, 0xFFFF00, 1); // Yellow line
+                this.ballHitbox.lineStyle(5, 0xFFFF00, 0); // Yellow line
                 this.ballHitbox.moveTo(ballX, ballY);
                 this.ballHitbox.lineTo(centerX, centerY);
             }

@@ -108,9 +108,9 @@ export default class App extends Application {
         this.scoreDisplay = new ScoreDisplay();
         this.gameContainer.addChild(this.scoreDisplay);
 
-        this.ballCountDisplay = new BallCountDisplay();
-        this.ballCountDisplay.setGoal(this.goal);
-        this.gameContainer.addChild(this.ballCountDisplay);
+        // this.ballCountDisplay = new BallCountDisplay();
+        // this.ballCountDisplay.setGoal(this.goal);
+        // this.gameContainer.addChild(this.ballCountDisplay);
         
         // Add hitbox debug to gameContainer at top layer
         this.gameContainer.addChild(this.hitboxDebug);
@@ -201,7 +201,7 @@ export default class App extends Application {
         this.isGameActive = true;
         this.scoreDisplay.reset();
         this.shotsLeft = 10;
-        this.ballCountDisplay.setCount(this.shotsLeft);
+        // this.ballCountDisplay.setCount(this.shotsLeft);
         this.createNewBall();
         if (this.resetButton) this.resetButton.visible = true;
         
@@ -259,7 +259,7 @@ export default class App extends Application {
 
     handleShotEnd() {
         this.shotsLeft--;
-        this.ballCountDisplay.setCount(this.shotsLeft);
+        // this.ballCountDisplay.setCount(this.shotsLeft);
         setTimeout(() => {
             this.createNewBall();
         }, 2000);
@@ -278,7 +278,7 @@ export default class App extends Application {
         bg.roundRect(0, 0, 120, 40, 6);
         bg.fill({ color: 0x000000, alpha: 0.6 });
         const style = new TextStyle({ fill: '#ffffff', fontSize: 14 });
-        const label = new Text({ text: 'Build 10', style });
+        const label = new Text({ text: 'Build 15', style });
         label.anchor.set(0.5, 0.5);
         label.x = 60;
         label.y = 20;
